@@ -1,7 +1,9 @@
 import { notFound } from "next/navigation";
+import { AlertTriangle, Bot, FileText, Sparkles } from "lucide-react";
 import { getSkillWithExecutions } from "@/lib/data";
 import StatusBadge from "@/components/StatusBadge";
 import RunSkillPanel from "@/components/RunSkillPanel";
+import PageHeader from "@/components/PageHeader";
 import { isClaudeConfigured } from "@/lib/claude";
 
 export const dynamic = "force-dynamic";
@@ -22,50 +24,64 @@ export default async function SkillDetailPage({ params }: { params: { id: string
   }));
 
   return (
-    <div className="space-y-6">
-      <div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <h1 className="text-xl font-semibold">{skill.name}</h1>
-          <StatusBadge status={skill.status} />
-          {skill.usesCowork && (
-            <span className="text-xs rounded-full bg-slate-100 text-slate-700 px-2.5 py-0.5">
-              🤝 uses Cowork
-            </span>
-          )}
-        </div>
-        <p className="mt-2 text-ink/70 whitespace-pre-wrap">{skill.description}</p>
-      </div>
-
-      {!dispatchReady && (
-        <div className="rounded-md bg-amber-50 text-amber-800 text-sm p-3">
-          {skill.usesCowork
-            ? "This skill needs manual setup: no Cowork dispatch is configured yet " +
-              "(COWORK_DISPATCH_WEBHOOK_URL). It will still record an attempt, flagged as " +
-              "\"needs setup\", if you run it."
-            : "This skill needs manual setup: ANTHROPIC_API_KEY isn't configured yet. It will " +
-              "still record an attempt, flagged as \"needs setup\", if you run it."}
-        </div>
-      )}
-
-      <details className="rounded-lg border border-line bg-white p-4 text-sm">
-        <summary className="cursor-pointer font-medium">Prompt template</summary>
-        <pre className="mt-2 whitespace-pre-wrap break-words text-xs text-ink/70">
-          {skill.promptTemplate}
-        </pre>
-      </details>
-
-      <RunSkillPanel
-        skill={{
-          id: skill.id,
-          name: skill.name,
-          promptTemplate: skill.promptTemplate,
-          needsInput: skill.needsInput,
-          usesCowork: skill.usesCowork,
-          inputSchema: skill.inputSchema,
-          confirmedOnce: skill.confirmedOnce,
-        }}
-        initialExecutions={executions}
+    <div>
+      <PageHeader
+        icon={skill.usesCowork ? <Bot size={18} /> : <Sparkles size={18} />}
+        title={skill.name}
+        actions={<StatusBadge status={skill.status} />}
       />
+
+      <div className="space-y-5 animate-fade-in">
+        <div className="rounded-xl border border-line bg-white p-5">
+          <div className="flex items-center gap-2 flex-wrap mb-2">
+            {skill.usesCowork && (
+              <span className="inline-flex items-center gap-1 text-xs rounded-full bg-cowork-soft text-cowork px-2.5 py-0.5">
+                <Bot size={11} />
+                usa Cowork
+              </span>
+            )}
+          </div>
+          <p className="text-ink/70 whitespace-pre-wrap text-sm">{skill.description}</p>
+        </div>
+
+        {!dispatchReady && (
+          <div className="flex items-start gap-2.5 rounded-xl bg-amber-50 text-amber-800 text-sm p-4">
+            <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+            <p>
+              {skill.usesCowork
+                ? "Essa skill precisa de configuração manual: nenhum dispatch pro Cowork está " +
+                  "configurado ainda (COWORK_DISPATCH_WEBHOOK_URL). Se você rodar, ela vai " +
+                  "registrar a tentativa marcada como \"needs setup\"."
+                : "Essa skill precisa de configuração manual: ANTHROPIC_API_KEY não está " +
+                  "configurada ainda. Se você rodar, ela vai registrar a tentativa marcada " +
+                  "como \"needs setup\"."}
+            </p>
+          </div>
+        )}
+
+        <details className="group rounded-xl border border-line bg-white p-5 text-sm">
+          <summary className="cursor-pointer font-semibold text-ink flex items-center gap-2 list-none">
+            <FileText size={15} className="text-primary" />
+            Template do prompt
+          </summary>
+          <pre className="mt-3 whitespace-pre-wrap break-words text-xs text-ink/70 bg-canvas rounded-md p-3">
+            {skill.promptTemplate}
+          </pre>
+        </details>
+
+        <RunSkillPanel
+          skill={{
+            id: skill.id,
+            name: skill.name,
+            promptTemplate: skill.promptTemplate,
+            needsInput: skill.needsInput,
+            usesCowork: skill.usesCowork,
+            inputSchema: skill.inputSchema,
+            confirmedOnce: skill.confirmedOnce,
+          }}
+          initialExecutions={executions}
+        />
+      </div>
     </div>
   );
 }

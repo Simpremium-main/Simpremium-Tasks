@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { History, Loader2, Play, ShieldAlert } from "lucide-react";
 import DynamicForm from "./DynamicForm";
 import ExecutionList, { type ExecutionItem } from "./ExecutionList";
 import { buildPromptSnapshot } from "@/lib/mask";
@@ -37,7 +38,7 @@ export default function RunSkillPanel({
 
   function handleRunClick() {
     if (missingRequired.length > 0) {
-      setFormError(`Fill in: ${missingRequired.map((f) => f.label).join(", ")}`);
+      setFormError(`Preencha: ${missingRequired.map((f) => f.label).join(", ")}`);
       return;
     }
     setFormError(null);
@@ -65,16 +66,20 @@ export default function RunSkillPanel({
 
   return (
     <div className="space-y-6">
-      <div className="rounded-lg border border-line bg-white p-4">
-        <h2 className="font-medium mb-3">Run this skill</h2>
+      <div className="rounded-xl border border-line bg-white p-5">
+        <h2 className="font-semibold text-ink mb-3 flex items-center gap-2">
+          <Play size={15} className="text-primary" />
+          Rodar essa skill
+        </h2>
         <DynamicForm schema={schema} values={values} onChange={(k, v) => setValues((p) => ({ ...p, [k]: v }))} />
         {formError && <p className="mt-2 text-sm text-red-600">{formError}</p>}
         <button
           type="button"
           onClick={handleRunClick}
-          className="mt-4 rounded-md bg-accent text-white px-4 py-2 text-sm font-medium hover:bg-accent/90 transition-colors"
+          className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-primary text-white px-4 py-2 text-sm font-medium hover:bg-primary-hover transition-colors"
         >
-          {skill.confirmedOnce ? "Run" : "Review & run"}
+          <Play size={14} />
+          {skill.confirmedOnce ? "Rodar" : "Revisar e rodar"}
         </button>
       </div>
 
@@ -90,7 +95,10 @@ export default function RunSkillPanel({
       )}
 
       <div>
-        <h2 className="font-medium mb-3">Execution history</h2>
+        <h2 className="font-semibold text-ink mb-3 flex items-center gap-2">
+          <History size={15} className="text-primary" />
+          Histórico de execuções
+        </h2>
         <ExecutionList executions={executions} />
       </div>
     </div>
@@ -113,13 +121,20 @@ function ConfirmRunModal({
   onConfirm: () => void;
 }) {
   return (
-    <div className="fixed inset-0 bg-ink/40 flex items-center justify-center p-4 z-20">
-      <div className="bg-white rounded-lg border border-line max-w-lg w-full p-5 shadow-lg">
-        <h3 className="font-medium">Confirm: run &ldquo;{skillName}&rdquo;?</h3>
-        <p className="text-sm text-ink/60 mt-1">
-          This is exactly what will be sent to {source}. Secret values are masked below but
-          used in full when it actually runs.
-        </p>
+    <div className="fixed inset-0 bg-ink/40 backdrop-blur-[2px] flex items-center justify-center p-4 z-20 animate-backdrop-in">
+      <div className="bg-white rounded-xl border border-line max-w-lg w-full p-5 shadow-xl animate-scale-in">
+        <div className="flex items-start gap-2.5">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary">
+            <ShieldAlert size={16} />
+          </span>
+          <div>
+            <h3 className="font-semibold text-ink">Confirmar: rodar &ldquo;{skillName}&rdquo;?</h3>
+            <p className="text-sm text-muted mt-0.5">
+              É exatamente isso que vai ser enviado pro {source}. Valores secretos aparecem
+              mascarados abaixo, mas são usados por inteiro na execução real.
+            </p>
+          </div>
+        </div>
         <pre className="mt-3 whitespace-pre-wrap break-words bg-canvas rounded-md p-3 text-xs max-h-64 overflow-y-auto">
           {prompt}
         </pre>
@@ -130,15 +145,16 @@ function ConfirmRunModal({
             disabled={running}
             className="rounded-md px-3 py-1.5 text-sm border border-line hover:bg-canvas transition-colors"
           >
-            Cancel
+            Cancelar
           </button>
           <button
             type="button"
             onClick={onConfirm}
             disabled={running}
-            className="rounded-md bg-accent text-white px-3 py-1.5 text-sm font-medium hover:bg-accent/90 disabled:opacity-60 transition-colors"
+            className="inline-flex items-center gap-1.5 rounded-md bg-primary text-white px-3.5 py-1.5 text-sm font-medium hover:bg-primary-hover disabled:opacity-60 transition-colors"
           >
-            {running ? "Running…" : "Confirm & run"}
+            {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+            {running ? "Rodando…" : "Confirmar e rodar"}
           </button>
         </div>
       </div>

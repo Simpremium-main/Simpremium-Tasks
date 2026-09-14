@@ -96,9 +96,14 @@ is set (`lib/claude.ts`); otherwise they're flagged `needs_setup` the same way.
 
 ## Visual style
 
-This build uses a plain, warm-neutral placeholder look (see `tailwind.config.ts`). The project
-brief mentions `Pedido-Central-main` as a style reference but no screenshots or access have been
-shared yet — once you share those, the visual design should be restyled to match.
+Restyled to match a screenshot shared of `Pedido-Central-main`: a dark, collapsible sidebar
+(persistent nav + a live list of every skill, with a status dot and search once the list grows),
+a sticky page header per screen (icon, title, breadcrumb-style subtitle, actions), white
+bordered cards on a warm off-white canvas, and pill-shaped status badges (`lucide-react` icons
+throughout, small hover/transition/fade-in animations, a scale-in + backdrop-blur run
+confirmation modal). Colors and tokens live in `tailwind.config.ts` (`primary` = the blue accent,
+`sidebar.*` = the dark nav palette, `cowork` = the accent used for Cowork-specific badges) if it
+needs tweaking against a closer look at the reference later.
 
 ## Running locally
 

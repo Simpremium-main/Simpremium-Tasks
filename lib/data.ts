@@ -33,18 +33,18 @@ function seedStore(): Store {
 
   const inputSchema: InputField[] = [
     {
-      key: "period",
-      label: "Reporting period",
+      key: "periodo",
+      label: "Período do relatório",
       type: "text",
       required: true,
-      placeholder: "e.g. Q3 2026, or Sep 1-14",
+      placeholder: "ex: Q3 2026, ou 1-14 de setembro",
     },
     {
-      key: "focus",
-      label: "Anything to focus on?",
+      key: "foco",
+      label: "Algo específico pra focar?",
       type: "textarea",
       required: false,
-      placeholder: "Optional — a region, a product line, a metric to highlight",
+      placeholder: "Opcional — uma região, uma linha de produto, uma métrica",
     },
   ];
 
@@ -52,20 +52,20 @@ function seedStore(): Store {
     skills: [
       {
         id: skillId,
-        name: "Weekly Sales PDF Report",
+        name: "Relatório Semanal de Vendas (PDF)",
         description:
-          "Generates a PDF summarizing sales performance for the period you give it — " +
-          "pulled from the boss's Instagram post about a Claude reporting skill.",
+          "Gera um PDF resumindo a performance de vendas no período informado — tirado do " +
+          "post do chefe no Instagram sobre uma skill de relatórios da Claude.",
         status: "draft",
         needsInput: true,
         usesCowork: false,
         promptTemplate:
-          "Generate a PDF sales report for {{period}}. Include revenue, top products, and " +
-          "trend vs. the previous period. {{focus}}",
+          "Gere um relatório de vendas em PDF para {{periodo}}. Inclua receita, produtos mais " +
+          "vendidos e a tendência comparada ao período anterior. {{foco}}",
         inputSchema,
         sourcePost:
-          "(example) Just found this Claude skill — paste your sales numbers and it spits out " +
-          "a clean PDF report in minutes. Game changer for weekly reviews.",
+          "(exemplo) Achei essa skill da Claude — cola seus números de vendas e ela cospe um " +
+          "PDF limpo em minutos. Mudou o jogo pras revisões semanais.",
         confirmedOnce: false,
         createdAt: now,
         updatedAt: now,

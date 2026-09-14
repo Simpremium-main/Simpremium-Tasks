@@ -92,7 +92,9 @@ masking. Persistence is planned to be Supabase, but runs on an in-memory mock st
 Supabase project/keys have been provided yet. Cowork dispatch is a pluggable adapter
 (`lib/cowork.ts`) currently flagged `needs_setup` since no Cowork dispatch mechanism was
 discoverable in the build environment — wire up `COWORK_DISPATCH_WEBHOOK_URL` once one is
-available.
+available. Visual style: a `Pedido-Central-main` screenshot was shared and applied (dark
+collapsible sidebar listing skills, sticky page headers, pill badges, `lucide-react` icons,
+animations) — see README's "Visual style" section.
 
 ## Git workflow
 

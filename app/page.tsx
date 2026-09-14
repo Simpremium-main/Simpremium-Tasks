@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { LayoutGrid, Plus, Sparkles } from "lucide-react";
 import { listSkills } from "@/lib/data";
 import SkillCard from "@/components/SkillCard";
+import PageHeader from "@/components/PageHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -9,30 +11,46 @@ export default async function DashboardPage() {
 
   if (skills.length === 0) {
     return (
-      <div className="text-center py-20">
-        <h1 className="text-xl font-semibold">No skills yet</h1>
-        <p className="mt-2 text-ink/60">
-          Paste the next post your boss sends you and turn it into a skill you can run any time.
-        </p>
-        <Link
-          href="/skills/new"
-          className="mt-4 inline-block rounded-md bg-accent text-white px-4 py-2 text-sm font-medium hover:bg-accent/90 transition-colors"
-        >
-          + New skill
-        </Link>
+      <div>
+        <PageHeader icon={<LayoutGrid size={18} />} title="Skills" />
+        <div className="text-center py-24 animate-fade-in">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-soft text-primary">
+            <Sparkles size={24} />
+          </div>
+          <h2 className="text-lg font-semibold">Nenhuma skill ainda</h2>
+          <p className="mt-2 text-ink/60 max-w-sm mx-auto">
+            Cole o próximo post que seu chefe mandar e transforme em uma skill pronta pra rodar
+            quando quiser.
+          </p>
+          <Link
+            href="/skills/new"
+            className="mt-5 inline-flex items-center gap-1.5 rounded-md bg-primary text-white px-4 py-2 text-sm font-medium hover:bg-primary-hover transition-colors"
+          >
+            <Plus size={15} />
+            Nova skill
+          </Link>
+        </div>
       </div>
     );
   }
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-semibold">Skills</h1>
-        <span className="text-sm text-ink/50">
-          {skills.length} skill{skills.length === 1 ? "" : "s"}
-        </span>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <PageHeader
+        icon={<LayoutGrid size={18} />}
+        title="Skills"
+        subtitle={`${skills.length} skill${skills.length === 1 ? "" : "s"} centralizada${skills.length === 1 ? "" : "s"}`}
+        actions={
+          <Link
+            href="/skills/new"
+            className="inline-flex items-center gap-1.5 rounded-md bg-primary text-white px-3.5 py-2 text-sm font-medium hover:bg-primary-hover transition-colors"
+          >
+            <Plus size={15} />
+            Nova skill
+          </Link>
+        }
+      />
+      <div className="grid gap-3 sm:grid-cols-2 animate-stagger">
         {skills.map((skill) => (
           <SkillCard
             key={skill.id}
