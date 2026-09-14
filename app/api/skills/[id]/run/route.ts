@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { getSkill } from "@/lib/data";
 import { runSkill } from "@/lib/runSkill";
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const skill = await prisma.skill.findUnique({ where: { id: params.id } });
+  const skill = await getSkill(params.id);
   if (!skill) {
     return NextResponse.json({ error: "Skill not found" }, { status: 404 });
   }

@@ -85,8 +85,15 @@ defaulting to a generic style.
 
 ## Current state
 
-See `README.md` for the stack, data model, and what's built so far. In short: a Next.js +
-Prisma/SQLite dashboard implementing the onboarding flow, per-skill run + history, global
-history, and secret masking. Cowork dispatch is a pluggable adapter (`lib/cowork.ts`) currently
-flagged `needs_setup` since no Cowork dispatch mechanism was discoverable in the build
-environment — wire up `COWORK_DISPATCH_WEBHOOK_URL` once one is available.
+See `README.md` for the stack, data model, and what's built so far. In short: a Next.js
+dashboard implementing the onboarding flow, per-skill run + history, global history, and secret
+masking. Persistence is planned to be Supabase, but runs on an in-memory mock store for now
+(`lib/data.ts` — the single seam to swap later; target schema in `supabase/schema.sql`) since no
+Supabase project/keys have been provided yet. Cowork dispatch is a pluggable adapter
+(`lib/cowork.ts`) currently flagged `needs_setup` since no Cowork dispatch mechanism was
+discoverable in the build environment — wire up `COWORK_DISPATCH_WEBHOOK_URL` once one is
+available.
+
+## Git workflow
+
+Commit and push straight to `main` — no feature branches or PRs needed for this project.

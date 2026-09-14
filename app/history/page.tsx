@@ -1,14 +1,10 @@
-import { prisma } from "@/lib/db";
+import { listExecutions } from "@/lib/data";
 import ExecutionList from "@/components/ExecutionList";
 
 export const dynamic = "force-dynamic";
 
 export default async function HistoryPage() {
-  const executions = await prisma.execution.findMany({
-    orderBy: { startedAt: "desc" },
-    include: { skill: { select: { id: true, name: true } } },
-    take: 200,
-  });
+  const executions = await listExecutions();
 
   const items = executions.map((e) => ({
     ...e,

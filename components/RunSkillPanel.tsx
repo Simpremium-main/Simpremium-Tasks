@@ -13,7 +13,7 @@ interface Skill {
   promptTemplate: string;
   needsInput: boolean;
   usesCowork: boolean;
-  inputSchema: string | null;
+  inputSchema: InputField[] | null;
   confirmedOnce: boolean;
 }
 
@@ -25,7 +25,7 @@ export default function RunSkillPanel({
   initialExecutions: ExecutionItem[];
 }) {
   const router = useRouter();
-  const schema: InputField[] = skill.inputSchema ? JSON.parse(skill.inputSchema) : [];
+  const schema: InputField[] = skill.inputSchema ?? [];
 
   const [values, setValues] = useState<Record<string, string>>({});
   const [showConfirm, setShowConfirm] = useState(false);

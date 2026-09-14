@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/db";
+import { getSkillWithExecutions } from "@/lib/data";
 import StatusBadge from "@/components/StatusBadge";
 import RunSkillPanel from "@/components/RunSkillPanel";
 import { isClaudeConfigured } from "@/lib/claude";
@@ -7,10 +7,7 @@ import { isClaudeConfigured } from "@/lib/claude";
 export const dynamic = "force-dynamic";
 
 export default async function SkillDetailPage({ params }: { params: { id: string } }) {
-  const skill = await prisma.skill.findUnique({
-    where: { id: params.id },
-    include: { executions: { orderBy: { startedAt: "desc" } } },
-  });
+  const skill = await getSkillWithExecutions(params.id);
 
   if (!skill) notFound();
 

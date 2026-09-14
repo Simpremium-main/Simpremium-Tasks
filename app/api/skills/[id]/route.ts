@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { deleteSkill, getSkillWithExecutions, updateSkill, type UpdateSkillInput } from "@/lib/data";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const skill = await prisma.skill.findUnique({
-    where: { id: params.id },
-    include: { executions: { orderBy: { startedAt: "desc" } } },
-  });
+  const skill = await getSkillWithExecutions(params.id);
 
   if (!skill) {
     return NextResponse.json({ error: "Skill not found" }, { status: 404 });
@@ -25,33 +22,31 @@ const EDITABLE_FIELDS = [
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const body = await req.json();
-  const data: Record<string, unknown> = {};
+  const patch: UpdateSkillInput = {};
 
   for (const field of EDITABLE_FIELDS) {
-    if (field in body) data[field] = body[field];
+    if (field in body) (patch as Record<string, unknown>)[field] = body[field];
   }
 
   if (Array.isArray(body.inputSchema)) {
-    data.inputSchema = body.inputSchema.length ? JSON.stringify(body.inputSchema) : null;
+    patch.inputSchema = body.inputSchema.length ? body.inputSchema : null;
   }
 
-  if (data.status && !["draft", "active"].includes(data.status as string)) {
+  if (patch.status && !["draft", "active"].includes(patch.status)) {
     return NextResponse.json({ error: "status must be draft or active" }, { status: 400 });
   }
 
-  try {
-    const skill = await prisma.skill.update({ where: { id: params.id }, data });
-    return NextResponse.json(skill);
-  } catch {
+  const skill = await updateSkill(params.id, patch);
+  if (!skill) {
     return NextResponse.json({ error: "Skill not found" }, { status: 404 });
   }
+  return NextResponse.json(skill);
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    await prisma.skill.delete({ where: { id: params.id } });
-    return NextResponse.json({ ok: true });
-  } catch {
+  const ok = await deleteSkill(params.id);
+  if (!ok) {
     return NextResponse.json({ error: "Skill not found" }, { status: 404 });
   }
+  return NextResponse.json({ ok: true });
 }

@@ -1,14 +1,11 @@
 import Link from "next/link";
-import { prisma } from "@/lib/db";
+import { listSkills } from "@/lib/data";
 import SkillCard from "@/components/SkillCard";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const skills = await prisma.skill.findMany({
-    orderBy: { createdAt: "desc" },
-    include: { _count: { select: { executions: true } } },
-  });
+  const skills = await listSkills();
 
   if (skills.length === 0) {
     return (

@@ -8,7 +8,7 @@ export interface ExecutionItem {
   id: string;
   status: string;
   source: string;
-  inputValues: string | null;
+  inputValues: Record<string, string> | null;
   promptSnapshot: string;
   result: string | null;
   error: string | null;

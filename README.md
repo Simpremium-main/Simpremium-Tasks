@@ -8,9 +8,13 @@ full execution history. No more re-typing the same prompt from a chat you can't 
 
 - **Next.js (App Router) + TypeScript** — one codebase for both the dashboard UI and the API
   routes that run skills, generate drafts, and record history. Easy to deploy anywhere later.
-- **Prisma + SQLite** — zero-config persistent storage (a single file, no server to run). The
-  schema is provider-agnostic, so moving to Postgres later is a one-line change in
-  `prisma/schema.prisma` plus `DATABASE_URL` — nothing else in the app needs to change.
+- **Mock data for now, Supabase next** — `lib/data.ts` is the single seam every page and API
+  route goes through for persistence. Today it's backed by an in-memory store (seeded on first
+  import, resets when the server restarts). When Supabase is connected, only this file's
+  internals change to real Supabase queries — every caller keeps working unchanged.
+  `supabase/schema.sql` documents the target Postgres schema this mock store already mirrors
+  field-for-field, ready to run in the Supabase SQL editor when there's a project to point at.
+  Nothing here invents a Supabase URL or key — none has been provided yet.
 - **Tailwind CSS** — fast to iterate on visually. The current look is a plain, warm-neutral
   placeholder (see "Visual style" below) — swap it once you've shared the `Pedido-Central-main`
   reference.
@@ -21,7 +25,7 @@ starting point that's cheap to change as the project grows.
 ## Data model
 
 - **Skill** — `name`, `description`, `status` (`draft` → `active`), `needsInput`, `usesCowork`,
-  `promptTemplate` (with `{{field}}` placeholders), `inputSchema` (JSON list of input fields),
+  `promptTemplate` (with `{{field}}` placeholders), `inputSchema` (a list of input fields),
   `sourcePost` (the original pasted post, kept for reference), `confirmedOnce`.
 - **Execution** — one row per run attempt, always written, even on failure: `status`
   (`success` / `error` / `needs_setup`), `source` (`cowork` / `claude`), masked `inputValues`,
@@ -29,6 +33,19 @@ starting point that's cheap to change as the project grows.
 
 A skill starts as a `draft` and is automatically promoted to `active` the first time it runs
 successfully — matching the "test once, then it's active" flow from the project brief.
+
+### Why mock data right now
+
+The brief asked for Supabase but said to use mock data for now, so `lib/data.ts` is plain
+in-memory arrays behind async functions shaped exactly like the eventual database calls
+(`listSkills`, `getSkill`, `createExecution`, etc.). Two things worth knowing about this stage:
+
+- **Data resets** whenever the dev server restarts, and on a serverless host like Vercel it can
+  reset between requests too (each invocation may get a fresh module instance) — there's no
+  durable storage yet, by design, until Supabase is wired up.
+- **Swapping to Supabase later** means implementing these same functions against
+  `@supabase/supabase-js` using the tables in `supabase/schema.sql`, and nothing in `app/` or
+  `components/` needs to know the difference.
 
 ## The onboarding flow (paste a post → skill)
 
@@ -88,13 +105,14 @@ shared yet — once you share those, the visual design should be restyled to mat
 ```bash
 npm install
 cp .env.example .env   # fill in ANTHROPIC_API_KEY / COWORK_* if you have them
-npx prisma db push
-npx tsx prisma/seed.ts # optional: seeds one example draft skill
-npm run dev
+npm run dev            # mock data seeds itself on first request, nothing else to set up
 ```
 
 ## Known follow-ups
 
+- **Connect Supabase.** `lib/data.ts` is ready to be re-implemented against
+  `@supabase/supabase-js` using `supabase/schema.sql` — needs a Supabase project + keys, which
+  haven't been provided.
 - `next@14.2.35` is the latest patch on the 14.x line, but a couple of advisories (AVIF image
   optimization RCE, an internal `postcss` bundled by Next) are only fully resolved on Next 16,
   which has breaking changes (e.g. `params` becomes a `Promise` in route handlers). Worth a
