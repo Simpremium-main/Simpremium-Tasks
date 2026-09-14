@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { LayoutGrid, Plus, Sparkles } from "lucide-react";
 import { listSkills } from "@/lib/data";
-import SkillCard from "@/components/SkillCard";
+import { isClaudeConfigured } from "@/lib/claude";
+import SkillsBoard from "@/components/SkillsBoard";
 import PageHeader from "@/components/PageHeader";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,19 @@ export default async function DashboardPage() {
     );
   }
 
+  const claudeReady = isClaudeConfigured();
+  const coworkReady = Boolean(process.env.COWORK_DISPATCH_WEBHOOK_URL);
+  const boardSkills = skills.map((s) => ({
+    id: s.id,
+    name: s.name,
+    description: s.description,
+    status: s.status,
+    needsInput: s.needsInput,
+    usesCowork: s.usesCowork,
+    executionCount: s._count.executions,
+    needsSetup: s.usesCowork ? !coworkReady : !claudeReady,
+  }));
+
   return (
     <div>
       <PageHeader
@@ -50,20 +64,7 @@ export default async function DashboardPage() {
           </Link>
         }
       />
-      <div className="grid gap-3 sm:grid-cols-2 animate-stagger">
-        {skills.map((skill) => (
-          <SkillCard
-            key={skill.id}
-            id={skill.id}
-            name={skill.name}
-            description={skill.description}
-            status={skill.status}
-            needsInput={skill.needsInput}
-            usesCowork={skill.usesCowork}
-            executionCount={skill._count.executions}
-          />
-        ))}
-      </div>
+      <SkillsBoard skills={boardSkills} />
     </div>
   );
 }

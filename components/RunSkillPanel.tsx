@@ -33,6 +33,7 @@ export default function RunSkillPanel({
   const [running, setRunning] = useState(false);
   const [executions, setExecutions] = useState(initialExecutions);
   const [formError, setFormError] = useState<string | null>(null);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
 
   const missingRequired = schema.filter((f) => f.required && !values[f.key]?.trim());
 
@@ -56,6 +57,8 @@ export default function RunSkillPanel({
       const execution = await res.json();
       setExecutions((prev) => [execution, ...prev]);
       setShowConfirm(false);
+      setHighlightId(execution.id);
+      setTimeout(() => setHighlightId(null), 1800);
       router.refresh();
     } finally {
       setRunning(false);
@@ -99,7 +102,7 @@ export default function RunSkillPanel({
           <History size={15} className="text-primary" />
           Histórico de execuções
         </h2>
-        <ExecutionList executions={executions} />
+        <ExecutionList executions={executions} highlightId={highlightId} />
       </div>
     </div>
   );

@@ -48,12 +48,17 @@ const config: Config = {
           "0%": { opacity: "0", maxHeight: "0" },
           "100%": { opacity: "1", maxHeight: "2000px" },
         },
+        highlight: {
+          "0%": { backgroundColor: "rgba(51,88,224,0.14)" },
+          "100%": { backgroundColor: "rgba(51,88,224,0)" },
+        },
       },
       animation: {
         "fade-in": "fade-in 0.35s ease-out both",
         "scale-in": "scale-in 0.18s cubic-bezier(0.16,1,0.3,1) both",
         "backdrop-in": "backdrop-in 0.18s ease-out both",
         "slide-down": "slide-down 0.25s ease-out both",
+        highlight: "highlight 1.8s ease-out both",
       },
     },
   },

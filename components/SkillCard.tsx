@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Bot, History, PenLine, Sparkles } from "lucide-react";
+import { AlertTriangle, Bot, History, PenLine, Sparkles } from "lucide-react";
 import StatusBadge from "./StatusBadge";
 
 interface SkillCardProps {
@@ -10,6 +10,7 @@ interface SkillCardProps {
   needsInput: boolean;
   usesCowork: boolean;
   executionCount: number;
+  needsSetup?: boolean;
 }
 
 export default function SkillCard({
@@ -20,6 +21,7 @@ export default function SkillCard({
   needsInput,
   usesCowork,
   executionCount,
+  needsSetup,
 }: SkillCardProps) {
   return (
     <Link
@@ -39,7 +41,14 @@ export default function SkillCard({
             {name}
           </h3>
         </div>
-        <StatusBadge status={status} />
+        <div className="flex items-center gap-1.5 shrink-0">
+          {needsSetup && (
+            <span title="Precisa de configuração manual" className="text-amber-500">
+              <AlertTriangle size={14} />
+            </span>
+          )}
+          <StatusBadge status={status} />
+        </div>
       </div>
       <p className="mt-2.5 text-sm text-ink/60 line-clamp-2 min-h-[2.5rem]">
         {description || "Sem descrição ainda."}

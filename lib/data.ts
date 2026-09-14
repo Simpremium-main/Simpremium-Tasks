@@ -27,9 +27,17 @@ function randomId(): string {
   return crypto.randomUUID();
 }
 
+// Fixed on purpose (not randomId()) — the mock store gets re-seeded on every
+// cold start/redeploy, so a random id here would break this skill's URL
+// every time. A stable id keeps the demo skill reachable at the same link
+// even though the store itself still isn't durable — see lib/data.ts's
+// module comment. Skills created afterwards still get a random id and are
+// still only as durable as the mock store.
+const SEED_SKILL_ID = "seed-relatorio-vendas";
+
 function seedStore(): Store {
   const now = new Date();
-  const skillId = randomId();
+  const skillId = SEED_SKILL_ID;
 
   const inputSchema: InputField[] = [
     {

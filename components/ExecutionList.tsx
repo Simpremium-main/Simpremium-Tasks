@@ -33,9 +33,11 @@ const SOURCE_LABELS: Record<string, string> = {
 export default function ExecutionList({
   executions,
   showSkillName = false,
+  highlightId,
 }: {
   executions: ExecutionItem[];
   showSkillName?: boolean;
+  highlightId?: string | null;
 }) {
   if (executions.length === 0) {
     return (
@@ -48,7 +50,12 @@ export default function ExecutionList({
   return (
     <ul className="space-y-2 animate-stagger">
       {executions.map((execution) => (
-        <ExecutionRow key={execution.id} execution={execution} showSkillName={showSkillName} />
+        <ExecutionRow
+          key={execution.id}
+          execution={execution}
+          showSkillName={showSkillName}
+          highlighted={execution.id === highlightId}
+        />
       ))}
     </ul>
   );
@@ -57,14 +64,20 @@ export default function ExecutionList({
 function ExecutionRow({
   execution,
   showSkillName,
+  highlighted,
 }: {
   execution: ExecutionItem;
   showSkillName: boolean;
+  highlighted?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <li className="rounded-lg border border-line bg-white transition-shadow hover:shadow-sm">
+    <li
+      className={`rounded-lg border bg-white transition-shadow hover:shadow-sm ${
+        highlighted ? "border-primary/40 animate-highlight" : "border-line"
+      }`}
+    >
       <div
         role="button"
         tabIndex={0}

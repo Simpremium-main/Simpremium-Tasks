@@ -1,6 +1,6 @@
 import { History } from "lucide-react";
 import { listExecutions } from "@/lib/data";
-import ExecutionList from "@/components/ExecutionList";
+import HistoryBoard from "@/components/HistoryBoard";
 import PageHeader from "@/components/PageHeader";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +21,7 @@ export default async function HistoryPage() {
         title="Histórico completo"
         subtitle="Toda execução, de todas as skills — ache aquele relatório da semana passada"
       />
-      <ExecutionList executions={items} showSkillName />
+      <HistoryBoard executions={items} />
     </div>
   );
 }

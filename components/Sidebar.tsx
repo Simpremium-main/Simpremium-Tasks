@@ -72,9 +72,6 @@ export default function Sidebar({ skills }: { skills: SidebarSkill[] }) {
         {!collapsed && (
           <div className="min-w-0 animate-fade-in">
             <div className="text-sm font-semibold text-white leading-tight truncate">Skills Hub</div>
-            <div className="text-[10px] uppercase tracking-wider text-sidebar-muted truncate">
-              skills do boss
-            </div>
           </div>
         )}
         <button

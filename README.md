@@ -42,7 +42,13 @@ in-memory arrays behind async functions shaped exactly like the eventual databas
 
 - **Data resets** whenever the dev server restarts, and on a serverless host like Vercel it can
   reset between requests too (each invocation may get a fresh module instance) — there's no
-  durable storage yet, by design, until Supabase is wired up.
+  durable storage yet, by design, until Supabase is wired up. In practice this means any skill
+  you create yourself can disappear (and its URL 404) after a redeploy or a cold start — a known,
+  accepted limitation of "mock data for now" while Supabase isn't connected.
+- **The seed skill's id is fixed** (`SEED_SKILL_ID` in `lib/data.ts`), on purpose — it's the one
+  link in the app that's meant to always work, so there's always at least one stable example to
+  click through even though the store itself resets. Skills created afterwards still get a random
+  id and are only as durable as the mock store.
 - **Swapping to Supabase later** means implementing these same functions against
   `@supabase/supabase-js` using the tables in `supabase/schema.sql`, and nothing in `app/` or
   `components/` needs to know the difference.
@@ -104,6 +110,12 @@ throughout, small hover/transition/fade-in animations, a scale-in + backdrop-blu
 confirmation modal). Colors and tokens live in `tailwind.config.ts` (`primary` = the blue accent,
 `sidebar.*` = the dark nav palette, `cowork` = the accent used for Cowork-specific badges) if it
 needs tweaking against a closer look at the reference later.
+
+A follow-up pass added the KPI stat rows (`components/StatTile.tsx`), search/status filters on
+the dashboard and history pages (`components/SkillsBoard.tsx`, `components/HistoryBoard.tsx`),
+a stats card on each skill's page (runs, success rate, last run, created date), and a brief
+highlight animation on the execution row a run just added — meant to make the dashboard read as
+a working product with real data in it, not a static mockup.
 
 ## Running locally
 
