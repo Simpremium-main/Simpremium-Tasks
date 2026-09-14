@@ -2,16 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import {
   Bot,
   History,
   LayoutGrid,
+  LogOut,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
   Search,
   Sparkles,
+  User,
   Zap,
 } from "lucide-react";
 
@@ -21,15 +23,25 @@ export interface SidebarSkill {
   status: string;
   needsInput: boolean;
   usesCowork: boolean;
+  group: string | null;
 }
 
 const STORAGE_KEY = "skills-hub:sidebar-collapsed";
+const UNGROUPED_LABEL = "Sem grupo";
 
-export default function Sidebar({ skills }: { skills: SidebarSkill[] }) {
+export default function Sidebar({
+  skills,
+  userName,
+}: {
+  skills: SidebarSkill[];
+  userName: string | null;
+}) {
   const pathname = usePathname();
+  const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
   const [query, setQuery] = useState("");
   const [mounted, setMounted] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -53,11 +65,36 @@ export default function Sidebar({ skills }: { skills: SidebarSkill[] }) {
     });
   }
 
+  async function handleLogout() {
+    setLoggingOut(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      router.push("/login");
+      router.refresh();
+    } finally {
+      setLoggingOut(false);
+    }
+  }
+
   const filteredSkills = useMemo(() => {
     if (!query.trim()) return skills;
     const q = query.trim().toLowerCase();
     return skills.filter((s) => s.name.toLowerCase().includes(q));
   }, [skills, query]);
+
+  const groups = useMemo(() => {
+    const map = new Map<string, SidebarSkill[]>();
+    for (const skill of filteredSkills) {
+      const key = skill.group?.trim() || UNGROUPED_LABEL;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(skill);
+    }
+    return Array.from(map.entries()).sort(([a], [b]) => {
+      if (a === UNGROUPED_LABEL) return 1;
+      if (b === UNGROUPED_LABEL) return -1;
+      return a.localeCompare(b);
+    });
+  }, [filteredSkills]);
 
   return (
     <aside
@@ -132,24 +169,34 @@ export default function Sidebar({ skills }: { skills: SidebarSkill[] }) {
             </div>
           )}
 
-          <div className="space-y-0.5">
-            {filteredSkills.length === 0 && !collapsed && (
-              <p className="px-3 py-2 text-xs text-sidebar-muted">Nenhuma skill ainda.</p>
-            )}
-            {filteredSkills.map((skill) => (
-              <SkillNavLink
-                key={skill.id}
-                skill={skill}
-                active={pathname === `/skills/${skill.id}`}
-                collapsed={collapsed}
-              />
-            ))}
-          </div>
+          {groups.length === 0 && !collapsed && (
+            <p className="px-3 py-2 text-xs text-sidebar-muted">Nenhuma skill ainda.</p>
+          )}
+
+          {groups.map(([groupName, groupSkills]) => (
+            <div key={groupName} className="mb-3 last:mb-0">
+              {!collapsed && groups.length > 1 && (
+                <div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-sidebar-muted/70">
+                  {groupName}
+                </div>
+              )}
+              <div className="space-y-0.5">
+                {groupSkills.map((skill) => (
+                  <SkillNavLink
+                    key={skill.id}
+                    skill={skill}
+                    active={pathname === `/skills/${skill.id}`}
+                    collapsed={collapsed}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       </nav>
 
-      {collapsed && (
-        <div className="p-2.5 border-t border-sidebar-border">
+      <div className="border-t border-sidebar-border p-2.5 shrink-0 space-y-1">
+        {collapsed ? (
           <Link
             href="/skills/new"
             title="Nova skill"
@@ -157,8 +204,29 @@ export default function Sidebar({ skills }: { skills: SidebarSkill[] }) {
           >
             <Plus size={16} />
           </Link>
-        </div>
-      )}
+        ) : (
+          userName && (
+            <div className="flex items-center gap-2.5 px-2 py-1.5 mb-1">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/10 text-sidebar-text">
+                <User size={13} />
+              </span>
+              <span className="text-xs text-sidebar-text truncate flex-1">{userName}</span>
+            </div>
+          )
+        )}
+        <button
+          type="button"
+          onClick={handleLogout}
+          disabled={loggingOut}
+          title={collapsed ? "Sair da conta" : undefined}
+          className={`group flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors w-full disabled:opacity-50 ${
+            collapsed ? "justify-center" : ""
+          }`}
+        >
+          <LogOut size={15} />
+          {!collapsed && <span>Sair da conta</span>}
+        </button>
+      </div>
     </aside>
   );
 }

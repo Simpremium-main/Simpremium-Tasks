@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { AlertTriangle, Bot, FileText, Sparkles } from "lucide-react";
+import { AlertTriangle, Bot, FileText, Folder, Sparkles, Tag } from "lucide-react";
 import { getSkillWithExecutions } from "@/lib/data";
 import StatusBadge from "@/components/StatusBadge";
 import RunSkillPanel from "@/components/RunSkillPanel";
@@ -34,12 +34,27 @@ export default async function SkillDetailPage({ params }: { params: { id: string
       <div className="space-y-5 animate-fade-in">
         <div className="rounded-xl border border-line bg-white p-5">
           <div className="flex items-center gap-2 flex-wrap mb-2">
+            {skill.group && (
+              <span className="inline-flex items-center gap-1 text-xs rounded-full bg-slate-100 text-ink/70 px-2.5 py-0.5">
+                <Folder size={11} />
+                {skill.group}
+              </span>
+            )}
             {skill.usesCowork && (
               <span className="inline-flex items-center gap-1 text-xs rounded-full bg-cowork-soft text-cowork px-2.5 py-0.5">
                 <Bot size={11} />
                 usa Cowork
               </span>
             )}
+            {skill.tags.map((tag) => (
+              <span
+                key={tag}
+                className="inline-flex items-center gap-1 text-xs rounded-full bg-primary-soft text-primary px-2.5 py-0.5"
+              >
+                <Tag size={10} />
+                {tag}
+              </span>
+            ))}
           </div>
           <p className="text-ink/70 whitespace-pre-wrap text-sm">{skill.description}</p>
         </div>

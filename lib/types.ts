@@ -16,6 +16,8 @@ export interface SkillDraftProposal {
   needsInput: boolean;
   usesCowork: boolean;
   inputSchema: InputField[];
+  group: string | null;
+  tags: string[];
   needsReview: boolean; // true when produced by the heuristic fallback, not AI extraction
   reviewNote?: string;
 }
@@ -43,6 +45,8 @@ export interface Skill {
   inputSchema: InputField[] | null;
   sourcePost: string | null;
   confirmedOnce: boolean;
+  group: string | null;
+  tags: string[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -56,6 +60,7 @@ export interface Execution {
   promptSnapshot: string;
   result: string | null;
   error: string | null;
+  ranBy: string | null;
   startedAt: Date;
   finishedAt: Date | null;
 }

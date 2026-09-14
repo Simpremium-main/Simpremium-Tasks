@@ -46,6 +46,8 @@ export default async function DashboardPage() {
     usesCowork: s.usesCowork,
     executionCount: s._count.executions,
     needsSetup: s.usesCowork ? !coworkReady : !claudeReady,
+    group: s.group,
+    tags: s.tags,
   }));
 
   return (

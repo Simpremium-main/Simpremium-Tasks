@@ -26,10 +26,12 @@ starting point that's cheap to change as the project grows.
 
 - **Skill** — `name`, `description`, `status` (`draft` → `active`), `needsInput`, `usesCowork`,
   `promptTemplate` (with `{{field}}` placeholders), `inputSchema` (a list of input fields),
-  `sourcePost` (the original pasted post, kept for reference), `confirmedOnce`.
+  `sourcePost` (the original pasted post, kept for reference), `confirmedOnce`, `group`
+  (a category, or `null`), `tags` (a list of short strings).
 - **Execution** — one row per run attempt, always written, even on failure: `status`
   (`success` / `error` / `needs_setup`), `source` (`cowork` / `claude`), masked `inputValues`,
-  masked `promptSnapshot`, `result`, `error`, timestamps.
+  masked `promptSnapshot`, `result`, `error`, `ranBy` (the logged-in name that triggered it, or
+  `null`), timestamps.
 
 A skill starts as a `draft` and is automatically promoted to `active` the first time it runs
 successfully — matching the "test once, then it's active" flow from the project brief.
@@ -91,6 +93,47 @@ record real results — no other code needs to change.
 Skills that don't depend on Cowork run directly through the Claude API when `ANTHROPIC_API_KEY`
 is set (`lib/claude.ts`); otherwise they're flagged `needs_setup` the same way.
 
+## Login — ⚠️ placeholder, not real security
+
+`middleware.ts` gates every page behind `/login`. As explicitly requested (a real login was
+wanted, but Supabase isn't connected yet): **the password is never checked against anything —
+any name + any non-empty password gets in.** This is not access control; anyone with the URL can
+log in as anyone. It exists so the login screen, session cookie, and "who ran this" attribution
+in execution history all have real UI/flow to build against before Supabase Auth is wired up.
+
+Everything is isolated in `lib/auth.ts` (`getCurrentUser`, session cookie helpers) and
+`app/api/auth/login/route.ts` (where the fake check lives, clearly commented). To make it real:
+swap that route's check for an actual Supabase Auth call, and `getCurrentUser()` for reading
+Supabase's session — every route/page/component that calls `getCurrentUser()` keeps working
+unchanged. Needs a Supabase project + keys, which haven't been provided.
+
+The logged-in name is stamped on every execution (`ranBy`) and shown in both the skill page's
+and the global history's execution list and detail view.
+
+## Groups and tags
+
+Skills can have a `group` (e.g. "Relatórios", "Pesquisa") and free-form `tags`. The sidebar
+sections skills by group (mirroring the reference's sectioned nav), and the dashboard has a group
+filter alongside the status filter and search. Both are editable in the new-skill preview before
+saving; the AI-assisted parser proposes a group/tags guess when `ANTHROPIC_API_KEY` is set (the
+heuristic fallback leaves them blank for you to fill in — it doesn't guess).
+
+## Execution details and downloads
+
+Each execution row has a "Ver detalhes" button opening a modal with the full prompt, result,
+and error, who ran it, and timestamps — with a copy-to-clipboard button on each block. When an
+execution has a text result, you can also download it as `.txt` or `.pdf` (`lib/exportResult.ts`,
+using `jspdf` client-side).
+
+**Important caveat on "generates a PDF" skills:** neither the Claude API call in `lib/claude.ts`
+nor the Cowork adapter in `lib/cowork.ts` actually returns a binary file today — Claude's API
+gives back text, full stop, and Cowork is still `needs_setup`. So a skill whose prompt says
+"generate a PDF sales report" gets back *text* describing that report, not an actual file Claude
+produced. The `.txt`/`.pdf` download buttons are an honest export of that real text result into a
+document you can save — not a fabricated file, but also not proof Claude generated a PDF itself.
+Real file generation (via Claude's code execution/files tooling, or whatever Cowork returns once
+connected) is a separate, larger piece of work than this download convenience.
+
 ## Security baseline
 
 - Any input field typed `secret` (credentials, tokens) is masked before it's ever written to
@@ -111,11 +154,11 @@ confirmation modal). Colors and tokens live in `tailwind.config.ts` (`primary` =
 `sidebar.*` = the dark nav palette, `cowork` = the accent used for Cowork-specific badges) if it
 needs tweaking against a closer look at the reference later.
 
-A follow-up pass added the KPI stat rows (`components/StatTile.tsx`), search/status filters on
-the dashboard and history pages (`components/SkillsBoard.tsx`, `components/HistoryBoard.tsx`),
-a stats card on each skill's page (runs, success rate, last run, created date), and a brief
-highlight animation on the execution row a run just added — meant to make the dashboard read as
-a working product with real data in it, not a static mockup.
+A follow-up pass added search/status filters on the dashboard and history pages
+(`components/SkillsBoard.tsx`, `components/HistoryBoard.tsx`) and a brief highlight animation on
+the execution row a run just added. An earlier version of that pass also added KPI stat-tile rows
+(total skills, success rate, etc.) — removed after feedback that they weren't wanted; the search/
+filter bars stayed.
 
 ## Running locally
 
@@ -124,6 +167,9 @@ npm install
 cp .env.example .env   # fill in ANTHROPIC_API_KEY / COWORK_* if you have them
 npm run dev            # mock data seeds itself on first request, nothing else to set up
 ```
+
+Every page is behind `/login` — enter any name and any password (see "Login — placeholder"
+above for why).
 
 ## Known follow-ups
 
@@ -136,4 +182,8 @@ npm run dev            # mock data seeds itself on first request, nothing else t
   deliberate upgrade pass later — flagging rather than doing a rushed breaking migration now.
 - Skill editing (beyond the input-schema editor at creation time) is minimal — there's a `PATCH
   /api/skills/[id]` endpoint but no dedicated edit screen yet.
-- No auth — this is built as a single-user internal tool for now, per the project brief.
+- **Real auth.** Login currently accepts any password (see "Login — placeholder" above) —
+  needs a Supabase project + keys to become real Supabase Auth.
+- **Real file generation.** Downloads today export Claude's real text result as `.txt`/`.pdf`;
+  no skill produces an actual binary file end-to-end yet (see "Execution details and downloads"
+  above) — would need Claude's code-execution/files tooling or real Cowork artifacts.

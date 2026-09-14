@@ -11,7 +11,11 @@ import type { InputField, Skill } from "./types";
  * "needs setup" all get a history entry, per the security baseline that
  * nothing runs silently.
  */
-export async function runSkill(skill: Skill, inputValues: Record<string, string>) {
+export async function runSkill(
+  skill: Skill,
+  inputValues: Record<string, string>,
+  ranBy: string | null
+) {
   const schema: InputField[] = skill.inputSchema ?? [];
   const rawPrompt = buildRawPrompt(skill.promptTemplate, inputValues);
   const promptSnapshot = buildPromptSnapshot(skill.promptTemplate, inputValues, schema);
@@ -30,6 +34,7 @@ export async function runSkill(skill: Skill, inputValues: Record<string, string>
     promptSnapshot,
     result: dispatch.result ?? null,
     error: dispatch.error ?? null,
+    ranBy,
   });
 
   const updates: { confirmedOnce?: boolean; status?: Skill["status"] } = {};

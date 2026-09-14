@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSkill } from "@/lib/data";
 import { runSkill } from "@/lib/runSkill";
+import { getCurrentUser } from "@/lib/auth";
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const skill = await getSkill(params.id);
@@ -14,6 +15,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       ? body.inputValues
       : {};
 
-  const execution = await runSkill(skill, inputValues);
+  const user = getCurrentUser();
+  const execution = await runSkill(skill, inputValues, user?.name ?? null);
   return NextResponse.json(execution, { status: 201 });
 }

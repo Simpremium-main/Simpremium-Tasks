@@ -22,6 +22,9 @@ export async function POST(req: NextRequest) {
   }
 
   const inputSchema: InputField[] = Array.isArray(body.inputSchema) ? body.inputSchema : [];
+  const tags: string[] = Array.isArray(body.tags)
+    ? body.tags.filter((t: unknown) => typeof t === "string" && t.trim()).map((t: string) => t.trim())
+    : [];
 
   const skill = await createSkill({
     name,
@@ -31,6 +34,8 @@ export async function POST(req: NextRequest) {
     usesCowork: Boolean(body.usesCowork),
     inputSchema,
     sourcePost: typeof body.sourcePost === "string" ? body.sourcePost : null,
+    group: typeof body.group === "string" && body.group.trim() ? body.group.trim() : null,
+    tags,
   });
 
   return NextResponse.json(skill, { status: 201 });

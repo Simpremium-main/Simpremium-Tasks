@@ -13,13 +13,22 @@ export interface BoardSkill {
   usesCowork: boolean;
   executionCount: number;
   needsSetup: boolean;
+  group: string | null;
+  tags: string[];
 }
 
 type Filter = "all" | "active" | "draft" | "needs_setup";
+const ALL_GROUPS = "__all__";
 
 export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
+  const [group, setGroup] = useState(ALL_GROUPS);
+
+  const groups = useMemo(() => {
+    const set = new Set(skills.map((s) => s.group).filter((g): g is string => Boolean(g)));
+    return Array.from(set).sort();
+  }, [skills]);
 
   const filtered = useMemo(() => {
     let list = skills;
@@ -27,14 +36,19 @@ export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
     else if (filter === "draft") list = list.filter((s) => s.status === "draft");
     else if (filter === "needs_setup") list = list.filter((s) => s.needsSetup);
 
+    if (group !== ALL_GROUPS) list = list.filter((s) => s.group === group);
+
     if (query.trim()) {
       const q = query.trim().toLowerCase();
       list = list.filter(
-        (s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)
+        (s) =>
+          s.name.toLowerCase().includes(q) ||
+          s.description.toLowerCase().includes(q) ||
+          s.tags.some((t) => t.includes(q))
       );
     }
     return list;
-  }, [skills, filter, query]);
+  }, [skills, filter, group, query]);
 
   return (
     <div>
@@ -48,6 +62,20 @@ export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
             className="w-full rounded-md border border-line bg-white pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-shadow"
           />
         </div>
+        {groups.length > 0 && (
+          <select
+            value={group}
+            onChange={(e) => setGroup(e.target.value)}
+            className="rounded-md border border-line bg-white px-2.5 py-2 text-xs text-ink focus:outline-none focus:ring-2 focus:ring-primary/30"
+          >
+            <option value={ALL_GROUPS}>Todos os grupos</option>
+            {groups.map((g) => (
+              <option key={g} value={g}>
+                {g}
+              </option>
+            ))}
+          </select>
+        )}
         <div className="flex items-center gap-1 rounded-md border border-line bg-white p-1">
           {(
             [
@@ -88,6 +116,8 @@ export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
               usesCowork={skill.usesCowork}
               executionCount={skill.executionCount}
               needsSetup={skill.needsSetup}
+              group={skill.group}
+              tags={skill.tags}
             />
           ))}
         </div>

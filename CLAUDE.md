@@ -93,8 +93,16 @@ Supabase project/keys have been provided yet. Cowork dispatch is a pluggable ada
 (`lib/cowork.ts`) currently flagged `needs_setup` since no Cowork dispatch mechanism was
 discoverable in the build environment — wire up `COWORK_DISPATCH_WEBHOOK_URL` once one is
 available. Visual style: a `Pedido-Central-main` screenshot was shared and applied (dark
-collapsible sidebar listing skills, sticky page headers, pill badges, `lucide-react` icons,
-animations) — see README's "Visual style" section.
+collapsible sidebar listing skills grouped by category, sticky page headers, pill badges,
+`lucide-react` icons, animations) — see README's "Visual style" section.
+
+Login is live but explicitly a fake placeholder — any password is accepted (user's own request,
+knowingly, until Supabase Auth is connected). Every page sits behind `/login` via
+`middleware.ts`; see README's "Login — placeholder" section before touching `lib/auth.ts` or
+`app/api/auth/login/route.ts`. Skills have `group`/`tags` now, and executions record `ranBy`
+(the logged-in name) — shown throughout history. Execution rows open a details modal with
+copy-to-clipboard and `.txt`/`.pdf` export of the real text result (no skill produces an actual
+generated file yet — see README's "Execution details and downloads" section for why).
 
 ## Git workflow
 

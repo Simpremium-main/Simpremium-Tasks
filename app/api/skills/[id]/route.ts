@@ -18,6 +18,7 @@ const EDITABLE_FIELDS = [
   "needsInput",
   "usesCowork",
   "status",
+  "group",
 ] as const;
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
@@ -30,6 +31,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   if (Array.isArray(body.inputSchema)) {
     patch.inputSchema = body.inputSchema.length ? body.inputSchema : null;
+  }
+
+  if (Array.isArray(body.tags)) {
+    patch.tags = body.tags.filter((t: unknown) => typeof t === "string" && t.trim());
   }
 
   if (patch.status && !["draft", "active"].includes(patch.status)) {

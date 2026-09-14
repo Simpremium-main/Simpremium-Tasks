@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, Bot, History, PenLine, Sparkles } from "lucide-react";
+import { AlertTriangle, Bot, Folder, History, PenLine, Sparkles } from "lucide-react";
 import StatusBadge from "./StatusBadge";
 
 interface SkillCardProps {
@@ -11,6 +11,8 @@ interface SkillCardProps {
   usesCowork: boolean;
   executionCount: number;
   needsSetup?: boolean;
+  group?: string | null;
+  tags?: string[];
 }
 
 export default function SkillCard({
@@ -22,6 +24,8 @@ export default function SkillCard({
   usesCowork,
   executionCount,
   needsSetup,
+  group,
+  tags = [],
 }: SkillCardProps) {
   return (
     <Link
@@ -37,9 +41,17 @@ export default function SkillCard({
           >
             {usesCowork ? <Bot size={16} /> : <Sparkles size={16} />}
           </span>
-          <h3 className="font-medium text-ink truncate group-hover:text-primary transition-colors">
-            {name}
-          </h3>
+          <div className="min-w-0">
+            <h3 className="font-medium text-ink truncate group-hover:text-primary transition-colors">
+              {name}
+            </h3>
+            {group && (
+              <span className="flex items-center gap-1 text-[11px] text-muted truncate">
+                <Folder size={10} />
+                {group}
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           {needsSetup && (
@@ -53,7 +65,7 @@ export default function SkillCard({
       <p className="mt-2.5 text-sm text-ink/60 line-clamp-2 min-h-[2.5rem]">
         {description || "Sem descrição ainda."}
       </p>
-      <div className="mt-3 flex items-center gap-2 text-xs text-muted">
+      <div className="mt-3 flex items-center gap-2 text-xs text-muted flex-wrap">
         {needsInput && (
           <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5" title="Precisa de input para rodar">
             <PenLine size={11} />
@@ -69,7 +81,12 @@ export default function SkillCard({
             Cowork
           </span>
         )}
-        <span className="ml-auto inline-flex items-center gap-1">
+        {tags.slice(0, 3).map((tag) => (
+          <span key={tag} className="inline-flex items-center rounded-full bg-primary-soft text-primary px-2 py-0.5">
+            {tag}
+          </span>
+        ))}
+        <span className="ml-auto inline-flex items-center gap-1 shrink-0">
           <History size={11} />
           {executionCount}
         </span>

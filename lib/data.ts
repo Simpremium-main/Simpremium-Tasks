@@ -75,6 +75,8 @@ function seedStore(): Store {
           "(exemplo) Achei essa skill da Claude — cola seus números de vendas e ela cospe um " +
           "PDF limpo em minutos. Mudou o jogo pras revisões semanais.",
         confirmedOnce: false,
+        group: "Relatórios",
+        tags: ["vendas", "pdf"],
         createdAt: now,
         updatedAt: now,
       },
@@ -125,6 +127,8 @@ export interface CreateSkillInput {
   usesCowork: boolean;
   inputSchema: InputField[];
   sourcePost: string | null;
+  group: string | null;
+  tags: string[];
 }
 
 export async function createSkill(input: CreateSkillInput): Promise<Skill> {
@@ -141,6 +145,8 @@ export async function createSkill(input: CreateSkillInput): Promise<Skill> {
     sourcePost: input.sourcePost,
     status: "draft",
     confirmedOnce: false,
+    group: input.group,
+    tags: input.tags,
     createdAt: now,
     updatedAt: now,
   };
@@ -157,6 +163,8 @@ export interface UpdateSkillInput {
   status?: Skill["status"];
   confirmedOnce?: boolean;
   inputSchema?: InputField[] | null;
+  group?: string | null;
+  tags?: string[];
 }
 
 export async function updateSkill(id: string, patch: UpdateSkillInput): Promise<Skill | null> {
@@ -204,6 +212,7 @@ export interface CreateExecutionInput {
   promptSnapshot: string;
   result: string | null;
   error: string | null;
+  ranBy: string | null;
 }
 
 export async function createExecution(input: CreateExecutionInput): Promise<Execution> {
@@ -217,6 +226,7 @@ export async function createExecution(input: CreateExecutionInput): Promise<Exec
     promptSnapshot: input.promptSnapshot,
     result: input.result,
     error: input.error,
+    ranBy: input.ranBy,
     startedAt: new Date(),
     finishedAt: new Date(),
   };
