@@ -1,10 +1,9 @@
 import { notFound } from "next/navigation";
-import { AlertTriangle, Bot, Calendar, FileText, History, Percent, Sparkles } from "lucide-react";
+import { AlertTriangle, Bot, FileText, Sparkles } from "lucide-react";
 import { getSkillWithExecutions } from "@/lib/data";
 import StatusBadge from "@/components/StatusBadge";
 import RunSkillPanel from "@/components/RunSkillPanel";
 import PageHeader from "@/components/PageHeader";
-import StatTile from "@/components/StatTile";
 import { isClaudeConfigured } from "@/lib/claude";
 
 export const dynamic = "force-dynamic";
@@ -17,11 +16,6 @@ export default async function SkillDetailPage({ params }: { params: { id: string
   const dispatchReady = skill.usesCowork
     ? Boolean(process.env.COWORK_DISPATCH_WEBHOOK_URL)
     : isClaudeConfigured();
-
-  const totalRuns = skill.executions.length;
-  const successCount = skill.executions.filter((e) => e.status === "success").length;
-  const successRate = totalRuns > 0 ? `${Math.round((successCount / totalRuns) * 100)}%` : "—";
-  const lastRun = skill.executions[0];
 
   const executions = skill.executions.map((e) => ({
     ...e,
@@ -48,26 +42,6 @@ export default async function SkillDetailPage({ params }: { params: { id: string
             )}
           </div>
           <p className="text-ink/70 whitespace-pre-wrap text-sm">{skill.description}</p>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <StatTile icon={<History size={16} />} label="Execuções" value={totalRuns} tone="primary" />
-          <StatTile
-            icon={<Percent size={16} />}
-            label="Taxa de sucesso"
-            value={successRate}
-            tone={successCount > 0 ? "emerald" : "slate"}
-          />
-          <StatTile
-            icon={<Calendar size={16} />}
-            label="Última execução"
-            value={lastRun ? new Date(lastRun.startedAt).toLocaleDateString("pt-BR") : "Nunca"}
-          />
-          <StatTile
-            icon={<Calendar size={16} />}
-            label="Criada em"
-            value={skill.createdAt.toLocaleDateString("pt-BR")}
-          />
         </div>
 
         {!dispatchReady && (

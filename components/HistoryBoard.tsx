@@ -1,25 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, History, Search, XCircle } from "lucide-react";
+import { Search } from "lucide-react";
 import ExecutionList, { type ExecutionItem } from "./ExecutionList";
-import StatTile from "./StatTile";
 
 type Filter = "all" | "success" | "error" | "needs_setup";
 
 export default function HistoryBoard({ executions }: { executions: ExecutionItem[] }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
-
-  const stats = useMemo(
-    () => ({
-      total: executions.length,
-      success: executions.filter((e) => e.status === "success").length,
-      error: executions.filter((e) => e.status === "error").length,
-      needsSetup: executions.filter((e) => e.status === "needs_setup").length,
-    }),
-    [executions]
-  );
 
   const filtered = useMemo(() => {
     let list = executions;
@@ -41,18 +30,6 @@ export default function HistoryBoard({ executions }: { executions: ExecutionItem
 
   return (
     <div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6 animate-stagger">
-        <StatTile icon={<History size={16} />} label="Total de execuções" value={stats.total} tone="primary" />
-        <StatTile icon={<CheckCircle2 size={16} />} label="Sucesso" value={stats.success} tone="emerald" />
-        <StatTile icon={<XCircle size={16} />} label="Erro" value={stats.error} tone={stats.error > 0 ? "amber" : "slate"} />
-        <StatTile
-          icon={<AlertTriangle size={16} />}
-          label="Precisam de setup"
-          value={stats.needsSetup}
-          tone={stats.needsSetup > 0 ? "amber" : "slate"}
-        />
-      </div>
-
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="relative flex-1 min-w-[200px]">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
