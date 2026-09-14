@@ -1,9 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, History, LayoutGrid, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import SkillCard from "./SkillCard";
-import StatTile from "./StatTile";
 
 export interface BoardSkill {
   id: string;
@@ -22,17 +21,6 @@ export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
 
-  const stats = useMemo(
-    () => ({
-      total: skills.length,
-      active: skills.filter((s) => s.status === "active").length,
-      draft: skills.filter((s) => s.status === "draft").length,
-      needsSetup: skills.filter((s) => s.needsSetup).length,
-      totalRuns: skills.reduce((sum, s) => sum + s.executionCount, 0),
-    }),
-    [skills]
-  );
-
   const filtered = useMemo(() => {
     let list = skills;
     if (filter === "active") list = list.filter((s) => s.status === "active");
@@ -50,18 +38,6 @@ export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
 
   return (
     <div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6 animate-stagger">
-        <StatTile icon={<LayoutGrid size={16} />} label="Total de skills" value={stats.total} tone="primary" />
-        <StatTile icon={<CheckCircle2 size={16} />} label="Ativas" value={stats.active} tone="emerald" />
-        <StatTile
-          icon={<AlertTriangle size={16} />}
-          label="Precisam de setup"
-          value={stats.needsSetup}
-          tone={stats.needsSetup > 0 ? "amber" : "slate"}
-        />
-        <StatTile icon={<History size={16} />} label="Execuções totais" value={stats.totalRuns} tone="slate" />
-      </div>
-
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="relative flex-1 min-w-[200px]">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
