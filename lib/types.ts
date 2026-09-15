@@ -9,7 +9,11 @@ export interface InputField {
   helpText?: string;
 }
 
-export interface SkillDraftProposal {
+/** The fields a person can actually edit for a skill, whether they're
+ *  reviewing a freshly-parsed draft (NewSkillForm) or editing one that
+ *  already exists (EditSkillForm) — both render components/SkillFieldsEditor
+ *  against this same shape. */
+export interface EditableSkillFields {
   name: string;
   description: string;
   promptTemplate: string;
@@ -18,6 +22,9 @@ export interface SkillDraftProposal {
   inputSchema: InputField[];
   group: string | null;
   tags: string[];
+}
+
+export interface SkillDraftProposal extends EditableSkillFields {
   needsReview: boolean; // true when produced by the heuristic fallback, not AI extraction
   reviewNote?: string;
 }

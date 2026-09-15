@@ -394,9 +394,14 @@ Users) to get in; see "Login — real Supabase Auth" above.
   optimization RCE, an internal `postcss` bundled by Next) are only fully resolved on Next 16,
   which has breaking changes (e.g. `params` becomes a `Promise` in route handlers). Worth a
   deliberate upgrade pass later — flagging rather than doing a rushed breaking migration now.
-- Skill editing (beyond the input-schema editor at creation time) is minimal — there's a `PATCH
-  /api/skills/[id]` endpoint but no dedicated edit screen yet. Deleting one is possible though
-  (`DeleteSkillButton` on the skill page, with a confirm step).
+- ~~Skill editing... no dedicated edit screen yet~~ — done: `/skills/[id]/edit`
+  (`components/EditSkillForm.tsx`) reuses the same field-by-field editor as the new-skill preview
+  (`components/SkillFieldsEditor.tsx`, extracted out of `NewSkillForm.tsx` so both share one
+  implementation instead of drifting apart) and saves via the existing `PATCH /api/skills/[id]`.
+  There's also a **Duplicar** button (`DuplicateSkillButton.tsx`) next to it on the skill page —
+  clones every editable field into a new draft named "X (cópia)", for starting a variant without
+  retyping everything. Editing/duplicating doesn't touch `status` (draft/active) — that's still
+  only set by the "first successful run" promotion, or `PATCH` directly if you need to force it.
 - Admins can create accounts (see "Roles and admin user management" above), but there's still no
   self-serve signup or invite-email flow — a new account's password is set by the admin at
   creation and has to be shared with the person out of band. Worth an invite-email flow if the

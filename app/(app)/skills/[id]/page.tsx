@@ -1,10 +1,12 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AlertTriangle, Bot, FileText, Folder, Sparkles, Tag } from "lucide-react";
+import { AlertTriangle, Bot, FileText, Folder, PenLine, Sparkles, Tag } from "lucide-react";
 import { getSkillWithExecutions } from "@/lib/data";
 import StatusBadge from "@/components/StatusBadge";
 import RunSkillPanel from "@/components/RunSkillPanel";
 import PageHeader from "@/components/PageHeader";
 import DeleteSkillButton from "@/components/DeleteSkillButton";
+import DuplicateSkillButton from "@/components/DuplicateSkillButton";
 import { isClaudeConfigured } from "@/lib/claude";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +34,27 @@ export default async function SkillDetailPage({ params }: { params: { id: string
         actions={
           <>
             <StatusBadge status={skill.status} />
+            <DuplicateSkillButton
+              skillFields={{
+                name: skill.name,
+                description: skill.description,
+                promptTemplate: skill.promptTemplate,
+                needsInput: skill.needsInput,
+                usesCowork: skill.usesCowork,
+                inputSchema: skill.inputSchema ?? [],
+                group: skill.group,
+                tags: skill.tags,
+              }}
+              sourcePost={skill.sourcePost}
+            />
+            <Link
+              href={`/skills/${skill.id}/edit`}
+              title="Editar skill"
+              className="inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-xs text-muted hover:border-primary/30 hover:text-primary hover:bg-primary-soft transition-colors"
+            >
+              <PenLine size={13} />
+              Editar
+            </Link>
             <DeleteSkillButton skillId={skill.id} skillName={skill.name} />
           </>
         }
