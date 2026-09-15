@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, Lock, LogIn, User, Zap } from "lucide-react";
+import { Loader2, Lock, LogIn, Mail, Zap } from "lucide-react";
 
 export default function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,7 +20,7 @@ export default function LoginForm() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, password }),
+        body: JSON.stringify({ email, password }),
       });
       if (!res.ok) {
         setError((await res.json()).error ?? "Não foi possível entrar.");
@@ -50,17 +50,18 @@ export default function LoginForm() {
           className="rounded-xl border border-line bg-white p-5 space-y-4 shadow-sm"
         >
           <div>
-            <label className="block text-sm font-medium text-ink mb-1" htmlFor="name">
-              Nome
+            <label className="block text-sm font-medium text-ink mb-1" htmlFor="email">
+              Email
             </label>
             <div className="relative">
-              <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+              <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
               <input
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 required
-                placeholder="Seu nome"
+                placeholder="voce@exemplo.com"
                 className="w-full rounded-md border border-line pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-shadow"
               />
             </div>
@@ -96,8 +97,8 @@ export default function LoginForm() {
           </button>
 
           <p className="text-center text-xs text-muted">
-            Login provisório — a senha ainda não é validada de verdade. Fica restrito de
-            verdade quando o Supabase Auth entrar.
+            Sua conta é criada no painel do Supabase (Authentication → Users) — fale com quem
+            administra o projeto se ainda não tiver uma.
           </p>
         </form>
       </div>

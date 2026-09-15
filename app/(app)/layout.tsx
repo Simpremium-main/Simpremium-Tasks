@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const skills = await listSkills();
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   const sidebarSkills = skills.map((s) => ({
     id: s.id,
     name: s.name,
@@ -18,7 +18,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar skills={sidebarSkills} userName={user?.name ?? null} />
+      <Sidebar skills={sidebarSkills} userName={user?.email ?? null} />
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-6xl mx-auto px-4 sm:px-8 pb-12">{children}</div>
       </main>

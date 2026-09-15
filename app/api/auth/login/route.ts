@@ -1,28 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SESSION_COOKIE, encodeSession } from "@/lib/auth";
+import { createClient } from "@/lib/supabase/server";
 
-/**
- * FAKE AUTH — see lib/auth.ts. Any non-empty name + any non-empty password
- * is accepted; the password is never checked against anything. This is a
- * deliberate placeholder so the login flow and "who ran this" attribution
- * work end-to-end before Supabase Auth is connected for real.
- */
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
-  const name = typeof body.name === "string" ? body.name.trim() : "";
+  const email = typeof body.email === "string" ? body.email.trim() : "";
   const password = typeof body.password === "string" ? body.password : "";
 
-  if (!name || !password) {
-    return NextResponse.json({ error: "Informe nome e senha." }, { status: 400 });
+  if (!email || !password) {
+    return NextResponse.json({ error: "Informe email e senha." }, { status: 400 });
   }
 
-  const res = NextResponse.json({ ok: true, name });
-  res.cookies.set(SESSION_COOKIE, encodeSession({ name }), {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 30,
-  });
-  return res;
+  const supabase = createClient();
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+
+  if (error) {
+    // AuthApiError means the request reached Supabase and it rejected the
+    // credentials — safe to show a generic message (never reveal whether
+    // the email exists). Any other error name means the request didn't
+    // really complete against Supabase (network/config problem) — worth
+    // surfacing distinctly instead of telling someone their password is
+    // wrong when the real issue is e.g. a bad SUPABASE_URL.
+    const isCredentialsError = error.name === "AuthApiError";
+    return NextResponse.json(
+      {
+        error: isCredentialsError
+          ? "Email ou senha incorretos."
+          : `Não foi possível falar com o Supabase (${error.name}: ${error.message}). Confira NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY.`,
+      },
+      { status: 401 }
+    );
+  }
+
+  return NextResponse.json({ ok: true });
 }

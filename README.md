@@ -94,26 +94,36 @@ record real results — no other code needs to change.
 Skills that don't depend on Cowork run directly through the Claude API when `ANTHROPIC_API_KEY`
 is set (`lib/claude.ts`); otherwise they're flagged `needs_setup` the same way.
 
-## Login — ⚠️ placeholder, not real security
+## Login — real Supabase Auth
 
-`middleware.ts` gates every page behind `/login`. As explicitly requested (a real login was
-wanted before Supabase Auth was wired up): **the password is never checked against anything —
-any name + any non-empty password gets in.** This is not access control; anyone with the URL can
-log in as anyone. It exists so the login screen, session cookie, and "who ran this" attribution
-in execution history all have real UI/flow to build against.
+`middleware.ts` gates every page behind `/login`, backed by real Supabase Auth (email +
+password) — not a placeholder anymore. Built with `@supabase/ssr` following Supabase's own
+Next.js App Router recipe:
 
-Supabase itself is now connected for *data* (skills/executions — see "Connecting Supabase"), but
-login is still this placeholder — Supabase Auth is a separate piece of work from the database.
-Everything is isolated in `lib/auth.ts` (`getCurrentUser`, session cookie helpers) and
-`app/api/auth/login/route.ts` (where the fake check lives, clearly commented). To make it real:
-swap that route's check for `supabase.auth.signInWithPassword()` (or similar), and
-`getCurrentUser()` for reading Supabase's session — every route/page/component that calls
-`getCurrentUser()` keeps working unchanged. Needs real user accounts created in Supabase
-(Authentication → Users in the dashboard) — not done yet, since inventing an account/password
-isn't something to do without being asked.
+- `lib/supabase/server.ts` — a Supabase client bound to the request's cookies (anon key), for
+  Server Components and Route Handlers. `lib/auth.ts`'s `getCurrentUser()` uses it and calls
+  `supabase.auth.getUser()` (re-validates the token against Supabase, rather than trusting
+  `getSession()`'s unverified local read — Supabase's own recommendation for anything
+  access-gating).
+- `middleware.ts` re-validates the session on every request and redirects to `/login` when
+  there isn't one, refreshing the session cookie along the way.
+- `app/api/auth/login/route.ts` calls `supabase.auth.signInWithPassword()`; logout calls
+  `supabase.auth.signOut()`. Login errors are split by cause: a real rejected-credentials
+  response from Supabase shows a generic "email ou senha incorretos" (never reveals whether the
+  email exists), while any other failure (network/misconfiguration) shows the actual error name
+  — worth knowing the difference if login ever fails after a deploy.
 
-The logged-in name is stamped on every execution (`ranBy`) and shown in both the skill page's
-and the global history's execution list and detail view.
+**Accounts are managed entirely in the Supabase dashboard** (Authentication → Users) — there's no
+self-serve signup screen in the app. Add whoever needs access there.
+
+The logged-in email is stamped on every execution (`ranBy`) and shown in both the skill page's
+and the global history's execution list, detail view, and the sidebar footer.
+
+**Same sandbox network limitation as the database:** this couldn't be exercised end-to-end in a
+browser here either (see "Connecting Supabase" above for what was verified instead — the same
+approach applies: the code compiles and type-checks, and a standalone script against the real
+project reproduced the identical sandbox-network-block signature for `signInWithPassword`, not a
+code or credentials problem). Test the actual login after deploying.
 
 ## Groups and tags
 
@@ -174,8 +184,8 @@ cp .env.example .env   # fill in the Supabase vars (required) + ANTHROPIC_API_KE
 npm run dev
 ```
 
-Every page is behind `/login` — enter any name and any password (see "Login — placeholder"
-above for why).
+Every page is behind `/login` — you need a real account (Supabase dashboard → Authentication →
+Users) to get in; see "Login — real Supabase Auth" above.
 
 ## Known follow-ups
 
@@ -185,9 +195,8 @@ above for why).
   deliberate upgrade pass later — flagging rather than doing a rushed breaking migration now.
 - Skill editing (beyond the input-schema editor at creation time) is minimal — there's a `PATCH
   /api/skills/[id]` endpoint but no dedicated edit screen yet.
-- **Real auth.** Login currently accepts any password (see "Login — placeholder" above) — the
-  Supabase project is connected now, just needs Auth wired up (real user accounts created in the
-  dashboard, then swap the check in `app/api/auth/login/route.ts`).
+- No self-serve signup — new accounts are added by hand in the Supabase dashboard. Fine for a
+  small internal team; worth a signup/invite screen if the group using this grows.
 - **Real file generation.** Downloads today export Claude's real text result as `.txt`/`.pdf`;
   no skill produces an actual binary file end-to-end yet (see "Execution details and downloads"
   above) — would need Claude's code-execution/files tooling or real Cowork artifacts.

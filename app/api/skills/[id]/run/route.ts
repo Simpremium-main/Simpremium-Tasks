@@ -15,7 +15,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       ? body.inputValues
       : {};
 
-  const user = getCurrentUser();
-  const execution = await runSkill(skill, inputValues, user?.name ?? null);
+  const user = await getCurrentUser();
+  const execution = await runSkill(skill, inputValues, user?.email ?? null);
   return NextResponse.json(execution, { status: 201 });
 }
