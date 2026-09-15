@@ -349,10 +349,12 @@ export default function NewSkillForm() {
               </p>
             </div>
             {saveError && (
-              <p className="flex items-start gap-2 text-sm text-red-600 mt-2">
-                <AlertTriangle size={14} className="shrink-0 mt-0.5" />
-                {saveError}
-              </p>
+              <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md p-3 mt-3">
+                <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+                <span>
+                  <strong className="font-semibold">Não salvou.</strong> {saveError}
+                </span>
+              </div>
             )}
           </div>
         </div>

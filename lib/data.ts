@@ -1,4 +1,4 @@
-import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
+import type { PostgrestError } from "@supabase/supabase-js";
 import { getSupabase } from "./supabaseClient";
 import type { Execution, ExecutionStatus, ExecutionSource, InputField, Skill } from "./types";
 
@@ -25,11 +25,6 @@ function describeError(
  * nothing else. See supabase/schema.sql for the table definitions these
  * functions read and write.
  */
-
-// Fixed on purpose (not a generated uuid) — this is the one demo skill the
-// app seeds itself, and a stable id means its URL never breaks across
-// reseeds. Must be a valid uuid since the `skills.id` column is typed uuid.
-const SEED_SKILL_ID = "00000000-0000-4000-8000-000000000001";
 
 function mapSkillRow(row: Record<string, unknown>): Skill {
   return {
@@ -66,80 +61,16 @@ function mapExecutionRow(row: Record<string, unknown>): Execution {
   };
 }
 
-async function ensureSeeded(supabase: SupabaseClient): Promise<void> {
-  const { count, error, status, statusText } = await supabase
-    .from("skills")
-    .select("*", { count: "exact", head: true });
-  if (error) throw describeError("ensureSeeded", error, status, statusText);
-  if ((count ?? 0) > 0) return;
-
-  const inputSchema: InputField[] = [
-    {
-      key: "periodo",
-      label: "Período do relatório",
-      type: "text",
-      required: true,
-      placeholder: "ex: Q3 2026, ou 1-14 de setembro",
-    },
-    {
-      key: "foco",
-      label: "Algo específico pra focar?",
-      type: "textarea",
-      required: false,
-      placeholder: "Opcional — uma região, uma linha de produto, uma métrica",
-    },
-  ];
-
-  // upsert + ignoreDuplicates rather than a plain insert: Next.js can render
-  // the layout and the page concurrently within one request, and both call
-  // listSkills() (and therefore this), so two calls can both see count === 0
-  // above and both try to create the seed skill at once. A plain insert
-  // would have the second one fail on the fixed id's primary key — this is
-  // exactly what happened in production. Upsert with ignoreDuplicates makes
-  // the race harmless: whichever call loses just no-ops instead of erroring.
-  const {
-    error: insertError,
-    status: insertStatus,
-    statusText: insertStatusText,
-  } = await supabase.from("skills").upsert(
-    {
-      id: SEED_SKILL_ID,
-      name: "Relatório Semanal de Vendas (PDF)",
-      description:
-        "Gera um PDF resumindo a performance de vendas no período informado — tirado do " +
-        "post do chefe no Instagram sobre uma skill de relatórios da Claude.",
-      status: "draft",
-      needs_input: true,
-      uses_cowork: false,
-      prompt_template:
-        "Gere um relatório de vendas em PDF para {{periodo}}. Inclua receita, produtos mais " +
-        "vendidos e a tendência comparada ao período anterior. {{foco}}",
-      input_schema: inputSchema,
-      source_post:
-        "(exemplo) Achei essa skill da Claude — cola seus números de vendas e ela cospe um " +
-        "PDF limpo em minutos. Mudou o jogo pras revisões semanais.",
-      confirmed_once: false,
-      group: "Relatórios",
-      tags: ["vendas", "pdf"],
-    },
-    { onConflict: "id", ignoreDuplicates: true }
-  );
-  if (insertError) throw describeError("ensureSeeded insert", insertError, insertStatus, insertStatusText);
-}
-
 // NOT wrapped in React's cache() on purpose: cache() only memoizes within a
 // single RSC render pass, but this function is also called directly from a
 // Route Handler (app/api/skills/route.ts) — and on a warm serverless
 // instance that memoized result can leak across separate requests, which is
 // what caused the dashboard to get stuck showing only the first-ever
-// listSkills() result (the seed skill) instead of real data. Keep this a
-// plain function; the upsert in ensureSeeded above is what actually
-// prevents the seeding race, not this cache.
+// listSkills() result instead of real data. Keep this a plain function.
 export async function listSkills(): Promise<
   (Skill & { _count: { executions: number } })[]
 > {
   const supabase = getSupabase();
-  await ensureSeeded(supabase);
 
   const {
     data: skillRows,

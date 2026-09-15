@@ -65,7 +65,14 @@ export default function DeleteSkillButton({ skillId, skillName }: { skillId: str
                 </p>
               </div>
             </div>
-            {error && <p className="text-sm text-red-600 mt-3">{error}</p>}
+            {error && (
+              <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md p-3 mt-3">
+                <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+                <span>
+                  <strong className="font-semibold">Não excluiu.</strong> {error}
+                </span>
+              </div>
+            )}
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"

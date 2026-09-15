@@ -46,34 +46,35 @@ app at your own:
 3. Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and
    `SUPABASE_SERVICE_ROLE_KEY` from Project Settings → API (see `.env.example`).
 
-`listSkills()` seeds one example skill the first time it runs against an empty `skills` table —
-its id is fixed (`SEED_SKILL_ID` in `lib/data.ts`) so that one link never breaks across restarts.
-Everything you create afterward is real, durable Postgres data. It's a normal skill like any
-other — not hardcoded or protected — so once you've got real skills in place, delete it from its
-page like you would any other.
+An earlier version had `listSkills()` auto-seed one example skill (fixed id) the first time it saw
+an empty `skills` table, meant to give a fresh install something to look at. That backfired once
+there was a real account using it: deleting that skill (which is a normal row, never
+hardcoded/protected) emptied the table back to zero, and the very next `listSkills()` call — on
+the page you land on right after deleting it — saw an empty table and silently recreated it,
+making the delete look like it hadn't done anything. Removed entirely: an empty `skills` table now
+just shows the dashboard's existing "Nenhuma skill ainda" empty state, and stays empty until you
+add something on purpose via "Nova skill". No migration needed for this — it was app logic, not
+schema.
 
-**The sidebar's list not updating after creating/deleting a skill** was a second, separate bug
-found after the `cache()` fix above turned out not to be enough: `DeleteSkillButton` and
-`NewSkillForm` used to do `router.push(url); router.refresh();` right after their request
-succeeded. The sidebar lives in the shared `app/(app)/layout.tsx`, and the App Router does **not**
-automatically re-fetch a layout when client-side navigation moves to a sibling page that shares
-it — and calling `refresh()` in the same tick right after `push()` can race Next's navigation
-scheduling and miss the very route it just pushed to, so the layout (and its sidebar) can be left
-showing stale data even though the page you land on is correct. Both components now do a full
-`window.location.href = ...` navigation instead — heavier than a client-side transition, but it
-guarantees everything (layout included) is freshly fetched, for an action (create/delete a skill)
-that's infrequent enough that the tradeoff is a non-issue. `RunSkillPanel`'s plain `router.refresh()`
-(no accompanying `push()`, same page) doesn't have this race and was left as-is.
+**The sidebar's list not updating after creating/deleting a skill** was a second, separate bug:
+`DeleteSkillButton` and `NewSkillForm` used to do `router.push(url); router.refresh();` right after
+their request succeeded. The sidebar lives in the shared `app/(app)/layout.tsx`, and the App Router
+does **not** automatically re-fetch a layout when client-side navigation moves to a sibling page
+that shares it — and calling `refresh()` in the same tick right after `push()` can race Next's
+navigation scheduling and miss the very route it just pushed to, so the layout (and its sidebar)
+can be left showing stale data even though the page you land on is correct. Both components now do
+a full `window.location.href = ...` navigation instead — heavier than a client-side transition,
+but it guarantees everything (layout included) is freshly fetched, for an action (create/delete a
+skill) that's infrequent enough that the tradeoff is a non-issue. `RunSkillPanel`'s plain
+`router.refresh()` (no accompanying `push()`, same page) doesn't have this race and was left as-is.
 
 `listSkills()` is intentionally a plain async function, not wrapped in React's `cache()`. An
 earlier version wrapped it to dedupe the layout + page both calling it in the same request, but
 `cache()`'s per-request reset only really applies to Server Component rendering — it doesn't
 reliably reset the same way when the same function is also called from a Route Handler
 (`app/api/skills/route.ts`), and on a warm serverless instance that stale memoized result can leak
-into unrelated later requests. That's what caused the dashboard to get stuck showing only the seed
-skill in production even though real skills existed in the DB. The `upsert`/`ignoreDuplicates` fix
-in `ensureSeeded` (below) is what actually prevents the seeding race — the `cache()` wrapper was
-never needed for correctness, just a minor round-trip saving that wasn't worth the risk.
+into unrelated later requests. That's what caused the dashboard to get stuck showing only the
+first-ever result in production even though real skills existed in the DB.
 
 **Known gap:** this codebase was built in a sandboxed environment whose network policy blocks
 the Supabase host, so the Supabase wiring was verified by unit-testing the client against the
