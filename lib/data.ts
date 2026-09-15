@@ -1,4 +1,3 @@
-import { cache } from "react";
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { getSupabase } from "./supabaseClient";
 import type { Execution, ExecutionStatus, ExecutionSource, InputField, Skill } from "./types";
@@ -128,14 +127,17 @@ async function ensureSeeded(supabase: SupabaseClient): Promise<void> {
   if (insertError) throw describeError("ensureSeeded insert", insertError, insertStatus, insertStatusText);
 }
 
-// Wrapped in React's cache() so that when the layout and the page both call
-// listSkills() during the same request (a normal thing for the App Router
-// to do concurrently), it only actually hits Supabase once — saves a round
-// trip, and incidentally shrinks how often the seeding race above can even
-// occur (still safe either way, thanks to the upsert above).
-export const listSkills = cache(async (): Promise<
+// NOT wrapped in React's cache() on purpose: cache() only memoizes within a
+// single RSC render pass, but this function is also called directly from a
+// Route Handler (app/api/skills/route.ts) — and on a warm serverless
+// instance that memoized result can leak across separate requests, which is
+// what caused the dashboard to get stuck showing only the first-ever
+// listSkills() result (the seed skill) instead of real data. Keep this a
+// plain function; the upsert in ensureSeeded above is what actually
+// prevents the seeding race, not this cache.
+export async function listSkills(): Promise<
   (Skill & { _count: { executions: number } })[]
-> => {
+> {
   const supabase = getSupabase();
   await ensureSeeded(supabase);
 
@@ -165,7 +167,7 @@ export const listSkills = cache(async (): Promise<
     ...mapSkillRow(row),
     _count: { executions: counts.get(row.id as string) ?? 0 },
   }));
-});
+}
 
 export async function getSkill(id: string): Promise<Skill | null> {
   const supabase = getSupabase();

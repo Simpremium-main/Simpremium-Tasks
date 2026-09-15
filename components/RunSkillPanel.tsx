@@ -135,7 +135,7 @@ function ConfirmRunModal({
   onConfirm: () => void;
 }) {
   return (
-    <div className="fixed inset-0 bg-ink/40 backdrop-blur-[2px] flex items-center justify-center p-4 z-20 animate-backdrop-in">
+    <div className="fixed inset-0 bg-ink/40 backdrop-blur-[2px] flex items-center justify-center p-4 z-50 animate-backdrop-in">
       <div className="bg-white rounded-xl border border-line max-w-lg w-full p-5 shadow-xl animate-scale-in">
         <div className="flex items-start gap-2.5">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary">

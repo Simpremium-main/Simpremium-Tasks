@@ -41,7 +41,7 @@ export default function DeleteSkillButton({ skillId, skillName }: { skillId: str
 
       {showConfirm && (
         <div
-          className="fixed inset-0 bg-ink/40 backdrop-blur-[2px] flex items-center justify-center p-4 z-20 animate-backdrop-in"
+          className="fixed inset-0 bg-ink/40 backdrop-blur-[2px] flex items-center justify-center p-4 z-50 animate-backdrop-in"
           onClick={() => !deleting && setShowConfirm(false)}
         >
           <div

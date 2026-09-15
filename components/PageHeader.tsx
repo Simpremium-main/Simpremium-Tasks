@@ -12,7 +12,7 @@ export default function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="sticky top-0 z-10 -mx-4 sm:-mx-8 mb-6 border-b border-line bg-canvas/90 backdrop-blur px-4 sm:px-8 pt-6 pb-4 animate-fade-in">
+    <div className="sticky top-0 z-10 -mx-4 sm:-mx-8 mb-6 border-b border-line bg-canvas/90 backdrop-blur pl-14 pr-4 sm:pr-8 lg:pl-8 pt-6 pb-4 animate-fade-in">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-2.5 min-w-0">
           <span className="text-primary shrink-0">{icon}</span>

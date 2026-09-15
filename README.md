@@ -48,7 +48,19 @@ app at your own:
 
 `listSkills()` seeds one example skill the first time it runs against an empty `skills` table —
 its id is fixed (`SEED_SKILL_ID` in `lib/data.ts`) so that one link never breaks across restarts.
-Everything you create afterward is real, durable Postgres data.
+Everything you create afterward is real, durable Postgres data. It's a normal skill like any
+other — not hardcoded or protected — so once you've got real skills in place, delete it from its
+page like you would any other.
+
+`listSkills()` is intentionally a plain async function, not wrapped in React's `cache()`. An
+earlier version wrapped it to dedupe the layout + page both calling it in the same request, but
+`cache()`'s per-request reset only really applies to Server Component rendering — it doesn't
+reliably reset the same way when the same function is also called from a Route Handler
+(`app/api/skills/route.ts`), and on a warm serverless instance that stale memoized result can leak
+into unrelated later requests. That's what caused the dashboard to get stuck showing only the seed
+skill in production even though real skills existed in the DB. The `upsert`/`ignoreDuplicates` fix
+in `ensureSeeded` (below) is what actually prevents the seeding race — the `cache()` wrapper was
+never needed for correctness, just a minor round-trip saving that wasn't worth the risk.
 
 **Known gap:** this codebase was built in a sandboxed environment whose network policy blocks
 the Supabase host, so the Supabase wiring was verified by unit-testing the client against the
@@ -169,6 +181,9 @@ above (still text, not a binary Claude generated), just makes what comes back ac
 
 Restyled to match a screenshot shared of `Pedido-Central-main`: a dark, collapsible sidebar
 (persistent nav + a live list of every skill, with a status dot and search once the list grows),
+which on narrow screens becomes an off-canvas drawer (hamburger button top-left, backdrop, closes
+on navigation) instead of squeezing the page content — the desktop collapse/expand toggle is
+separate from this and only shows at the `lg` breakpoint and up,
 a sticky page header per screen (icon, title, breadcrumb-style subtitle, actions), white
 bordered cards on a warm off-white canvas, and pill-shaped status badges (`lucide-react` icons
 throughout, small hover/transition/fade-in animations, a scale-in + backdrop-blur run

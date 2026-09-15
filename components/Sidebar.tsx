@@ -8,12 +8,14 @@ import {
   History,
   LayoutGrid,
   LogOut,
+  Menu,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
   Search,
   Sparkles,
   User,
+  X,
   Zap,
 } from "lucide-react";
 
@@ -42,6 +44,11 @@ export default function Sidebar({
   const [query, setQuery] = useState("");
   const [mounted, setMounted] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
 
   useEffect(() => {
     setMounted(true);
@@ -96,17 +103,41 @@ export default function Sidebar({
     });
   }, [filteredSkills]);
 
+  // On mobile the drawer always opens fully expanded, regardless of the
+  // desktop collapse toggle (which is hidden on mobile anyway) — otherwise
+  // a previously-collapsed desktop state would open an empty-looking drawer.
+  const effectiveCollapsed = collapsed && !mobileOpen;
+
   return (
-    <aside
-      className={`shrink-0 flex flex-col bg-sidebar border-r border-sidebar-border transition-[width] duration-300 ease-out ${
-        collapsed ? "w-[72px]" : "w-[264px]"
-      } ${mounted ? "" : "duration-0"}`}
-    >
+    <>
+      <button
+        type="button"
+        onClick={() => setMobileOpen(true)}
+        title="Abrir menu"
+        className="lg:hidden fixed top-3 left-3 z-30 flex h-9 w-9 items-center justify-center rounded-md bg-sidebar text-white shadow-md border border-sidebar-border"
+      >
+        <Menu size={18} />
+      </button>
+
+      {mobileOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black/40 z-30 animate-backdrop-in"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 w-[264px] flex flex-col bg-sidebar border-r border-sidebar-border transition-transform duration-300 ease-out ${
+          mobileOpen ? "translate-x-0" : "-translate-x-full"
+        } lg:static lg:translate-x-0 lg:transition-[width] lg:shrink-0 ${
+          collapsed ? "lg:w-[72px]" : "lg:w-[264px]"
+        } ${mounted ? "" : "duration-0"}`}
+      >
       <div className="flex items-center gap-2.5 px-4 h-16 shrink-0 border-b border-sidebar-border">
         <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-primary-hover text-white shrink-0">
           <Zap size={17} strokeWidth={2.25} />
         </div>
-        {!collapsed && (
+        {!effectiveCollapsed && (
           <div className="min-w-0 animate-fade-in">
             <div className="text-sm font-semibold text-white leading-tight truncate">Skills Hub</div>
           </div>
@@ -114,36 +145,44 @@ export default function Sidebar({
         <button
           type="button"
           onClick={toggleCollapsed}
-          className="ml-auto shrink-0 text-sidebar-muted hover:text-white hover:bg-sidebar-hover rounded-md p-1.5 transition-colors"
+          className="hidden lg:flex ml-auto shrink-0 text-sidebar-muted hover:text-white hover:bg-sidebar-hover rounded-md p-1.5 transition-colors"
           title={collapsed ? "Expandir" : "Recolher"}
         >
           {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
         </button>
+        <button
+          type="button"
+          onClick={() => setMobileOpen(false)}
+          className="lg:hidden ml-auto shrink-0 text-sidebar-muted hover:text-white hover:bg-sidebar-hover rounded-md p-1.5 transition-colors"
+          title="Fechar menu"
+        >
+          <X size={16} />
+        </button>
       </div>
 
       <nav className="flex-1 overflow-y-auto sidebar-scroll px-2.5 py-4">
-        <SectionLabel collapsed={collapsed}>Principal</SectionLabel>
+        <SectionLabel collapsed={effectiveCollapsed}>Principal</SectionLabel>
         <NavLink
           href="/"
           active={pathname === "/"}
           icon={<LayoutGrid size={16} />}
           label="Skills"
-          collapsed={collapsed}
+          collapsed={effectiveCollapsed}
         />
         <NavLink
           href="/history"
           active={pathname === "/history"}
           icon={<History size={16} />}
           label="Histórico"
-          collapsed={collapsed}
+          collapsed={effectiveCollapsed}
         />
 
         <div className="mt-6">
           <div className="flex items-center justify-between px-1">
-            <SectionLabel collapsed={collapsed}>
+            <SectionLabel collapsed={effectiveCollapsed}>
               Suas skills{skills.length > 0 ? ` (${skills.length})` : ""}
             </SectionLabel>
-            {!collapsed && (
+            {!effectiveCollapsed && (
               <Link
                 href="/skills/new"
                 title="Nova skill"
@@ -154,7 +193,7 @@ export default function Sidebar({
             )}
           </div>
 
-          {!collapsed && skills.length > 3 && (
+          {!effectiveCollapsed && skills.length > 3 && (
             <div className="relative mb-2 mt-1">
               <Search
                 size={13}
@@ -169,13 +208,13 @@ export default function Sidebar({
             </div>
           )}
 
-          {groups.length === 0 && !collapsed && (
+          {groups.length === 0 && !effectiveCollapsed && (
             <p className="px-3 py-2 text-xs text-sidebar-muted">Nenhuma skill ainda.</p>
           )}
 
           {groups.map(([groupName, groupSkills]) => (
             <div key={groupName} className="mb-3 last:mb-0">
-              {!collapsed && groups.length > 1 && (
+              {!effectiveCollapsed && groups.length > 1 && (
                 <div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-sidebar-muted/70">
                   {groupName}
                 </div>
@@ -186,7 +225,7 @@ export default function Sidebar({
                     key={skill.id}
                     skill={skill}
                     active={pathname === `/skills/${skill.id}`}
-                    collapsed={collapsed}
+                    collapsed={effectiveCollapsed}
                   />
                 ))}
               </div>
@@ -196,7 +235,7 @@ export default function Sidebar({
       </nav>
 
       <div className="border-t border-sidebar-border p-2.5 shrink-0 space-y-1">
-        {collapsed ? (
+        {effectiveCollapsed ? (
           <Link
             href="/skills/new"
             title="Nova skill"
@@ -218,16 +257,17 @@ export default function Sidebar({
           type="button"
           onClick={handleLogout}
           disabled={loggingOut}
-          title={collapsed ? "Sair da conta" : undefined}
+          title={effectiveCollapsed ? "Sair da conta" : undefined}
           className={`group flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors w-full disabled:opacity-50 ${
-            collapsed ? "justify-center" : ""
+            effectiveCollapsed ? "justify-center" : ""
           }`}
         >
           <LogOut size={15} />
-          {!collapsed && <span>Sair da conta</span>}
+          {!effectiveCollapsed && <span>Sair da conta</span>}
         </button>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }
 
