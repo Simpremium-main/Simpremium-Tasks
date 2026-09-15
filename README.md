@@ -76,6 +76,18 @@ reliably reset the same way when the same function is also called from a Route H
 into unrelated later requests. That's what caused the dashboard to get stuck showing only the
 first-ever result in production even though real skills existed in the DB.
 
+**PostgREST returning stale data.** After all of the above, the app was still showing exactly one
+already-deleted row instead of the real ones — confirmed, with a raw `fetch()` straight to
+`/rest/v1/skills` (bypassing `supabase-js` entirely) and Vercel's own function logs, that the
+deployed code, project URL, and service role key were all correct, and that a direct SQL query in
+Supabase's own SQL Editor showed the real rows while the REST API kept returning the old one. That
+combination only leaves the Supabase project's REST layer itself out of sync with its own
+database — nothing left to fix in this codebase. Resolved on the Supabase side (a schema reload
+via `NOTIFY pgrst, 'reload schema';` and/or a project pause+resume, in that project's dashboard —
+not something this app can trigger itself). If this ever recurs: rule out this app's code first
+(it's been through exactly this), then go straight to Supabase's project controls rather than
+re-debugging the client.
+
 **Known gap:** this codebase was built in a sandboxed environment whose network policy blocks
 the Supabase host, so the Supabase wiring was verified by unit-testing the client against the
 real project (confirmed the exact failure is the sandbox's own 403, not a code or schema issue)
