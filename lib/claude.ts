@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { uploadExecutionFile } from "./data";
-import type { DispatchResult, ExecutionFile } from "./types";
+import type { DispatchResult, DispatchStatus, ExecutionFile } from "./types";
 
 let client: Anthropic | null = null;
 
@@ -17,6 +17,13 @@ export function isClaudeConfigured(): boolean {
 
 const MODEL = "claude-sonnet-5";
 const CODE_EXECUTION_BETA = "code-execution-2025-08-25";
+
+// Vercel's own ceiling for a single function invocation is 300s (see
+// maxDuration on the run routes) — keep each individual Claude call safely
+// under that so a slow chunk fails cleanly (caught below, recorded as an
+// error) instead of the whole process getting hard-killed by the platform
+// with no chance for any of this file's error handling to run.
+const CHUNK_TIMEOUT_MS = 280_000;
 
 /**
  * Claude gets real tools here, the same way it does in the Claude.ai
@@ -85,31 +92,43 @@ async function collectGeneratedFiles(
   return files;
 }
 
+export interface ClaudeChunkResult {
+  /** false when the turn paused (Claude's own server-tool iteration cap, or
+   *  this chunk's own time budget) and needs another request to continue. */
+  done: boolean;
+  /** Full conversation so far, including this chunk's assistant turn — feed
+   *  this straight back in as `messages` for the next chunk. */
+  messages: Anthropic.Beta.BetaMessageParam[];
+  files: ExecutionFile[];
+  result?: string;
+  status?: DispatchStatus;
+  error?: string;
+}
+
 /**
- * Runs a skill's assembled prompt directly against the Claude API. Used for
- * skills that don't depend on Cowork. Never fabricates a result: if no API
- * key is configured, it reports "needs_setup" instead.
+ * Runs exactly one HTTP call to Claude — the core primitive both the
+ * single-shot and chunked (multi-request) dispatch paths below build on.
+ * Bounded to CHUNK_TIMEOUT_MS so a slow chunk fails as a clean, recorded
+ * error rather than the whole process getting hard-killed by the platform.
  */
-export async function dispatchToClaude(prompt: string): Promise<DispatchResult> {
+export async function dispatchClaudeChunk(
+  messages: Anthropic.Beta.BetaMessageParam[],
+  onDelta: (chunk: string) => void
+): Promise<ClaudeChunkResult> {
   const anthropic = getClient();
   if (!anthropic) {
     return {
+      done: true,
+      messages,
+      files: [],
       status: "needs_setup",
       error: "ANTHROPIC_API_KEY isn't set, so this skill can't be run yet. Add it to your environment to enable it.",
     };
   }
 
   try {
-    let messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: prompt }];
-    let message: Anthropic.Beta.BetaMessage;
-
-    // Server-side tools (code execution, web search) run entirely on
-    // Anthropic's infrastructure within one call — no client-side tool loop
-    // needed. The one exception is a long-running server-tool turn hitting
-    // an internal iteration cap ("pause_turn"): resume it by re-sending the
-    // paused assistant turn, per Anthropic's own documented pattern.
-    for (let i = 0; i < 5; i++) {
-      message = await anthropic.beta.messages.create({
+    const stream = anthropic.beta.messages.stream(
+      {
         model: MODEL,
         max_tokens: 16000,
         system: SKILL_EXECUTION_SYSTEM_PROMPT,
@@ -117,64 +136,69 @@ export async function dispatchToClaude(prompt: string): Promise<DispatchResult> 
         tools: TOOLS,
         betas: [CODE_EXECUTION_BETA],
         messages,
-      });
-      if (message.stop_reason !== "pause_turn") break;
-      messages = [...messages, { role: "assistant", content: message.content }];
+      },
+      { timeout: CHUNK_TIMEOUT_MS }
+    );
+    stream.on("text", (delta) => onDelta(delta));
+    const message = await stream.finalMessage();
+
+    const newMessages: Anthropic.Beta.BetaMessageParam[] = [
+      ...messages,
+      { role: "assistant", content: message.content },
+    ];
+    const files = await collectGeneratedFiles(anthropic, message.content);
+
+    if (message.stop_reason === "pause_turn") {
+      return { done: false, messages: newMessages, files };
+    }
+    if (message.stop_reason === "refusal") {
+      return { done: true, messages: newMessages, files, status: "error", error: "Claude refused to run this prompt." };
     }
 
-    const files = await collectGeneratedFiles(anthropic, message!.content);
-    return { status: "success", result: extractText(message!.content), files };
+    return { done: true, messages: newMessages, files, result: extractText(message.content), status: "success" };
   } catch (err) {
     return {
+      done: true,
+      messages,
+      files: [],
       status: "error",
       error: err instanceof Error ? err.message : "Unknown error calling Claude",
     };
   }
 }
 
+// Best-effort cap for the non-streaming, single-request path below, which
+// (unlike lib/runSkill.ts's chunked flow) can't hand a "still running,
+// continue" state back across separate HTTP requests — it has to finish or
+// give up within this one call.
+const SINGLE_CALL_MAX_CHUNKS = 3;
+
 /**
- * Same as dispatchToClaude, but streams text as it arrives (calling onDelta
- * for each chunk) so the run panel can show the response building up live
- * instead of a blank "Rodando..." spinner until the whole thing lands.
+ * Runs a skill's assembled prompt directly against the Claude API in one
+ * blocking call. Used by the plain JSON run route for callers that don't
+ * want to deal with SSE/continuation — bounded to a few chunks internally,
+ * so a task heavy enough to need real multi-request continuation should go
+ * through the streaming run panel instead (lib/runSkill.ts's chunked flow),
+ * not this endpoint.
  */
-export async function streamDispatchToClaude(
-  prompt: string,
-  onDelta: (chunk: string) => void
-): Promise<DispatchResult> {
-  const anthropic = getClient();
-  if (!anthropic) {
-    return {
-      status: "needs_setup",
-      error: "ANTHROPIC_API_KEY isn't set, so this skill can't be run yet. Add it to your environment to enable it.",
-    };
-  }
+export async function dispatchToClaude(prompt: string): Promise<DispatchResult> {
+  let messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: prompt }];
+  let files: ExecutionFile[] = [];
 
-  try {
-    let messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: prompt }];
-    let message: Anthropic.Beta.BetaMessage;
-
-    for (let i = 0; i < 5; i++) {
-      const stream = anthropic.beta.messages.stream({
-        model: MODEL,
-        max_tokens: 16000,
-        system: SKILL_EXECUTION_SYSTEM_PROMPT,
-        thinking: { type: "adaptive" },
-        tools: TOOLS,
-        betas: [CODE_EXECUTION_BETA],
-        messages,
-      });
-      stream.on("text", (delta) => onDelta(delta));
-      message = await stream.finalMessage();
-      if (message.stop_reason !== "pause_turn") break;
-      messages = [...messages, { role: "assistant", content: message.content }];
+  for (let i = 0; i < SINGLE_CALL_MAX_CHUNKS; i++) {
+    const chunk = await dispatchClaudeChunk(messages, () => {});
+    messages = chunk.messages;
+    files = [...files, ...chunk.files];
+    if (chunk.done) {
+      return { status: chunk.status!, result: chunk.result, error: chunk.error, files };
     }
-
-    const files = await collectGeneratedFiles(anthropic, message!.content);
-    return { status: "success", result: extractText(message!.content), files };
-  } catch (err) {
-    return {
-      status: "error",
-      error: err instanceof Error ? err.message : "Unknown error calling Claude",
-    };
   }
+
+  return {
+    status: "error",
+    error:
+      "This task needed more steps than a single request allows here — run it from the skill's " +
+      "page instead, which can continue automatically across multiple requests.",
+    files,
+  };
 }

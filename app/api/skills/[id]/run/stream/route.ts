@@ -12,9 +12,13 @@ export const maxDuration = 300;
  * response, so the run panel can show Claude's answer building up live
  * ("Pensando...") instead of a spinner with nothing to look at until the
  * whole thing lands. Events:
- *   - "delta" { text }         a chunk of the response as it streams in
- *   - "done"  Execution        the finished, saved execution row
- *   - "error" { message }      something went wrong before an execution
+ *   - "delta"    { text }      a chunk of the response as it streams in
+ *   - "done"     Execution     the finished, saved execution row
+ *   - "continue" Execution     still running — a heavy skill hit this chunk's
+ *                              time budget before finishing; the run panel
+ *                              calls POST /api/executions/[id]/continue with
+ *                              this execution's id to keep it going
+ *   - "error"    { message }   something went wrong before an execution
  *                              could even be recorded (e.g. skill not found)
  */
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
@@ -43,10 +47,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        const execution = await runSkillStreaming(skill, inputValues, user?.email ?? null, (chunk) => {
-          controller.enqueue(sseFormat("delta", { text: chunk }));
-        });
-        controller.enqueue(sseFormat("done", execution));
+        const { execution, done } = await runSkillStreaming(
+          skill,
+          inputValues,
+          user?.email ?? null,
+          (chunk) => {
+            controller.enqueue(sseFormat("delta", { text: chunk }));
+          }
+        );
+        controller.enqueue(sseFormat(done ? "done" : "continue", execution));
       } catch (err) {
         console.error(`POST /api/skills/${params.id}/run/stream failed:`, err);
         controller.enqueue(

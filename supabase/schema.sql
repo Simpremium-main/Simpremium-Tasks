@@ -40,6 +40,7 @@ create table if not exists executions (
   result          text,
   error           text,
   files           jsonb, -- ExecutionFile[] | null, see lib/types.ts — real generated files in Supabase Storage
+  conversation_state jsonb, -- ConversationState | null — saved mid-flight state for a run split across multiple requests
   ran_by          text, -- display name of the logged-in user who triggered this run
   started_at      timestamptz not null default now(),
   finished_at     timestamptz

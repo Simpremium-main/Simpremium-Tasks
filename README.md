@@ -140,20 +140,46 @@ until the one final result comes back. The older `POST /api/skills/[id]/run` (pl
 streaming) is still there too, for any script that'd rather not parse SSE.
 
 **A run's execution row is written *before* dispatch, not after** — `runSkill`/`runSkillStreaming`
-(`lib/runSkill.ts`) insert it as `status: "running"` first, then update it to its final state once
-Claude/Cowork responds. A heavy skill (fetch a whole page, then generate a file via code
-execution) can genuinely take a few minutes, long enough to hit a serverless platform timeout that
-kills the process outright — no JS code runs after that, so nothing in this app could catch it and
-write a row after the fact. Writing "running" up front means a trace of the attempt still exists
-even then, instead of the run vanishing with nothing in history. Both run routes set
-`export const maxDuration = 300` (Vercel's ceiling without a higher-tier plan) so a run gets the
-most time this platform allows without extra configuration — bump it in both
-`app/api/skills/[id]/run/route.ts` and `.../run/stream/route.ts` if the account's plan supports
-more. If a skill's task is inherently heavier than any single HTTP request can finish in (a
-multi-category site scrape, say), the two real fixes are scoping the skill smaller (e.g. one skill
-per category instead of one skill for everything) or moving to a background-job architecture
-(queue + polling) — a bigger change than this app currently has, flagged here rather than
-half-built.
+(`lib/runSkill.ts`) insert it as `status: "running"` first, then update it as the run progresses.
+Writing "running" up front means a trace of the attempt exists even if the process gets killed
+outright by the platform mid-run, instead of the run vanishing with nothing in history.
+
+### Long-running skills (multi-request continuation)
+
+A skill that fetches a whole page and then generates a file via code execution can genuinely take
+several minutes — long enough to hit `FUNCTION_INVOCATION_TIMEOUT` (Vercel's serverless ceiling,
+300s without a higher-tier plan; both run routes set `export const maxDuration = 300` explicitly
+so a run gets the most this platform allows without extra config — bump it in
+`app/api/skills/[id]/run/route.ts`, `.../run/stream/route.ts`, and
+`app/api/executions/[id]/continue/route.ts` if the account's plan supports more). No `maxDuration`
+setting raises that ceiling arbitrarily high, though, so a Claude-direct run is split into chunks
+instead of one long blocking call:
+
+- `lib/claude.ts`'s `dispatchClaudeChunk` makes one Claude API call, bounded to 280s
+  (`CHUNK_TIMEOUT_MS`, safely under the platform's 300s) via the SDK's own per-request timeout —
+  so a slow chunk fails as a clean, recorded error rather than the whole process getting hard-
+  killed with no trace. When Claude's own server-tool loop hits an internal iteration cap
+  (`stop_reason: "pause_turn"`), that's treated as "not done yet" rather than a failure.
+- `lib/runSkill.ts`'s `advance()` saves the conversation-so-far (`ConversationState`: messages,
+  chunk count, files collected so far) on the execution row and returns `done: false` instead of
+  finishing. The run/stream route sends a `"continue"` SSE event (instead of `"done"`) carrying
+  that execution's id.
+- The run panel (`components/RunSkillPanel.tsx`) sees `"continue"` and automatically calls
+  `POST /api/executions/[id]/continue` (`continueSkillRun`, same SSE contract) to resume — as many
+  times as it takes, appending to the same live "Pensando…" text and showing "Continuando (etapa
+  N)…" once past the first chunk — up to `MAX_CHUNKS` (8) before giving up with a clear error
+  ("took more than 8 steps") rather than continuing forever.
+
+This stays entirely inside the current stack (Vercel + Supabase, no queue/worker service) and
+handles the common case well — most agentic tasks (research, multi-step scraping, file generation)
+naturally involve multiple tool round-trips, each of which is a legitimate `pause_turn` boundary
+to checkpoint at. **What it doesn't solve:** a single tool call that's *itself* slower than one
+chunk's budget (e.g. one very slow page fetch) — `pause_turn` only fires between tool calls, not
+mid-call, so there's no checkpoint to save until that one call returns. For that rarer case, the
+real fixes are scoping the skill smaller (split a multi-section scrape into one skill per section)
+or a background-worker architecture outside Vercel's request/response model entirely — a bigger
+piece of infrastructure that wasn't built here since the chunked approach covers the skills this
+project actually needs today.
 
 ## Claude Cowork integration
 

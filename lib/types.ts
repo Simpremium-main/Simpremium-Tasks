@@ -44,6 +44,22 @@ export type SkillStatus = "draft" | "active";
 export type ExecutionStatus = "pending" | "running" | "success" | "error" | "needs_setup";
 export type ExecutionSource = "cowork" | "claude" | "manual";
 
+/**
+ * Saved mid-flight state for a Claude-direct run that didn't finish in one
+ * HTTP request. `messages` is the raw Anthropic conversation history
+ * (assistant turns included) so the next chunk can resume exactly where
+ * Claude paused — typed loosely here since this file doesn't depend on the
+ * Anthropic SDK; lib/claude.ts casts it to the real message-param type.
+ */
+export interface ConversationState {
+  messages: unknown[];
+  chunkCount: number;
+  /** Files collected from earlier chunks — a chunk that pauses mid-run may
+   *  have already generated a real file even though the run isn't done yet,
+   *  so this carries them forward rather than only keeping the last chunk's. */
+  files: ExecutionFile[];
+}
+
 export interface Skill {
   id: string;
   name: string;
@@ -71,6 +87,7 @@ export interface Execution {
   result: string | null;
   error: string | null;
   files: ExecutionFile[] | null;
+  conversationState: ConversationState | null;
   ranBy: string | null;
   startedAt: Date;
   finishedAt: Date | null;

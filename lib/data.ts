@@ -1,6 +1,7 @@
 import type { PostgrestError } from "@supabase/supabase-js";
 import { getSupabase } from "./supabaseClient";
 import type {
+  ConversationState,
   Execution,
   ExecutionFile,
   ExecutionStatus,
@@ -63,6 +64,7 @@ function mapExecutionRow(row: Record<string, unknown>): Execution {
     result: (row.result as string | null) ?? null,
     error: (row.error as string | null) ?? null,
     files: (row.files as ExecutionFile[] | null) ?? null,
+    conversationState: (row.conversation_state as ConversationState | null) ?? null,
     ranBy: (row.ran_by as string | null) ?? null,
     startedAt: new Date(row.started_at as string),
     finishedAt: row.finished_at ? new Date(row.finished_at as string) : null,
@@ -300,26 +302,37 @@ export interface UpdateExecutionInput {
   result?: string | null;
   error?: string | null;
   files?: ExecutionFile[] | null;
+  conversationState?: ConversationState | null;
 }
 
 /**
- * Updates an in-flight execution row to its final state. Executions are
+ * Updates an in-flight execution row — either to its final state, or (for a
+ * Claude-direct run split across multiple requests, see lib/runSkill.ts's
+ * runSkillChunk) to a mid-flight checkpoint that stays "running" with a
+ * saved conversationState for the next chunk to resume from. Executions are
  * written as "running" the moment a run starts (createExecution above) and
- * finished here once dispatch completes — two steps, not one, so a run row
- * already exists even if the process gets killed mid-dispatch (e.g. a
- * platform timeout on a slow skill) instead of leaving no trace at all,
+ * updated here as it progresses — never a single insert-at-the-end — so a
+ * row already exists even if the process gets killed outright (e.g. a
+ * platform timeout mid-chunk on a slow skill) instead of leaving no trace,
  * matching the security baseline that every attempt gets recorded.
+ * `finished_at` is only stamped when the patch's status is a terminal one.
  */
 export async function updateExecution(
   id: string,
   patch: UpdateExecutionInput
 ): Promise<Execution | null> {
   const supabase = getSupabase();
-  const row: Record<string, unknown> = { finished_at: new Date().toISOString() };
-  if (patch.status !== undefined) row.status = patch.status;
+  const row: Record<string, unknown> = {};
+  if (patch.status !== undefined) {
+    row.status = patch.status;
+    if (patch.status !== "pending" && patch.status !== "running") {
+      row.finished_at = new Date().toISOString();
+    }
+  }
   if (patch.result !== undefined) row.result = patch.result;
   if (patch.error !== undefined) row.error = patch.error;
   if (patch.files !== undefined) row.files = patch.files;
+  if (patch.conversationState !== undefined) row.conversation_state = patch.conversationState;
 
   const { data, error, status, statusText } = await supabase
     .from("executions")

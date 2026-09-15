@@ -37,6 +37,7 @@ export default function RunSkillPanel({
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [thinkingText, setThinkingText] = useState("");
   const [showThinking, setShowThinking] = useState(false);
+  const [chunkNumber, setChunkNumber] = useState(1);
 
   const missingRequired = schema.filter((f) => f.required && !values[f.key]?.trim());
 
@@ -49,56 +50,77 @@ export default function RunSkillPanel({
     setShowConfirm(true);
   }
 
+  // Runs one leg of an SSE stream (either the initial run, or a continue
+  // call for a heavy skill that didn't finish in one chunk) and reports
+  // back whether it's actually done or needs another leg.
+  async function streamLeg(url: string): Promise<{ execution: ExecutionItem; done: boolean }> {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: url.includes("/continue") ? undefined : JSON.stringify({ inputValues: values }),
+    });
+
+    if (!res.body) {
+      throw new Error(`Falha ao rodar (HTTP ${res.status})`);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let execution: ExecutionItem | null = null;
+    let legDone = true;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let boundary: number;
+      while ((boundary = buffer.indexOf("\n\n")) !== -1) {
+        const rawEvent = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+
+        const eventMatch = rawEvent.match(/^event: (.+)$/m);
+        const dataMatch = rawEvent.match(/^data: (.+)$/m);
+        if (!eventMatch || !dataMatch) continue;
+
+        const data = JSON.parse(dataMatch[1]);
+        if (eventMatch[1] === "delta") {
+          setThinkingText((prev) => prev + data.text);
+        } else if (eventMatch[1] === "done") {
+          execution = data as ExecutionItem;
+          legDone = true;
+        } else if (eventMatch[1] === "continue") {
+          execution = data as ExecutionItem;
+          legDone = false;
+        } else if (eventMatch[1] === "error") {
+          throw new Error(data.message ?? "Falha ao rodar a skill");
+        }
+      }
+    }
+
+    if (!execution) {
+      throw new Error(`Falha ao rodar (HTTP ${res.status})`);
+    }
+    return { execution, done: legDone };
+  }
+
   async function confirmAndRun() {
     setRunning(true);
     setRunError(null);
     setThinkingText("");
+    setChunkNumber(1);
     try {
-      const res = await fetch(`/api/skills/${skill.id}/run/stream`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ inputValues: values }),
-      });
-
-      if (!res.body) {
-        throw new Error(`Falha ao rodar (HTTP ${res.status})`);
+      let { execution, done } = await streamLeg(`/api/skills/${skill.id}/run/stream`);
+      // A heavy skill that hits its per-chunk time budget comes back
+      // "running" with more work queued up — keep calling continue until
+      // it actually finishes, appending to the same live "Pensando..." text.
+      while (!done) {
+        setChunkNumber((n) => n + 1);
+        ({ execution, done } = await streamLeg(`/api/executions/${execution.id}/continue`));
       }
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let execution: ExecutionItem | null = null;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        let boundary: number;
-        while ((boundary = buffer.indexOf("\n\n")) !== -1) {
-          const rawEvent = buffer.slice(0, boundary);
-          buffer = buffer.slice(boundary + 2);
-
-          const eventMatch = rawEvent.match(/^event: (.+)$/m);
-          const dataMatch = rawEvent.match(/^data: (.+)$/m);
-          if (!eventMatch || !dataMatch) continue;
-
-          const data = JSON.parse(dataMatch[1]);
-          if (eventMatch[1] === "delta") {
-            setThinkingText((prev) => prev + data.text);
-          } else if (eventMatch[1] === "done") {
-            execution = data as ExecutionItem;
-          } else if (eventMatch[1] === "error") {
-            throw new Error(data.message ?? "Falha ao rodar a skill");
-          }
-        }
-      }
-
-      if (!execution) {
-        throw new Error(`Falha ao rodar (HTTP ${res.status})`);
-      }
-
-      setExecutions((prev) => [execution!, ...prev]);
+      setExecutions((prev) => [execution, ...prev]);
       setShowConfirm(false);
       setHighlightId(execution.id);
       setTimeout(() => setHighlightId(null), 1800);
@@ -141,6 +163,7 @@ export default function RunSkillPanel({
           error={runError}
           thinking={thinkingText}
           showThinking={showThinking}
+          chunkNumber={chunkNumber}
           onToggleThinking={() => setShowThinking((prev) => !prev)}
           onCancel={() => setShowConfirm(false)}
           onConfirm={confirmAndRun}
@@ -167,6 +190,7 @@ function ConfirmRunModal({
   error,
   thinking,
   showThinking,
+  chunkNumber,
   onToggleThinking,
   onCancel,
   onConfirm,
@@ -179,6 +203,7 @@ function ConfirmRunModal({
   error: string | null;
   thinking: string;
   showThinking: boolean;
+  chunkNumber: number;
   onToggleThinking: () => void;
   onCancel: () => void;
   onConfirm: () => void;
@@ -210,7 +235,13 @@ function ConfirmRunModal({
             >
               <span className="flex items-center gap-1.5">
                 <Sparkles size={12} className="text-primary animate-pulse" />
-                {usesCowork ? "Despachando pro Cowork…" : thinking ? "Pensando…" : "Aguardando resposta…"}
+                {usesCowork
+                  ? "Despachando pro Cowork…"
+                  : chunkNumber > 1
+                    ? `Continuando (etapa ${chunkNumber})…`
+                    : thinking
+                      ? "Pensando…"
+                      : "Aguardando resposta…"}
               </span>
               <ChevronDown
                 size={13}
@@ -226,6 +257,12 @@ function ConfirmRunModal({
               </pre>
             )}
           </div>
+        )}
+        {running && chunkNumber > 1 && (
+          <p className="mt-2 text-xs text-muted">
+            Essa tarefa tá demorando mais que o normal — o painel continua automaticamente até
+            terminar. Pode levar alguns minutos, não precisa fechar essa janela.
+          </p>
         )}
         {error && (
           <p className="flex items-start gap-2 text-sm text-red-600 mt-3">
