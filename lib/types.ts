@@ -24,10 +24,20 @@ export interface SkillDraftProposal {
 
 export type DispatchStatus = "success" | "error" | "needs_setup";
 
+/** A real generated file (PDF, CSV, XLSX, ...) produced by a skill run, stored in
+ *  Supabase Storage — not a text result exported client-side into a document shell. */
+export interface ExecutionFile {
+  name: string;
+  storagePath: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
 export interface DispatchResult {
   status: DispatchStatus;
   result?: string;
   error?: string;
+  files?: ExecutionFile[];
 }
 
 export type SkillStatus = "draft" | "active";
@@ -60,6 +70,7 @@ export interface Execution {
   promptSnapshot: string;
   result: string | null;
   error: string | null;
+  files: ExecutionFile[] | null;
   ranBy: string | null;
   startedAt: Date;
   finishedAt: Date | null;

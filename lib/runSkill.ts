@@ -73,6 +73,7 @@ async function recordDispatch(
     promptSnapshot,
     result: dispatch.result ?? null,
     error: dispatch.error ?? null,
+    files: dispatch.files && dispatch.files.length ? dispatch.files : null,
     ranBy,
   });
 

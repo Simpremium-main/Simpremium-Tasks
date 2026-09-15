@@ -1,6 +1,13 @@
 import type { PostgrestError } from "@supabase/supabase-js";
 import { getSupabase } from "./supabaseClient";
-import type { Execution, ExecutionStatus, ExecutionSource, InputField, Skill } from "./types";
+import type {
+  Execution,
+  ExecutionFile,
+  ExecutionStatus,
+  ExecutionSource,
+  InputField,
+  Skill,
+} from "./types";
 
 // Supabase's client can return an error with an empty `.message` when the
 // request never reached Supabase at all (e.g. blocked by a network policy
@@ -55,6 +62,7 @@ function mapExecutionRow(row: Record<string, unknown>): Execution {
     promptSnapshot: row.prompt_snapshot as string,
     result: (row.result as string | null) ?? null,
     error: (row.error as string | null) ?? null,
+    files: (row.files as ExecutionFile[] | null) ?? null,
     ranBy: (row.ran_by as string | null) ?? null,
     startedAt: new Date(row.started_at as string),
     finishedAt: row.finished_at ? new Date(row.finished_at as string) : null,
@@ -239,6 +247,17 @@ export async function listExecutions(
   });
 }
 
+export async function getExecution(id: string): Promise<Execution | null> {
+  const supabase = getSupabase();
+  const { data, error, status, statusText } = await supabase
+    .from("executions")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw describeError("getExecution", error, status, statusText);
+  return data ? mapExecutionRow(data) : null;
+}
+
 export interface CreateExecutionInput {
   skillId: string;
   status: ExecutionStatus;
@@ -247,6 +266,7 @@ export interface CreateExecutionInput {
   promptSnapshot: string;
   result: string | null;
   error: string | null;
+  files: ExecutionFile[] | null;
   ranBy: string | null;
 }
 
@@ -263,6 +283,7 @@ export async function createExecution(input: CreateExecutionInput): Promise<Exec
       prompt_snapshot: input.promptSnapshot,
       result: input.result,
       error: input.error,
+      files: input.files,
       ran_by: input.ranBy,
       started_at: now,
       finished_at: now,
@@ -271,4 +292,34 @@ export async function createExecution(input: CreateExecutionInput): Promise<Exec
     .single();
   if (error) throw describeError("createExecution", error, status, statusText);
   return mapExecutionRow(data);
+}
+
+/**
+ * Uploads a real generated file's bytes (from Claude's code execution tool)
+ * to Supabase Storage's `execution-files` bucket, so this app owns its own
+ * copy of the execution's output independent of Anthropic's file retention.
+ */
+export async function uploadExecutionFile(
+  storagePath: string,
+  bytes: Buffer,
+  mimeType: string
+): Promise<void> {
+  const supabase = getSupabase();
+  const { error } = await supabase.storage
+    .from("execution-files")
+    .upload(storagePath, bytes, { contentType: mimeType, upsert: false });
+  if (error) throw new Error(`uploadExecutionFile: ${error.message}`);
+}
+
+/**
+ * Downloads a real generated file's bytes from Supabase Storage
+ * (`execution-files` bucket) for the download route to stream back —
+ * server-side only, using the service role key like every other table/
+ * storage access in this file.
+ */
+export async function downloadExecutionFile(storagePath: string): Promise<Blob> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase.storage.from("execution-files").download(storagePath);
+  if (error) throw new Error(`downloadExecutionFile: ${error.message}`);
+  return data;
 }

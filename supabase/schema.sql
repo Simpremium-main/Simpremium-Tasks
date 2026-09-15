@@ -39,6 +39,7 @@ create table if not exists executions (
   prompt_snapshot text not null, -- secret values already masked before insert
   result          text,
   error           text,
+  files           jsonb, -- ExecutionFile[] | null, see lib/types.ts — real generated files in Supabase Storage
   ran_by          text, -- display name of the logged-in user who triggered this run
   started_at      timestamptz not null default now(),
   finished_at     timestamptz
@@ -54,3 +55,14 @@ alter table executions enable row level security;
 -- Secrets are masked in lib/mask.ts before a row is ever written here — this
 -- schema never stores an unmasked credential/token, matching the security
 -- baseline in CLAUDE.md.
+
+-- Storage bucket for real generated files (PDF, CSV, XLSX, ...) that a skill
+-- run produces via Claude's code execution tool — downloaded from Anthropic's
+-- Files API once, then kept here so this app owns its own execution history
+-- independent of Anthropic's file retention. Private: the app only ever reads
+-- it server-side with the service role key (same bypass-RLS pattern as the
+-- tables above), and serves downloads through its own authenticated route
+-- rather than a public bucket URL.
+insert into storage.buckets (id, name, public)
+values ('execution-files', 'execution-files', false)
+on conflict (id) do nothing;

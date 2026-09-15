@@ -10,12 +10,19 @@ import {
   Eye,
   FileText,
   Hand,
+  Paperclip,
   Sparkles,
   User,
   X,
 } from "lucide-react";
 import StatusBadge from "./StatusBadge";
 import { downloadPdf, downloadText } from "@/lib/exportResult";
+
+export interface ExecutionFileItem {
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+}
 
 export interface ExecutionItem {
   id: string;
@@ -25,10 +32,17 @@ export interface ExecutionItem {
   promptSnapshot: string;
   result: string | null;
   error: string | null;
+  files: ExecutionFileItem[] | null;
   ranBy: string | null;
   startedAt: string;
   finishedAt: string | null;
   skill?: { id: string; name: string };
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 const SOURCE_ICONS: Record<string, React.ReactNode> = {
@@ -115,6 +129,15 @@ function ExecutionRow({
             {execution.ranBy}
           </span>
         )}
+        {execution.files && execution.files.length > 0 && (
+          <span
+            className="inline-flex items-center gap-1 text-xs text-primary"
+            title={`${execution.files.length} arquivo(s) gerado(s)`}
+          >
+            <Paperclip size={11} />
+            {execution.files.length}
+          </span>
+        )}
         {showSkillName && execution.skill && (
           <Link
             href={`/skills/${execution.skill.id}`}
@@ -147,7 +170,7 @@ function ExecutionDetailsModal({
 
   return (
     <div
-      className="fixed inset-0 bg-ink/40 backdrop-blur-[2px] flex items-center justify-center p-4 z-20 animate-backdrop-in"
+      className="fixed inset-0 bg-ink/40 backdrop-blur-[2px] flex items-center justify-center p-4 z-50 animate-backdrop-in"
       onClick={onClose}
     >
       <div
@@ -194,12 +217,37 @@ function ExecutionDetailsModal({
 
         <DetailBlock label="Prompt enviado" text={execution.promptSnapshot} tone="canvas" />
 
+        {execution.files && execution.files.length > 0 && (
+          <div className="mb-4">
+            <div className="text-xs uppercase tracking-wide text-muted mb-1.5">
+              Arquivo{execution.files.length > 1 ? "s" : ""} gerado{execution.files.length > 1 ? "s" : ""}
+            </div>
+            <div className="space-y-1.5">
+              {execution.files.map((file, i) => (
+                <a
+                  key={i}
+                  href={`/api/executions/${execution.id}/files/${i}`}
+                  className="flex items-center gap-2 rounded-md border border-line bg-primary-soft/40 px-3 py-2 text-sm hover:border-primary/40 hover:bg-primary-soft transition-colors"
+                >
+                  <Paperclip size={14} className="text-primary shrink-0" />
+                  <span className="flex-1 truncate">{file.name}</span>
+                  <span className="text-xs text-muted shrink-0">{formatBytes(file.sizeBytes)}</span>
+                  <Download size={13} className="text-primary shrink-0" />
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
         {execution.result && (
           <DetailBlock
             label="Resultado"
             text={execution.result}
             tone="emerald"
-            downloadBase={fileBase}
+            // Only offer the .txt/.pdf export-of-text convenience when there's
+            // no real generated file — showing it next to an actual PDF/CSV
+            // would look like a second, fake copy of the same thing.
+            downloadBase={execution.files?.length ? undefined : fileBase}
             downloadTitle={execution.skill?.name ?? "Resultado da execução"}
           />
         )}

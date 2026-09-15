@@ -185,25 +185,63 @@ heuristic fallback leaves them blank for you to fill in — it doesn't guess).
 ## Execution details and downloads
 
 Each execution row has a "Ver detalhes" button opening a modal with the full prompt, result,
-and error, who ran it, and timestamps — with a copy-to-clipboard button on each block. When an
-execution has a text result, you can also download it as `.txt` or `.pdf` (`lib/exportResult.ts`,
-using `jspdf` client-side).
+error, who ran it, timestamps, and any real generated files — with a copy-to-clipboard button on
+each text block. When an execution has a text result and no real file, you can still download it
+as `.txt` or `.pdf` (`lib/exportResult.ts`, `jspdf` client-side) — that export is hidden once a
+real file exists for the same run, so you're never looking at two competing "PDFs" for one
+execution.
 
-**Important caveat on "generates a PDF" skills:** neither the Claude API call in `lib/claude.ts`
-nor the Cowork adapter in `lib/cowork.ts` actually returns a binary file today — Claude's API
-gives back text, full stop, and Cowork is still `needs_setup`. The `.txt`/`.pdf` download buttons
-are an honest export of that real text result into a document you can save — not a fabricated
-file, but also not proof Claude generated a PDF itself. Real file generation (via Claude's
-code-execution/files tooling, or whatever Cowork returns once connected) is a separate, larger
-piece of work than this download convenience.
+### Real file generation (PDF, CSV, XLSX, DOCX, PPTX, ...)
 
-Early on, a skill whose prompt asked for "a PDF" got back Claude explaining how to write one
-yourself (chat-assistant instincts — "I can't create files, but here's some Python...") instead
-of just the content that should go in it. Fixed with a system prompt in `lib/claude.ts`
-(`SKILL_EXECUTION_SYSTEM_PROMPT`) that tells Claude it's running as a skill's execution engine,
-not a live chat: produce the content directly, no meta-commentary about its own limitations —
-the platform handles turning that content into a file. Doesn't change the underlying limitation
-above (still text, not a binary Claude generated), just makes what comes back actually usable.
+Claude-direct skills (`lib/claude.ts`) run with the same two tools Claude.ai's own dashboard
+gives Claude: **code execution** (a sandbox with `reportlab`/`openpyxl`/`pandas`/`matplotlib`/
+`python-docx`/`python-pptx` available) and **web search**. `SKILL_EXECUTION_SYSTEM_PROMPT` tells
+Claude to actually write and run code that produces a real file when the task calls for one —
+never to fake it by writing markdown that this app then wraps in a document shell. Which tool (if
+any) a given run uses is entirely Claude's call: a plain-text skill just answers with text, same
+as before.
+
+When code execution produces a file, `lib/claude.ts` downloads it from Anthropic's Files API and
+uploads it into this project's own Supabase Storage bucket (`execution-files`) so the file outlives
+whatever retention Anthropic applies on its side — the execution row stores each file's name,
+size, MIME type, and storage path (`ExecutionFile` in `lib/types.ts`), and
+`GET /api/executions/[id]/files/[index]` streams it back as a real download, authenticated same as
+everything else in this app. Cowork-dependent skills are unaffected — that path is still the
+pluggable webhook adapter in `lib/cowork.ts`, `needs_setup` until `COWORK_DISPATCH_WEBHOOK_URL` is
+configured, per the project's "never simulate a result" rule; when it's wired up, the same
+`ExecutionFile` shape is there for it to fill in too, if Cowork's response includes files.
+
+Needs two things added to your Supabase project that a fresh `supabase/schema.sql` already
+includes — if you set this project up before this feature existed, run in the SQL Editor:
+
+```sql
+alter table executions add column if not exists files jsonb;
+
+insert into storage.buckets (id, name, public)
+values ('execution-files', 'execution-files', false)
+on conflict (id) do nothing;
+```
+
+The bucket is private — same bypass-RLS-with-the-service-role-key pattern as the tables, so the
+anon key still grants zero direct access and every download goes through the app's own
+authenticated route.
+
+**Not exercised live from this sandbox:** same network-policy block as the rest of Supabase (this
+environment can reach `api.anthropic.com` directly, but not `*.supabase.co` or `*.vercel.app`),
+and no `ANTHROPIC_API_KEY` is set here either, so the code-execution round trip itself couldn't be
+run either. Verified by compiling against the real `@anthropic-ai/sdk` type definitions (upgraded
+`^0.32.1` → `^0.125.0` for this — the old version predates all of code execution, the Files API,
+and the `claude-sonnet-5`/`claude-opus-5` model family) rather than live execution — the block
+types used (`bash_code_execution_tool_result`, `bash_code_execution_output`, etc.) come straight
+from the installed SDK's own `.d.ts`, not guessed. Worth a real run after deploying: ask a
+Claude-direct skill for something that's genuinely a file ("generate a PDF about X"), and confirm
+a real, openable file comes back — not just text that got wrapped.
+
+Early on (before code execution was wired up), a skill whose prompt asked for "a PDF" got back
+Claude explaining how to write one yourself (chat-assistant instincts — "I can't create files,
+but here's some Python...") instead of just the content that should go in it — the current system
+prompt heads that off either way: write the content directly for a text answer, or actually run
+code for a real file.
 
 ## Security baseline
 
@@ -257,6 +295,10 @@ Users) to get in; see "Login — real Supabase Auth" above.
   (`DeleteSkillButton` on the skill page, with a confirm step).
 - No self-serve signup — new accounts are added by hand in the Supabase dashboard. Fine for a
   small internal team; worth a signup/invite screen if the group using this grows.
-- **Real file generation.** Downloads today export Claude's real text result as `.txt`/`.pdf`;
-  no skill produces an actual binary file end-to-end yet (see "Execution details and downloads"
-  above) — would need Claude's code-execution/files tooling or real Cowork artifacts.
+- **Real file generation** (code execution + Supabase Storage) is wired up — see "Execution
+  details and downloads" above — but hasn't been exercised live yet (sandbox network limits, no
+  `ANTHROPIC_API_KEY` here); worth a real run after deploying.
+- Cowork's adapter (`lib/cowork.ts`) doesn't have a file leg yet — it only reads `result`/`error`
+  from whatever `COWORK_DISPATCH_WEBHOOK_URL` returns. Once Cowork is actually connected, extend
+  it to also read a `files` array from the response (same `ExecutionFile` shape) if Cowork sends
+  one back.
