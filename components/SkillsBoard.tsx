@@ -17,7 +17,7 @@ export interface BoardSkill {
   tags: string[];
 }
 
-type Filter = "all" | "active" | "draft" | "needs_setup";
+type Filter = "all" | "active" | "draft" | "needs_setup" | "archived";
 const ALL_GROUPS = "__all__";
 
 export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
@@ -30,11 +30,18 @@ export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
     return Array.from(set).sort();
   }, [skills]);
 
+  const hasArchived = useMemo(() => skills.some((s) => s.status === "archived"), [skills]);
+
   const filtered = useMemo(() => {
     let list = skills;
-    if (filter === "active") list = list.filter((s) => s.status === "active");
+    // "Todas" means "everything still in active use" — archived skills are
+    // meant to be out of the way by default, only surfaced through their
+    // own tab, same reasoning as an inbox hiding archived mail.
+    if (filter === "all") list = list.filter((s) => s.status !== "archived");
+    else if (filter === "active") list = list.filter((s) => s.status === "active");
     else if (filter === "draft") list = list.filter((s) => s.status === "draft");
     else if (filter === "needs_setup") list = list.filter((s) => s.needsSetup);
+    else if (filter === "archived") list = list.filter((s) => s.status === "archived");
 
     if (group !== ALL_GROUPS) list = list.filter((s) => s.group === group);
 
@@ -83,6 +90,7 @@ export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
               ["active", "Ativas"],
               ["draft", "Rascunho"],
               ["needs_setup", "Setup"],
+              ...(hasArchived ? [["archived", "Arquivadas"] as [Filter, string]] : []),
             ] as [Filter, string][]
           ).map(([value, label]) => (
             <button

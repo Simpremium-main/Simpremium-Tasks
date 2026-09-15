@@ -47,7 +47,7 @@ export interface DispatchResult {
   files?: ExecutionFile[];
 }
 
-export type SkillStatus = "draft" | "active";
+export type SkillStatus = "draft" | "active" | "archived";
 export type ExecutionStatus = "pending" | "running" | "success" | "error" | "needs_setup";
 export type ExecutionSource = "cowork" | "claude" | "manual";
 

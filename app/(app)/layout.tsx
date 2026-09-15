@@ -7,14 +7,19 @@ export const dynamic = "force-dynamic";
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const skills = await listSkills();
   const user = await getCurrentUser();
-  const sidebarSkills = skills.map((s) => ({
-    id: s.id,
-    name: s.name,
-    status: s.status,
-    needsInput: s.needsInput,
-    usesCowork: s.usesCowork,
-    group: s.group,
-  }));
+  // Archived skills stay out of the sidebar's nav list — same "out of the
+  // way, not gone" idea as their own tab on the dashboard; still reachable
+  // by URL and still keep their full execution history.
+  const sidebarSkills = skills
+    .filter((s) => s.status !== "archived")
+    .map((s) => ({
+      id: s.id,
+      name: s.name,
+      status: s.status,
+      needsInput: s.needsInput,
+      usesCowork: s.usesCowork,
+      group: s.group,
+    }));
 
   return (
     <div className="flex h-dvh overflow-hidden">

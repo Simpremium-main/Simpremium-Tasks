@@ -1,8 +1,9 @@
-import { AlertTriangle, CheckCircle2, Clock, Loader2, XCircle } from "lucide-react";
+import { AlertTriangle, Archive, CheckCircle2, Clock, Loader2, XCircle } from "lucide-react";
 
 const STYLES: Record<string, string> = {
   draft: "bg-slate-100 text-slate-600",
   active: "bg-emerald-50 text-emerald-700",
+  archived: "bg-slate-100 text-slate-500",
   success: "bg-emerald-50 text-emerald-700",
   error: "bg-red-50 text-red-700",
   pending: "bg-slate-100 text-slate-600",
@@ -12,6 +13,7 @@ const STYLES: Record<string, string> = {
 
 const ICONS: Record<string, React.ReactNode> = {
   active: <CheckCircle2 size={11} />,
+  archived: <Archive size={11} />,
   success: <CheckCircle2 size={11} />,
   error: <XCircle size={11} />,
   running: <Loader2 size={11} className="animate-spin" />,
@@ -21,6 +23,7 @@ const ICONS: Record<string, React.ReactNode> = {
 
 const LABELS: Record<string, string> = {
   needs_setup: "needs setup",
+  archived: "arquivada",
 };
 
 export default function StatusBadge({ status }: { status: string }) {

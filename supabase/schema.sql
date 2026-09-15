@@ -17,7 +17,7 @@ create table if not exists skills (
   id              uuid primary key default gen_random_uuid(),
   name            text not null,
   description     text not null default '',
-  status          text not null default 'draft' check (status in ('draft', 'active')),
+  status          text not null default 'draft' check (status in ('draft', 'active', 'archived')),
   needs_input     boolean not null default false,
   uses_cowork     boolean not null default false,
   prompt_template text not null,

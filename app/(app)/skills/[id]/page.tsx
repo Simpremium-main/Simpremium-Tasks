@@ -7,6 +7,7 @@ import RunSkillPanel from "@/components/RunSkillPanel";
 import PageHeader from "@/components/PageHeader";
 import DeleteSkillButton from "@/components/DeleteSkillButton";
 import DuplicateSkillButton from "@/components/DuplicateSkillButton";
+import ArchiveSkillButton from "@/components/ArchiveSkillButton";
 import { isClaudeConfigured } from "@/lib/claude";
 
 export const dynamic = "force-dynamic";
@@ -47,6 +48,7 @@ export default async function SkillDetailPage({ params }: { params: { id: string
               }}
               sourcePost={skill.sourcePost}
             />
+            <ArchiveSkillButton skillId={skill.id} status={skill.status} confirmedOnce={skill.confirmedOnce} />
             <Link
               href={`/skills/${skill.id}/edit`}
               title="Editar skill"

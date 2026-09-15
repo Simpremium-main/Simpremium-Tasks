@@ -43,8 +43,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     patch.tags = body.tags.filter((t: unknown) => typeof t === "string" && t.trim());
   }
 
-  if (patch.status && !["draft", "active"].includes(patch.status)) {
-    return NextResponse.json({ error: "status must be draft or active" }, { status: 400 });
+  if (patch.status && !["draft", "active", "archived"].includes(patch.status)) {
+    return NextResponse.json({ error: "status must be draft, active or archived" }, { status: 400 });
   }
 
   try {

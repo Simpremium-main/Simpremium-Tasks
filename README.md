@@ -22,9 +22,9 @@ starting point that's cheap to change as the project grows.
 
 ## Data model
 
-- **Skill** — `name`, `description`, `status` (`draft` → `active`), `needsInput`, `usesCowork`,
-  `promptTemplate` (with `{{field}}` placeholders), `inputSchema` (a list of input fields),
-  `sourcePost` (the original pasted post, kept for reference), `confirmedOnce`, `group`
+- **Skill** — `name`, `description`, `status` (`draft` → `active`, or `archived`), `needsInput`,
+  `usesCowork`, `promptTemplate` (with `{{field}}` placeholders), `inputSchema` (a list of input
+  fields), `sourcePost` (the original pasted post, kept for reference), `confirmedOnce`, `group`
   (a category, or `null`), `tags` (a list of short strings).
 - **Execution** — one row per run attempt, always written, even on failure: `status`
   (`success` / `error` / `needs_setup`), `source` (`cowork` / `claude`), masked `inputValues`,
@@ -33,6 +33,13 @@ starting point that's cheap to change as the project grows.
 
 A skill starts as a `draft` and is automatically promoted to `active` the first time it runs
 successfully — matching the "test once, then it's active" flow from the project brief.
+`archived` is a third, manual-only state (`ArchiveSkillButton` on the skill page) for skills
+you've stopped using but don't want to delete: archived skills drop out of the sidebar and the
+dashboard's default "Todas" tab (still reachable through the dashboard's own "Arquivadas" tab, or
+directly by URL), but keep every bit of their execution history. Restoring lands back on `active`
+if the skill had `confirmedOnce` set before archiving, `draft` otherwise — never loses that state.
+Running an archived skill still works and still gets recorded; it just doesn't get promoted out
+of `archived` on success, so it doesn't silently reappear in the main list.
 
 ### Connecting Supabase
 
@@ -318,6 +325,16 @@ values ('execution-files', 'execution-files', false)
 on conflict (id) do nothing;
 ```
 
+Similarly, if you set this project up before the **archived** skill status existed, its `status`
+check constraint only allows `draft`/`active` — a fresh `supabase/schema.sql` already includes
+`archived`, but an existing project needs its constraint widened (Postgres can't alter a check
+constraint in place, so this drops and recreates it):
+
+```sql
+alter table skills drop constraint skills_status_check;
+alter table skills add constraint skills_status_check check (status in ('draft', 'active', 'archived'));
+```
+
 The bucket is private — same bypass-RLS-with-the-service-role-key pattern as the tables, so the
 anon key still grants zero direct access and every download goes through the app's own
 authenticated route.
@@ -413,3 +430,6 @@ Users) to get in; see "Login — real Supabase Auth" above.
   from whatever `COWORK_DISPATCH_WEBHOOK_URL` returns. Once Cowork is actually connected, extend
   it to also read a `files` array from the response (same `ExecutionFile` shape) if Cowork sends
   one back.
+- Archiving (see "Data model" above) needs the `skills_status_check` constraint widened on any
+  Supabase project set up before this feature existed — see "Connecting Supabase" for the SQL.
+  There's no bulk-archive yet, only the per-skill toggle on the skill page.
