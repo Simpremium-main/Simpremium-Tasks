@@ -77,7 +77,7 @@ export default function NewSkillForm() {
           value={postContent}
           onChange={(e) => setPostContent(e.target.value)}
           rows={8}
-          placeholder="Cole aqui o que o chefe postou sobre a skill/MCP…"
+          placeholder="Cole aqui o conteúdo do post sobre a skill/MCP…"
           className="w-full rounded-md border border-line px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-shadow"
         />
         <button

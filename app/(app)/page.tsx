@@ -20,8 +20,8 @@ export default async function DashboardPage() {
           </div>
           <h2 className="text-lg font-semibold">Nenhuma skill ainda</h2>
           <p className="mt-2 text-ink/60 max-w-sm mx-auto">
-            Cole o próximo post que seu chefe mandar e transforme em uma skill pronta pra rodar
-            quando quiser.
+            Cole o próximo post sobre uma skill/MCP e transforme em algo pronto pra rodar quando
+            quiser.
           </p>
           <Link
             href="/skills/new"
