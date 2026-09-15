@@ -50,7 +50,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         const { execution, done } = await runSkillStreaming(
           skill,
           inputValues,
-          user?.email ?? null,
+          user?.displayName ?? null,
           (chunk) => {
             controller.enqueue(sseFormat("delta", { text: chunk }));
           }

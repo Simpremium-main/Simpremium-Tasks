@@ -18,7 +18,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex h-dvh overflow-hidden">
-      <Sidebar skills={sidebarSkills} userName={user?.email ?? null} isAdmin={user?.role === "admin"} />
+      <Sidebar
+        skills={sidebarSkills}
+        userDisplayName={user?.displayName ?? null}
+        userNickname={user?.nickname ?? null}
+        isAdmin={user?.role === "admin"}
+      />
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-6xl mx-auto px-4 sm:px-8 pb-12">{children}</div>
       </main>

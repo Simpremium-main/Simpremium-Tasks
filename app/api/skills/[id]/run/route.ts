@@ -24,7 +24,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         : {};
 
     const user = await getCurrentUser();
-    const execution = await runSkill(skill, inputValues, user?.email ?? null);
+    const execution = await runSkill(skill, inputValues, user?.displayName ?? null);
     return NextResponse.json(execution, { status: 201 });
   } catch (err) {
     console.error(`POST /api/skills/${params.id}/run failed:`, err);

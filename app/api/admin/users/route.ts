@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
     const email = typeof body.email === "string" ? body.email.trim() : "";
     const password = typeof body.password === "string" ? body.password : "";
     const role = body.role === "admin" ? "admin" : "user";
+    const nickname = typeof body.nickname === "string" && body.nickname.trim() ? body.nickname.trim() : null;
 
     if (!email || !password) {
       return NextResponse.json({ error: "email and password are required" }, { status: 400 });
@@ -28,7 +29,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "password must be at least 8 characters" }, { status: 400 });
     }
 
-    const user = await createUser({ email, password, role });
+    const user = await createUser({ email, password, role, nickname });
     return NextResponse.json(user, { status: 201 });
   } catch (err) {
     return adminError(err, "POST /api/admin/users failed");

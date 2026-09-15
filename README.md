@@ -256,6 +256,20 @@ where email = 'the-first-admin@example.com';
 After that, every other account can be created and promoted from the **Usuários** screen —
 this manual step is only ever needed once, to get the first admin in.
 
+### Nicknames
+
+The sidebar footer, and `ranBy` on every execution (who ran it, shown in the skill page's and the
+global history's execution list/detail view), used to always show the raw email. Anyone can now
+set a nickname for themselves — click their name in the sidebar footer — stored in Supabase Auth's
+`user_metadata` (unlike `app_metadata`/role, this one **is** writable by the user's own session,
+via `supabase.auth.updateUser()` in `app/api/auth/profile/route.ts`, no service role key involved).
+`getCurrentUser()`'s `displayName` is the nickname when set, falling back to the email — that's
+what's shown everywhere a human-facing name is needed, and what gets stamped onto `ranBy` at run
+time (a point-in-time snapshot, like the rest of that field — changing your nickname later doesn't
+rewrite past history). An admin can also set/fix someone else's nickname from the **Usuários**
+screen (inline text field per row, or at creation) — same `user_metadata` write, just through the
+service-role admin API instead of the person's own session.
+
 ## Groups and tags
 
 Skills can have a `group` (e.g. "Relatórios", "Pesquisa") and free-form `tags`. The sidebar

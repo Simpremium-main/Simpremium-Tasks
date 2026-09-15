@@ -15,6 +15,7 @@ import {
 export interface AdminUserItem {
   id: string;
   email: string;
+  nickname: string | null;
   role: "admin" | "user";
   createdAt: string;
   lastSignInAt: string | null;
@@ -32,24 +33,44 @@ export default function UserAdminPanel({
   const [passwordFor, setPasswordFor] = useState<AdminUserItem | null>(null);
   const [deleteFor, setDeleteFor] = useState<AdminUserItem | null>(null);
   const [roleSaving, setRoleSaving] = useState<string | null>(null);
+  const [nicknameDrafts, setNicknameDrafts] = useState<Record<string, string>>({});
+  const [nicknameSaving, setNicknameSaving] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(null);
+
+  async function patchUser(id: string, patch: Record<string, unknown>) {
+    const res = await fetch(`/api/admin/users/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error ?? `Falha ao atualizar (HTTP ${res.status})`);
+    setUsers((prev) => prev.map((u) => (u.id === id ? body : u)));
+  }
 
   async function handleRoleChange(user: AdminUserItem, role: "admin" | "user") {
     setRoleSaving(user.id);
     setListError(null);
     try {
-      const res = await fetch(`/api/admin/users/${user.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? `Falha ao atualizar (HTTP ${res.status})`);
-      setUsers((prev) => prev.map((u) => (u.id === user.id ? body : u)));
+      await patchUser(user.id, { role });
     } catch (err) {
       setListError(err instanceof Error ? err.message : "Falha ao atualizar a função");
     } finally {
       setRoleSaving(null);
+    }
+  }
+
+  async function handleNicknameBlur(user: AdminUserItem) {
+    const draft = nicknameDrafts[user.id];
+    if (draft === undefined || draft.trim() === (user.nickname ?? "")) return;
+    setNicknameSaving(user.id);
+    setListError(null);
+    try {
+      await patchUser(user.id, { nickname: draft.trim() });
+    } catch (err) {
+      setListError(err instanceof Error ? err.message : "Falha ao atualizar o apelido");
+    } finally {
+      setNicknameSaving(null);
     }
   }
 
@@ -78,6 +99,7 @@ export default function UserAdminPanel({
           <thead>
             <tr className="border-b border-line bg-canvas/60 text-left text-xs uppercase tracking-wide text-muted">
               <th className="px-4 py-2.5 font-medium">Email</th>
+              <th className="px-4 py-2.5 font-medium">Apelido</th>
               <th className="px-4 py-2.5 font-medium">Função</th>
               <th className="px-4 py-2.5 font-medium hidden sm:table-cell">Criado em</th>
               <th className="px-4 py-2.5 font-medium hidden sm:table-cell">Último acesso</th>
@@ -97,6 +119,18 @@ export default function UserAdminPanel({
                       <span className="truncate">{user.email}</span>
                       {isSelf && <span className="shrink-0 text-xs text-muted">(você)</span>}
                     </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <input
+                      value={nicknameDrafts[user.id] ?? user.nickname ?? ""}
+                      onChange={(e) =>
+                        setNicknameDrafts((prev) => ({ ...prev, [user.id]: e.target.value }))
+                      }
+                      onBlur={() => handleNicknameBlur(user)}
+                      disabled={nicknameSaving === user.id}
+                      placeholder="—"
+                      className="w-full max-w-[140px] rounded-md border border-transparent hover:border-line focus:border-primary/50 bg-transparent focus:bg-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors disabled:opacity-60"
+                    />
                   </td>
                   <td className="px-4 py-3">
                     <select
@@ -187,6 +221,7 @@ function CreateUserModal({
   onCreated: (user: AdminUserItem) => void;
 }) {
   const [email, setEmail] = useState("");
+  const [nickname, setNickname] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<"admin" | "user">("user");
   const [saving, setSaving] = useState(false);
@@ -199,7 +234,7 @@ function CreateUserModal({
       const res = await fetch("/api/admin/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, role }),
+        body: JSON.stringify({ email, nickname, password, role }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? `Falha ao criar (HTTP ${res.status})`);
@@ -220,6 +255,14 @@ function CreateUserModal({
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="pessoa@empresa.com"
+            className="w-full rounded-md border border-line px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-shadow"
+          />
+        </Field>
+        <Field label="Apelido" helpText="Opcional — como a pessoa aparece no painel e no histórico. Ela pode trocar isso depois.">
+          <input
+            value={nickname}
+            onChange={(e) => setNickname(e.target.value)}
+            placeholder="Deixe em branco pra mostrar o email"
             className="w-full rounded-md border border-line px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-shadow"
           />
         </Field>

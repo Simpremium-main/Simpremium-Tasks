@@ -7,7 +7,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const admin = await requireAdmin();
     const body = await req.json();
 
-    const patch: { role?: "admin" | "user"; password?: string } = {};
+    const patch: { role?: "admin" | "user"; password?: string; nickname?: string | null } = {};
     if (body.role === "admin" || body.role === "user") {
       // An admin can't demote themselves through this screen — avoids
       // accidentally locking the only admin account out of user management.
@@ -21,6 +21,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         return NextResponse.json({ error: "password must be at least 8 characters" }, { status: 400 });
       }
       patch.password = body.password;
+    }
+    if (typeof body.nickname === "string") {
+      patch.nickname = body.nickname.trim() || null;
     }
 
     const user = await updateUser(params.id, patch);
