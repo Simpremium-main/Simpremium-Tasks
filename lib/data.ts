@@ -80,6 +80,15 @@ export async function listSkills(): Promise<
   } = await supabase.from("skills").select("*").order("created_at", { ascending: false });
   if (error) throw describeError("listSkills", error, status, statusText);
 
+  // Same temporary diagnostic as lib/supabaseClient.ts — log exactly what
+  // rows this request actually got back, checkable in Vercel's function
+  // logs, since the dashboard has been showing data that doesn't match
+  // what's in the table when checked directly in Supabase.
+  console.log(
+    `[listSkills] got ${skillRows?.length ?? 0} row(s): ` +
+      JSON.stringify((skillRows ?? []).map((r) => ({ id: r.id, name: r.name })))
+  );
+
   const {
     data: execRows,
     error: execError,
