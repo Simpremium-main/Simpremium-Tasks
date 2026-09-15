@@ -1,43 +1,77 @@
+import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
+import { getSupabase } from "./supabaseClient";
 import type { Execution, ExecutionStatus, ExecutionSource, InputField, Skill } from "./types";
 
+// Supabase's client can return an error with an empty `.message` when the
+// request never reached Supabase at all (e.g. blocked by a network policy
+// before the TLS handshake, or the tables from supabase/schema.sql haven't
+// been created yet) — fall back to the HTTP status so the thrown error is
+// still useful instead of a blank string.
+function describeError(
+  context: string,
+  error: PostgrestError,
+  status?: number,
+  statusText?: string
+): Error {
+  const detail = error.message || `HTTP ${status ?? "?"} ${statusText ?? ""}`.trim();
+  return new Error(`${context}: ${detail}`);
+}
+
 /**
- * Mock data layer — every skill/execution lives in memory for now.
- *
- * This is the ONE seam the rest of the app talks to for persistence
- * (pages and API routes import from here, never touch storage directly).
- * The plan is to back this with Supabase; when that's wired up, only this
- * file's internals change — the function signatures below become the
- * Supabase queries and every caller stays the same. See supabase/schema.sql
- * for the target table shape this mock already mirrors.
- *
- * Data resets whenever the server process restarts (or on every request in
- * serverless environments like Vercel, where each invocation can get a
- * fresh module instance) — that's expected of "mock data for now" and goes
- * away once Supabase is connected.
+ * Data layer — every page and API route goes through these functions for
+ * persistence, never touching Supabase directly. That seam is what made
+ * the earlier mock-data stage possible, and now makes it easy to see
+ * exactly what changed to connect the real thing: this file's internals,
+ * nothing else. See supabase/schema.sql for the table definitions these
+ * functions read and write.
  */
 
-interface Store {
-  skills: Skill[];
-  executions: Execution[];
+// Fixed on purpose (not a generated uuid) — this is the one demo skill the
+// app seeds itself, and a stable id means its URL never breaks across
+// reseeds. Must be a valid uuid since the `skills.id` column is typed uuid.
+const SEED_SKILL_ID = "00000000-0000-4000-8000-000000000001";
+
+function mapSkillRow(row: Record<string, unknown>): Skill {
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    description: (row.description as string) ?? "",
+    status: row.status as Skill["status"],
+    needsInput: Boolean(row.needs_input),
+    usesCowork: Boolean(row.uses_cowork),
+    promptTemplate: row.prompt_template as string,
+    inputSchema: (row.input_schema as InputField[] | null) ?? null,
+    sourcePost: (row.source_post as string | null) ?? null,
+    confirmedOnce: Boolean(row.confirmed_once),
+    group: (row.group as string | null) ?? null,
+    tags: (row.tags as string[] | null) ?? [],
+    createdAt: new Date(row.created_at as string),
+    updatedAt: new Date(row.updated_at as string),
+  };
 }
 
-const globalForStore = globalThis as unknown as { __skillsHubStore?: Store };
-
-function randomId(): string {
-  return crypto.randomUUID();
+function mapExecutionRow(row: Record<string, unknown>): Execution {
+  return {
+    id: row.id as string,
+    skillId: row.skill_id as string,
+    status: row.status as ExecutionStatus,
+    source: row.source as ExecutionSource,
+    inputValues: (row.input_values as Record<string, string> | null) ?? null,
+    promptSnapshot: row.prompt_snapshot as string,
+    result: (row.result as string | null) ?? null,
+    error: (row.error as string | null) ?? null,
+    ranBy: (row.ran_by as string | null) ?? null,
+    startedAt: new Date(row.started_at as string),
+    finishedAt: row.finished_at ? new Date(row.finished_at as string) : null,
+  };
 }
 
-// Fixed on purpose (not randomId()) — the mock store gets re-seeded on every
-// cold start/redeploy, so a random id here would break this skill's URL
-// every time. A stable id keeps the demo skill reachable at the same link
-// even though the store itself still isn't durable — see lib/data.ts's
-// module comment. Skills created afterwards still get a random id and are
-// still only as durable as the mock store.
-const SEED_SKILL_ID = "seed-relatorio-vendas";
-
-function seedStore(): Store {
-  const now = new Date();
-  const skillId = SEED_SKILL_ID;
+async function ensureSeeded(supabase: SupabaseClient): Promise<void> {
+  const { count, error, status, statusText } = await supabase
+    .from("skills")
+    .select("*", { count: "exact", head: true });
+  if (error) throw describeError("ensureSeeded", error, status, statusText);
+  if ((count ?? 0) > 0) return;
 
   const inputSchema: InputField[] = [
     {
@@ -56,67 +90,91 @@ function seedStore(): Store {
     },
   ];
 
-  return {
-    skills: [
-      {
-        id: skillId,
-        name: "Relatório Semanal de Vendas (PDF)",
-        description:
-          "Gera um PDF resumindo a performance de vendas no período informado — tirado do " +
-          "post do chefe no Instagram sobre uma skill de relatórios da Claude.",
-        status: "draft",
-        needsInput: true,
-        usesCowork: false,
-        promptTemplate:
-          "Gere um relatório de vendas em PDF para {{periodo}}. Inclua receita, produtos mais " +
-          "vendidos e a tendência comparada ao período anterior. {{foco}}",
-        inputSchema,
-        sourcePost:
-          "(exemplo) Achei essa skill da Claude — cola seus números de vendas e ela cospe um " +
-          "PDF limpo em minutos. Mudou o jogo pras revisões semanais.",
-        confirmedOnce: false,
-        group: "Relatórios",
-        tags: ["vendas", "pdf"],
-        createdAt: now,
-        updatedAt: now,
-      },
-    ],
-    executions: [],
-  };
-}
-
-function getStore(): Store {
-  if (!globalForStore.__skillsHubStore) {
-    globalForStore.__skillsHubStore = seedStore();
-  }
-  return globalForStore.__skillsHubStore;
+  const {
+    error: insertError,
+    status: insertStatus,
+    statusText: insertStatusText,
+  } = await supabase.from("skills").insert({
+    id: SEED_SKILL_ID,
+    name: "Relatório Semanal de Vendas (PDF)",
+    description:
+      "Gera um PDF resumindo a performance de vendas no período informado — tirado do " +
+      "post do chefe no Instagram sobre uma skill de relatórios da Claude.",
+    status: "draft",
+    needs_input: true,
+    uses_cowork: false,
+    prompt_template:
+      "Gere um relatório de vendas em PDF para {{periodo}}. Inclua receita, produtos mais " +
+      "vendidos e a tendência comparada ao período anterior. {{foco}}",
+    input_schema: inputSchema,
+    source_post:
+      "(exemplo) Achei essa skill da Claude — cola seus números de vendas e ela cospe um " +
+      "PDF limpo em minutos. Mudou o jogo pras revisões semanais.",
+    confirmed_once: false,
+    group: "Relatórios",
+    tags: ["vendas", "pdf"],
+  });
+  if (insertError) throw describeError("ensureSeeded insert", insertError, insertStatus, insertStatusText);
 }
 
 export async function listSkills(): Promise<(Skill & { _count: { executions: number } })[]> {
-  const store = getStore();
-  return [...store.skills]
-    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-    .map((skill) => ({
-      ...skill,
-      _count: { executions: store.executions.filter((e) => e.skillId === skill.id).length },
-    }));
+  const supabase = getSupabase();
+  await ensureSeeded(supabase);
+
+  const {
+    data: skillRows,
+    error,
+    status,
+    statusText,
+  } = await supabase.from("skills").select("*").order("created_at", { ascending: false });
+  if (error) throw describeError("listSkills", error, status, statusText);
+
+  const {
+    data: execRows,
+    error: execError,
+    status: execStatus,
+    statusText: execStatusText,
+  } = await supabase.from("executions").select("skill_id");
+  if (execError) throw describeError("listSkills (execution counts)", execError, execStatus, execStatusText);
+
+  const counts = new Map<string, number>();
+  for (const row of execRows ?? []) {
+    const id = row.skill_id as string;
+    counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+
+  return (skillRows ?? []).map((row) => ({
+    ...mapSkillRow(row),
+    _count: { executions: counts.get(row.id as string) ?? 0 },
+  }));
 }
 
 export async function getSkill(id: string): Promise<Skill | null> {
-  const store = getStore();
-  return store.skills.find((s) => s.id === id) ?? null;
+  const supabase = getSupabase();
+  const { data, error, status, statusText } = await supabase
+    .from("skills")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw describeError("getSkill", error, status, statusText);
+  return data ? mapSkillRow(data) : null;
 }
 
 export async function getSkillWithExecutions(
   id: string
 ): Promise<(Skill & { executions: Execution[] }) | null> {
-  const store = getStore();
-  const skill = store.skills.find((s) => s.id === id);
+  const skill = await getSkill(id);
   if (!skill) return null;
-  const executions = store.executions
-    .filter((e) => e.skillId === id)
-    .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
-  return { ...skill, executions };
+
+  const supabase = getSupabase();
+  const { data, error, status, statusText } = await supabase
+    .from("executions")
+    .select("*")
+    .eq("skill_id", id)
+    .order("started_at", { ascending: false });
+  if (error) throw describeError("getSkillWithExecutions", error, status, statusText);
+
+  return { ...skill, executions: (data ?? []).map(mapExecutionRow) };
 }
 
 export interface CreateSkillInput {
@@ -132,26 +190,26 @@ export interface CreateSkillInput {
 }
 
 export async function createSkill(input: CreateSkillInput): Promise<Skill> {
-  const store = getStore();
-  const now = new Date();
-  const skill: Skill = {
-    id: randomId(),
-    name: input.name,
-    description: input.description,
-    promptTemplate: input.promptTemplate,
-    needsInput: input.needsInput,
-    usesCowork: input.usesCowork,
-    inputSchema: input.inputSchema.length ? input.inputSchema : null,
-    sourcePost: input.sourcePost,
-    status: "draft",
-    confirmedOnce: false,
-    group: input.group,
-    tags: input.tags,
-    createdAt: now,
-    updatedAt: now,
-  };
-  store.skills.unshift(skill);
-  return skill;
+  const supabase = getSupabase();
+  const { data, error, status, statusText } = await supabase
+    .from("skills")
+    .insert({
+      name: input.name,
+      description: input.description,
+      prompt_template: input.promptTemplate,
+      needs_input: input.needsInput,
+      uses_cowork: input.usesCowork,
+      input_schema: input.inputSchema.length ? input.inputSchema : null,
+      source_post: input.sourcePost,
+      status: "draft",
+      confirmed_once: false,
+      group: input.group,
+      tags: input.tags,
+    })
+    .select()
+    .single();
+  if (error) throw describeError("createSkill", error, status, statusText);
+  return mapSkillRow(data);
 }
 
 export interface UpdateSkillInput {
@@ -168,20 +226,37 @@ export interface UpdateSkillInput {
 }
 
 export async function updateSkill(id: string, patch: UpdateSkillInput): Promise<Skill | null> {
-  const store = getStore();
-  const skill = store.skills.find((s) => s.id === id);
-  if (!skill) return null;
-  Object.assign(skill, patch, { updatedAt: new Date() });
-  return skill;
+  const supabase = getSupabase();
+  const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (patch.name !== undefined) row.name = patch.name;
+  if (patch.description !== undefined) row.description = patch.description;
+  if (patch.promptTemplate !== undefined) row.prompt_template = patch.promptTemplate;
+  if (patch.needsInput !== undefined) row.needs_input = patch.needsInput;
+  if (patch.usesCowork !== undefined) row.uses_cowork = patch.usesCowork;
+  if (patch.status !== undefined) row.status = patch.status;
+  if (patch.confirmedOnce !== undefined) row.confirmed_once = patch.confirmedOnce;
+  if (patch.inputSchema !== undefined) row.input_schema = patch.inputSchema;
+  if (patch.group !== undefined) row.group = patch.group;
+  if (patch.tags !== undefined) row.tags = patch.tags;
+
+  const { data, error, status, statusText } = await supabase
+    .from("skills")
+    .update(row)
+    .eq("id", id)
+    .select()
+    .maybeSingle();
+  if (error) throw describeError("updateSkill", error, status, statusText);
+  return data ? mapSkillRow(data) : null;
 }
 
 export async function deleteSkill(id: string): Promise<boolean> {
-  const store = getStore();
-  const idx = store.skills.findIndex((s) => s.id === id);
-  if (idx === -1) return false;
-  store.skills.splice(idx, 1);
-  store.executions = store.executions.filter((e) => e.skillId !== id);
-  return true;
+  const supabase = getSupabase();
+  const { error, count, status, statusText } = await supabase
+    .from("skills")
+    .delete({ count: "exact" })
+    .eq("id", id);
+  if (error) throw describeError("deleteSkill", error, status, statusText);
+  return (count ?? 0) > 0;
 }
 
 export interface ListExecutionsFilter {
@@ -192,16 +267,25 @@ export interface ListExecutionsFilter {
 export async function listExecutions(
   filter: ListExecutionsFilter = {}
 ): Promise<(Execution & { skill: { id: string; name: string } })[]> {
-  const store = getStore();
-  return store.executions
-    .filter((e) => (filter.status ? e.status === filter.status : true))
-    .filter((e) => (filter.skillId ? e.skillId === filter.skillId : true))
-    .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime())
-    .slice(0, 200)
-    .map((e) => {
-      const skill = store.skills.find((s) => s.id === e.skillId);
-      return { ...e, skill: { id: skill?.id ?? e.skillId, name: skill?.name ?? "Deleted skill" } };
-    });
+  const supabase = getSupabase();
+  let query = supabase
+    .from("executions")
+    .select("*, skill:skills(id, name)")
+    .order("started_at", { ascending: false })
+    .limit(200);
+  if (filter.status) query = query.eq("status", filter.status);
+  if (filter.skillId) query = query.eq("skill_id", filter.skillId);
+
+  const { data, error, status, statusText } = await query;
+  if (error) throw describeError("listExecutions", error, status, statusText);
+
+  return (data ?? []).map((row) => {
+    const skill = row.skill as { id: string; name: string } | null;
+    return {
+      ...mapExecutionRow(row),
+      skill: { id: skill?.id ?? (row.skill_id as string), name: skill?.name ?? "Deleted skill" },
+    };
+  });
 }
 
 export interface CreateExecutionInput {
@@ -216,20 +300,24 @@ export interface CreateExecutionInput {
 }
 
 export async function createExecution(input: CreateExecutionInput): Promise<Execution> {
-  const store = getStore();
-  const execution: Execution = {
-    id: randomId(),
-    skillId: input.skillId,
-    status: input.status,
-    source: input.source,
-    inputValues: input.inputValues,
-    promptSnapshot: input.promptSnapshot,
-    result: input.result,
-    error: input.error,
-    ranBy: input.ranBy,
-    startedAt: new Date(),
-    finishedAt: new Date(),
-  };
-  store.executions.unshift(execution);
-  return execution;
+  const supabase = getSupabase();
+  const now = new Date().toISOString();
+  const { data, error, status, statusText } = await supabase
+    .from("executions")
+    .insert({
+      skill_id: input.skillId,
+      status: input.status,
+      source: input.source,
+      input_values: input.inputValues,
+      prompt_snapshot: input.promptSnapshot,
+      result: input.result,
+      error: input.error,
+      ran_by: input.ranBy,
+      started_at: now,
+      finished_at: now,
+    })
+    .select()
+    .single();
+  if (error) throw describeError("createExecution", error, status, statusText);
+  return mapExecutionRow(data);
 }

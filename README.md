@@ -8,13 +8,11 @@ full execution history. No more re-typing the same prompt from a chat you can't 
 
 - **Next.js (App Router) + TypeScript** — one codebase for both the dashboard UI and the API
   routes that run skills, generate drafts, and record history. Easy to deploy anywhere later.
-- **Mock data for now, Supabase next** — `lib/data.ts` is the single seam every page and API
-  route goes through for persistence. Today it's backed by an in-memory store (seeded on first
-  import, resets when the server restarts). When Supabase is connected, only this file's
-  internals change to real Supabase queries — every caller keeps working unchanged.
-  `supabase/schema.sql` documents the target Postgres schema this mock store already mirrors
-  field-for-field, ready to run in the Supabase SQL editor when there's a project to point at.
-  Nothing here invents a Supabase URL or key — none has been provided yet.
+- **Supabase (Postgres)** — `lib/data.ts` is the single seam every page and API route goes
+  through for persistence, backed by real Supabase tables (`supabase/schema.sql`). Reads and
+  writes go through `lib/supabaseClient.ts`'s server-only client, authenticated with the service
+  role key (never sent to the browser) — nothing in `app/` or `components/` talks to Supabase
+  directly.
 - **Tailwind CSS** — fast to iterate on visually. The current look is a plain, warm-neutral
   placeholder (see "Visual style" below) — swap it once you've shared the `Pedido-Central-main`
   reference.
@@ -36,24 +34,27 @@ starting point that's cheap to change as the project grows.
 A skill starts as a `draft` and is automatically promoted to `active` the first time it runs
 successfully — matching the "test once, then it's active" flow from the project brief.
 
-### Why mock data right now
+### Connecting Supabase
 
-The brief asked for Supabase but said to use mock data for now, so `lib/data.ts` is plain
-in-memory arrays behind async functions shaped exactly like the eventual database calls
-(`listSkills`, `getSkill`, `createExecution`, etc.). Two things worth knowing about this stage:
+Started on mock in-memory data, moved to a real Supabase project once one existed. To point the
+app at your own:
 
-- **Data resets** whenever the dev server restarts, and on a serverless host like Vercel it can
-  reset between requests too (each invocation may get a fresh module instance) — there's no
-  durable storage yet, by design, until Supabase is wired up. In practice this means any skill
-  you create yourself can disappear (and its URL 404) after a redeploy or a cold start — a known,
-  accepted limitation of "mock data for now" while Supabase isn't connected.
-- **The seed skill's id is fixed** (`SEED_SKILL_ID` in `lib/data.ts`), on purpose — it's the one
-  link in the app that's meant to always work, so there's always at least one stable example to
-  click through even though the store itself resets. Skills created afterwards still get a random
-  id and are only as durable as the mock store.
-- **Swapping to Supabase later** means implementing these same functions against
-  `@supabase/supabase-js` using the tables in `supabase/schema.sql`, and nothing in `app/` or
-  `components/` needs to know the difference.
+1. Create a project at [supabase.com](https://supabase.com).
+2. Run `supabase/schema.sql` in the project's SQL Editor — creates `skills` and `executions`
+   with RLS enabled and no policies (the app only ever talks to them server-side with the
+   service role key, which bypasses RLS, so the anon key grants zero direct access).
+3. Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and
+   `SUPABASE_SERVICE_ROLE_KEY` from Project Settings → API (see `.env.example`).
+
+`listSkills()` seeds one example skill the first time it runs against an empty `skills` table —
+its id is fixed (`SEED_SKILL_ID` in `lib/data.ts`) so that one link never breaks across restarts.
+Everything you create afterward is real, durable Postgres data.
+
+**Known gap:** this codebase was built in a sandboxed environment whose network policy blocks
+the Supabase host, so the Supabase wiring was verified by unit-testing the client against the
+real project (confirmed the exact failure is the sandbox's own 403, not a code or schema issue)
+but not exercised end-to-end in a browser. Worth a quick smoke test after your first deploy —
+create a skill, refresh, confirm it's still there.
 
 ## The onboarding flow (paste a post → skill)
 
@@ -96,16 +97,20 @@ is set (`lib/claude.ts`); otherwise they're flagged `needs_setup` the same way.
 ## Login — ⚠️ placeholder, not real security
 
 `middleware.ts` gates every page behind `/login`. As explicitly requested (a real login was
-wanted, but Supabase isn't connected yet): **the password is never checked against anything —
+wanted before Supabase Auth was wired up): **the password is never checked against anything —
 any name + any non-empty password gets in.** This is not access control; anyone with the URL can
 log in as anyone. It exists so the login screen, session cookie, and "who ran this" attribution
-in execution history all have real UI/flow to build against before Supabase Auth is wired up.
+in execution history all have real UI/flow to build against.
 
+Supabase itself is now connected for *data* (skills/executions — see "Connecting Supabase"), but
+login is still this placeholder — Supabase Auth is a separate piece of work from the database.
 Everything is isolated in `lib/auth.ts` (`getCurrentUser`, session cookie helpers) and
 `app/api/auth/login/route.ts` (where the fake check lives, clearly commented). To make it real:
-swap that route's check for an actual Supabase Auth call, and `getCurrentUser()` for reading
-Supabase's session — every route/page/component that calls `getCurrentUser()` keeps working
-unchanged. Needs a Supabase project + keys, which haven't been provided.
+swap that route's check for `supabase.auth.signInWithPassword()` (or similar), and
+`getCurrentUser()` for reading Supabase's session — every route/page/component that calls
+`getCurrentUser()` keeps working unchanged. Needs real user accounts created in Supabase
+(Authentication → Users in the dashboard) — not done yet, since inventing an account/password
+isn't something to do without being asked.
 
 The logged-in name is stamped on every execution (`ranBy`) and shown in both the skill page's
 and the global history's execution list and detail view.
@@ -164,8 +169,9 @@ filter bars stayed.
 
 ```bash
 npm install
-cp .env.example .env   # fill in ANTHROPIC_API_KEY / COWORK_* if you have them
-npm run dev            # mock data seeds itself on first request, nothing else to set up
+cp .env.example .env   # fill in the Supabase vars (required) + ANTHROPIC_API_KEY / COWORK_* if you have them
+# run supabase/schema.sql in your Supabase project's SQL Editor first — see "Connecting Supabase" above
+npm run dev
 ```
 
 Every page is behind `/login` — enter any name and any password (see "Login — placeholder"
@@ -173,17 +179,15 @@ above for why).
 
 ## Known follow-ups
 
-- **Connect Supabase.** `lib/data.ts` is ready to be re-implemented against
-  `@supabase/supabase-js` using `supabase/schema.sql` — needs a Supabase project + keys, which
-  haven't been provided.
 - `next@14.2.35` is the latest patch on the 14.x line, but a couple of advisories (AVIF image
   optimization RCE, an internal `postcss` bundled by Next) are only fully resolved on Next 16,
   which has breaking changes (e.g. `params` becomes a `Promise` in route handlers). Worth a
   deliberate upgrade pass later — flagging rather than doing a rushed breaking migration now.
 - Skill editing (beyond the input-schema editor at creation time) is minimal — there's a `PATCH
   /api/skills/[id]` endpoint but no dedicated edit screen yet.
-- **Real auth.** Login currently accepts any password (see "Login — placeholder" above) —
-  needs a Supabase project + keys to become real Supabase Auth.
+- **Real auth.** Login currently accepts any password (see "Login — placeholder" above) — the
+  Supabase project is connected now, just needs Auth wired up (real user accounts created in the
+  dashboard, then swap the check in `app/api/auth/login/route.ts`).
 - **Real file generation.** Downloads today export Claude's real text result as `.txt`/`.pdf`;
   no skill produces an actual binary file end-to-end yet (see "Execution details and downloads"
   above) — would need Claude's code-execution/files tooling or real Cowork artifacts.
