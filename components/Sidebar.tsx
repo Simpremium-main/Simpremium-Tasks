@@ -98,7 +98,7 @@ export default function Sidebar({
 
   return (
     <aside
-      className={`shrink-0 h-screen sticky top-0 flex flex-col bg-sidebar border-r border-sidebar-border transition-[width] duration-300 ease-out ${
+      className={`shrink-0 flex flex-col bg-sidebar border-r border-sidebar-border transition-[width] duration-300 ease-out ${
         collapsed ? "w-[72px]" : "w-[264px]"
       } ${mounted ? "" : "duration-0"}`}
     >

@@ -26,6 +26,7 @@ export default function NewSkillForm() {
   const [parseError, setParseError] = useState<string | null>(null);
   const [proposal, setProposal] = useState<SkillDraftProposal | null>(null);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [tagDraft, setTagDraft] = useState("");
 
   async function handleParse() {
@@ -50,15 +51,22 @@ export default function NewSkillForm() {
   async function handleSave() {
     if (!proposal) return;
     setSaving(true);
+    setSaveError(null);
     try {
       const res = await fetch("/api/skills", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...proposal, sourcePost: postContent }),
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Falha ao salvar (HTTP ${res.status})`);
+      }
       const skill = await res.json();
       router.push(`/skills/${skill.id}`);
       router.refresh();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Falha ao salvar a skill");
     } finally {
       setSaving(false);
     }
@@ -320,19 +328,27 @@ export default function NewSkillForm() {
             </div>
           )}
 
-          <div className="flex items-center gap-3 pt-1">
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving || !proposal.name.trim() || !proposal.promptTemplate.trim()}
-              className="inline-flex items-center gap-1.5 rounded-md bg-primary text-white px-4 py-2 text-sm font-medium hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-              {saving ? "Salvando…" : "Salvar como rascunho"}
-            </button>
-            <p className="text-xs text-muted">
-              Fica ativa sozinha depois da primeira execução bem-sucedida.
-            </p>
+          <div>
+            <div className="flex items-center gap-3 pt-1">
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={saving || !proposal.name.trim() || !proposal.promptTemplate.trim()}
+                className="inline-flex items-center gap-1.5 rounded-md bg-primary text-white px-4 py-2 text-sm font-medium hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+                {saving ? "Salvando…" : "Salvar como rascunho"}
+              </button>
+              <p className="text-xs text-muted">
+                Fica ativa sozinha depois da primeira execução bem-sucedida.
+              </p>
+            </div>
+            {saveError && (
+              <p className="flex items-start gap-2 text-sm text-red-600 mt-2">
+                <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                {saveError}
+              </p>
+            )}
           </div>
         </div>
       )}

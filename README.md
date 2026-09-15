@@ -201,7 +201,8 @@ Users) to get in; see "Login — real Supabase Auth" above.
   which has breaking changes (e.g. `params` becomes a `Promise` in route handlers). Worth a
   deliberate upgrade pass later — flagging rather than doing a rushed breaking migration now.
 - Skill editing (beyond the input-schema editor at creation time) is minimal — there's a `PATCH
-  /api/skills/[id]` endpoint but no dedicated edit screen yet.
+  /api/skills/[id]` endpoint but no dedicated edit screen yet. Deleting one is possible though
+  (`DeleteSkillButton` on the skill page, with a confirm step).
 - No self-serve signup — new accounts are added by hand in the Supabase dashboard. Fine for a
   small internal team; worth a signup/invite screen if the group using this grows.
 - **Real file generation.** Downloads today export Claude's real text result as `.txt`/`.pdf`;

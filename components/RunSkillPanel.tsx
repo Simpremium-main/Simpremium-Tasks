@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { History, Loader2, Play, ShieldAlert } from "lucide-react";
+import { AlertTriangle, History, Loader2, Play, ShieldAlert } from "lucide-react";
 import DynamicForm from "./DynamicForm";
 import ExecutionList, { type ExecutionItem } from "./ExecutionList";
 import { buildPromptSnapshot } from "@/lib/mask";
@@ -33,6 +33,7 @@ export default function RunSkillPanel({
   const [running, setRunning] = useState(false);
   const [executions, setExecutions] = useState(initialExecutions);
   const [formError, setFormError] = useState<string | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
   const [highlightId, setHighlightId] = useState<string | null>(null);
 
   const missingRequired = schema.filter((f) => f.required && !values[f.key]?.trim());
@@ -48,18 +49,25 @@ export default function RunSkillPanel({
 
   async function confirmAndRun() {
     setRunning(true);
+    setRunError(null);
     try {
       const res = await fetch(`/api/skills/${skill.id}/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ inputValues: values }),
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Falha ao rodar (HTTP ${res.status})`);
+      }
       const execution = await res.json();
       setExecutions((prev) => [execution, ...prev]);
       setShowConfirm(false);
       setHighlightId(execution.id);
       setTimeout(() => setHighlightId(null), 1800);
       router.refresh();
+    } catch (err) {
+      setRunError(err instanceof Error ? err.message : "Falha ao rodar a skill");
     } finally {
       setRunning(false);
     }
@@ -92,6 +100,7 @@ export default function RunSkillPanel({
           source={skill.usesCowork ? "Claude Cowork" : "Claude"}
           prompt={promptPreview}
           running={running}
+          error={runError}
           onCancel={() => setShowConfirm(false)}
           onConfirm={confirmAndRun}
         />
@@ -113,6 +122,7 @@ function ConfirmRunModal({
   source,
   prompt,
   running,
+  error,
   onCancel,
   onConfirm,
 }: {
@@ -120,6 +130,7 @@ function ConfirmRunModal({
   source: string;
   prompt: string;
   running: boolean;
+  error: string | null;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -141,6 +152,12 @@ function ConfirmRunModal({
         <pre className="mt-3 whitespace-pre-wrap break-words bg-canvas rounded-md p-3 text-xs max-h-64 overflow-y-auto">
           {prompt}
         </pre>
+        {error && (
+          <p className="flex items-start gap-2 text-sm text-red-600 mt-3">
+            <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+            {error}
+          </p>
+        )}
         <div className="mt-4 flex justify-end gap-2">
           <button
             type="button"

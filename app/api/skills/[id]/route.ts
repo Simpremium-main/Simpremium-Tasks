@@ -2,13 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { deleteSkill, getSkillWithExecutions, updateSkill, type UpdateSkillInput } from "@/lib/data";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const skill = await getSkillWithExecutions(params.id);
-
-  if (!skill) {
-    return NextResponse.json({ error: "Skill not found" }, { status: 404 });
+  try {
+    const skill = await getSkillWithExecutions(params.id);
+    if (!skill) {
+      return NextResponse.json({ error: "Skill not found" }, { status: 404 });
+    }
+    return NextResponse.json(skill);
+  } catch (err) {
+    console.error(`GET /api/skills/${params.id} failed:`, err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to load skill" },
+      { status: 500 }
+    );
   }
-
-  return NextResponse.json(skill);
 }
 
 const EDITABLE_FIELDS = [
@@ -41,17 +47,33 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: "status must be draft or active" }, { status: 400 });
   }
 
-  const skill = await updateSkill(params.id, patch);
-  if (!skill) {
-    return NextResponse.json({ error: "Skill not found" }, { status: 404 });
+  try {
+    const skill = await updateSkill(params.id, patch);
+    if (!skill) {
+      return NextResponse.json({ error: "Skill not found" }, { status: 404 });
+    }
+    return NextResponse.json(skill);
+  } catch (err) {
+    console.error(`PATCH /api/skills/${params.id} failed:`, err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to update skill" },
+      { status: 500 }
+    );
   }
-  return NextResponse.json(skill);
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
-  const ok = await deleteSkill(params.id);
-  if (!ok) {
-    return NextResponse.json({ error: "Skill not found" }, { status: 404 });
+  try {
+    const ok = await deleteSkill(params.id);
+    if (!ok) {
+      return NextResponse.json({ error: "Skill not found" }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error(`DELETE /api/skills/${params.id} failed:`, err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to delete skill" },
+      { status: 500 }
+    );
   }
-  return NextResponse.json({ ok: true });
 }

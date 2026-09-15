@@ -4,6 +4,7 @@ import { getSkillWithExecutions } from "@/lib/data";
 import StatusBadge from "@/components/StatusBadge";
 import RunSkillPanel from "@/components/RunSkillPanel";
 import PageHeader from "@/components/PageHeader";
+import DeleteSkillButton from "@/components/DeleteSkillButton";
 import { isClaudeConfigured } from "@/lib/claude";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +29,12 @@ export default async function SkillDetailPage({ params }: { params: { id: string
       <PageHeader
         icon={skill.usesCowork ? <Bot size={18} /> : <Sparkles size={18} />}
         title={skill.name}
-        actions={<StatusBadge status={skill.status} />}
+        actions={
+          <>
+            <StatusBadge status={skill.status} />
+            <DeleteSkillButton skillId={skill.id} skillName={skill.name} />
+          </>
+        }
       />
 
       <div className="space-y-5 animate-fade-in">

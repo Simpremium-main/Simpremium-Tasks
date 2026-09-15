@@ -3,8 +3,16 @@ import { createSkill, listSkills } from "@/lib/data";
 import type { InputField } from "@/lib/types";
 
 export async function GET() {
-  const skills = await listSkills();
-  return NextResponse.json(skills);
+  try {
+    const skills = await listSkills();
+    return NextResponse.json(skills);
+  } catch (err) {
+    console.error("GET /api/skills failed:", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to list skills" },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -26,17 +34,24 @@ export async function POST(req: NextRequest) {
     ? body.tags.filter((t: unknown) => typeof t === "string" && t.trim()).map((t: string) => t.trim())
     : [];
 
-  const skill = await createSkill({
-    name,
-    description,
-    promptTemplate,
-    needsInput: Boolean(body.needsInput),
-    usesCowork: Boolean(body.usesCowork),
-    inputSchema,
-    sourcePost: typeof body.sourcePost === "string" ? body.sourcePost : null,
-    group: typeof body.group === "string" && body.group.trim() ? body.group.trim() : null,
-    tags,
-  });
-
-  return NextResponse.json(skill, { status: 201 });
+  try {
+    const skill = await createSkill({
+      name,
+      description,
+      promptTemplate,
+      needsInput: Boolean(body.needsInput),
+      usesCowork: Boolean(body.usesCowork),
+      inputSchema,
+      sourcePost: typeof body.sourcePost === "string" ? body.sourcePost : null,
+      group: typeof body.group === "string" && body.group.trim() ? body.group.trim() : null,
+      tags,
+    });
+    return NextResponse.json(skill, { status: 201 });
+  } catch (err) {
+    console.error("POST /api/skills failed:", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to create skill" },
+      { status: 500 }
+    );
+  }
 }
