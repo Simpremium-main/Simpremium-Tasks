@@ -11,6 +11,8 @@ const EXTRACTION_SYSTEM_PROMPT = `You turn a social media post about a Claude sk
   "needsInput": boolean (true if the skill needs any value from the user to run, e.g. a date range, a company name, a URL),
   "usesCowork": boolean (true if the post mentions or implies this depends on Claude Cowork to execute),
   "inputSchema": array of { "key": string (matches a {{key}} in promptTemplate), "label": string, "type": "text"|"textarea"|"secret"|"url"|"number", "required": boolean, "placeholder": string, "helpText": string } — empty array if needsInput is false. Use type "secret" for anything credential/token-like.
+  "group": string or null — a short category for this skill (e.g. "Relatórios", "Pesquisa", "Atendimento", "Financeiro"), guessed from what it does. null if nothing fits.
+  "tags": array of short lowercase strings (0-4), e.g. ["pdf", "vendas"].
 }
 
 Never invent a credential, token or endpoint that isn't in the post — if the skill needs one, add it as a "secret" input field rather than embedding a fake value.`;
@@ -66,8 +68,18 @@ async function parseWithClaude(postContent: string): Promise<SkillDraftProposal>
     needsInput: Boolean(parsed.needsInput),
     usesCowork: Boolean(parsed.usesCowork),
     inputSchema: normalizeInputSchema(parsed.inputSchema),
+    group: typeof parsed.group === "string" && parsed.group.trim() ? parsed.group.trim() : null,
+    tags: normalizeTags(parsed.tags),
     needsReview: false,
   };
+}
+
+function normalizeTags(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((t): t is string => typeof t === "string" && t.trim().length > 0)
+    .map((t) => t.trim().toLowerCase())
+    .slice(0, 6);
 }
 
 function stripCodeFence(text: string): string {
@@ -134,6 +146,8 @@ function heuristicParse(postContent: string): SkillDraftProposal {
     needsInput: needsInput || inputSchema.length > 0,
     usesCowork,
     inputSchema,
+    group: null,
+    tags: [],
     needsReview: true,
     reviewNote:
       "ANTHROPIC_API_KEY isn't configured, so this draft was built with a simple " +

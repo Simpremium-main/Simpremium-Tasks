@@ -8,7 +8,3 @@ dist/
 *.log
 npm-debug.log*
 .DS_Store
-prisma/dev.db
-prisma/dev.db-journal
-*.db
-*.db-journal

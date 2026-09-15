@@ -1,0 +1,56 @@
+-- Skills Hub — Supabase schema.
+--
+-- Run this once in your Supabase project's SQL Editor (Project → SQL
+-- Editor → New query → paste → Run). It creates the two tables the app
+-- needs; lib/data.ts will be pointed at these once NEXT_PUBLIC_SUPABASE_URL
+-- and SUPABASE_SERVICE_ROLE_KEY are set (see README "Connecting Supabase").
+--
+-- RLS is enabled with no policies on purpose: the app talks to these tables
+-- only from the server using the service role key, which bypasses RLS. That
+-- means the anon key (safe to expose to a browser) grants zero access to
+-- this data by default — nobody can read/write skills or executions
+-- directly from the client, only through our own API routes.
+
+create extension if not exists pgcrypto;
+
+create table if not exists skills (
+  id              uuid primary key default gen_random_uuid(),
+  name            text not null,
+  description     text not null default '',
+  status          text not null default 'draft' check (status in ('draft', 'active')),
+  needs_input     boolean not null default false,
+  uses_cowork     boolean not null default false,
+  prompt_template text not null,
+  input_schema    jsonb, -- InputField[] | null, see lib/types.ts
+  source_post     text,
+  confirmed_once  boolean not null default false,
+  "group"         text,
+  tags            text[] not null default '{}',
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+
+create table if not exists executions (
+  id              uuid primary key default gen_random_uuid(),
+  skill_id        uuid not null references skills(id) on delete cascade,
+  status          text not null check (status in ('pending', 'running', 'success', 'error', 'needs_setup')),
+  source          text not null check (source in ('cowork', 'claude', 'manual')),
+  input_values    jsonb, -- Record<string, string> | null — secret fields already masked before insert
+  prompt_snapshot text not null, -- secret values already masked before insert
+  result          text,
+  error           text,
+  ran_by          text, -- display name of the logged-in user who triggered this run
+  started_at      timestamptz not null default now(),
+  finished_at     timestamptz
+);
+
+create index if not exists executions_skill_id_idx on executions (skill_id);
+create index if not exists executions_started_at_idx on executions (started_at desc);
+
+alter table skills enable row level security;
+alter table executions enable row level security;
+-- No policies added — see the note at the top of this file for why.
+
+-- Secrets are masked in lib/mask.ts before a row is ever written here — this
+-- schema never stores an unmasked credential/token, matching the security
+-- baseline in CLAUDE.md.

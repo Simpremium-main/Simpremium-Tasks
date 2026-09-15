@@ -2,6 +2,19 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  AlertTriangle,
+  Bot,
+  Folder,
+  Loader2,
+  PenLine,
+  Plus,
+  Save,
+  Sparkles,
+  Tag,
+  Trash2,
+  X,
+} from "lucide-react";
 import type { InputField, InputFieldType, SkillDraftProposal } from "@/lib/types";
 
 const FIELD_TYPES: InputFieldType[] = ["text", "textarea", "secret", "url", "number"];
@@ -13,6 +26,8 @@ export default function NewSkillForm() {
   const [parseError, setParseError] = useState<string | null>(null);
   const [proposal, setProposal] = useState<SkillDraftProposal | null>(null);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [tagDraft, setTagDraft] = useState("");
 
   async function handleParse() {
     if (!postContent.trim()) return;
@@ -24,10 +39,10 @@ export default function NewSkillForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ postContent }),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? "Failed to parse post");
+      if (!res.ok) throw new Error((await res.json()).error ?? "Falha ao interpretar o post");
       setProposal(await res.json());
     } catch (err) {
-      setParseError(err instanceof Error ? err.message : "Failed to parse post");
+      setParseError(err instanceof Error ? err.message : "Falha ao interpretar o post");
     } finally {
       setParsing(false);
     }
@@ -36,14 +51,22 @@ export default function NewSkillForm() {
   async function handleSave() {
     if (!proposal) return;
     setSaving(true);
+    setSaveError(null);
     try {
       const res = await fetch("/api/skills", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...proposal, sourcePost: postContent }),
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Falha ao salvar (HTTP ${res.status})`);
+      }
       const skill = await res.json();
       router.push(`/skills/${skill.id}`);
+      router.refresh();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Falha ao salvar a skill");
     } finally {
       setSaving(false);
     }
@@ -65,6 +88,17 @@ export default function NewSkillForm() {
     setProposal((p) => (p ? { ...p, inputSchema: p.inputSchema.filter((_, i) => i !== index) } : p));
   }
 
+  function addTag() {
+    const tag = tagDraft.trim().toLowerCase();
+    if (!tag) return;
+    setProposal((p) => (p && !p.tags.includes(tag) ? { ...p, tags: [...p.tags, tag] } : p));
+    setTagDraft("");
+  }
+
+  function removeTag(tag: string) {
+    setProposal((p) => (p ? { ...p, tags: p.tags.filter((t) => t !== tag) } : p));
+  }
+
   function addInputField() {
     setProposal((p) =>
       p
@@ -73,7 +107,7 @@ export default function NewSkillForm() {
             needsInput: true,
             inputSchema: [
               ...p.inputSchema,
-              { key: `field_${p.inputSchema.length + 1}`, label: "New field", type: "text", required: false },
+              { key: `campo_${p.inputSchema.length + 1}`, label: "Novo campo", type: "text", required: false },
             ],
           }
         : p
@@ -81,124 +115,186 @@ export default function NewSkillForm() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-lg border border-line bg-white p-4">
-        <label className="block text-sm font-medium mb-2" htmlFor="postContent">
-          Paste the post content (text, transcript of a screenshot, or the link's context)
+    <div className="space-y-5">
+      <div className="rounded-xl border border-line bg-white p-5">
+        <label className="block text-sm font-semibold text-ink mb-2" htmlFor="postContent">
+          Cole o conteúdo do post
         </label>
+        <p className="text-xs text-muted mb-2.5">
+          Texto, a transcrição de um print, ou o contexto de um link.
+        </p>
         <textarea
           id="postContent"
           value={postContent}
           onChange={(e) => setPostContent(e.target.value)}
           rows={8}
-          placeholder="Paste what your boss posted about the skill/MCP here…"
-          className="w-full rounded-md border border-line px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/40"
+          placeholder="Cole aqui o que o chefe postou sobre a skill/MCP…"
+          className="w-full rounded-md border border-line px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-shadow"
         />
         <button
           type="button"
           onClick={handleParse}
           disabled={parsing || !postContent.trim()}
-          className="mt-3 rounded-md bg-accent text-white px-4 py-2 text-sm font-medium hover:bg-accent/90 disabled:opacity-60 transition-colors"
+          className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-primary text-white px-4 py-2 text-sm font-medium hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          {parsing ? "Reading…" : "Turn into a skill draft"}
+          {parsing ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+          {parsing ? "Lendo…" : "Transformar em rascunho de skill"}
         </button>
         {parseError && <p className="mt-2 text-sm text-red-600">{parseError}</p>}
       </div>
 
       {proposal && (
-        <div className="rounded-lg border border-line bg-white p-4 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="font-medium">Preview — edit anything before saving</h2>
-          </div>
+        <div className="rounded-xl border border-line bg-white p-5 space-y-5 animate-fade-in">
+          <h2 className="font-semibold text-ink">Prévia — edite o que quiser antes de salvar</h2>
 
           {proposal.needsReview && (
-            <p className="text-sm bg-amber-50 text-amber-800 rounded-md p-3">
-              {proposal.reviewNote ?? "Please review this draft carefully before saving."}
+            <p className="flex items-start gap-2 text-sm bg-amber-50 text-amber-800 rounded-md p-3">
+              <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+              {proposal.reviewNote ?? "Revise este rascunho com cuidado antes de salvar."}
             </p>
           )}
 
           <div>
-            <label className="block text-sm font-medium mb-1">Name</label>
+            <label className="block text-sm font-medium text-ink mb-1">Nome</label>
             <input
               value={proposal.name}
               onChange={(e) => updateField("name", e.target.value)}
-              className="w-full rounded-md border border-line px-3 py-2 text-sm"
+              className="w-full rounded-md border border-line px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-shadow"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Description</label>
+            <label className="block text-sm font-medium text-ink mb-1">Descrição</label>
             <textarea
               value={proposal.description}
               onChange={(e) => updateField("description", e.target.value)}
               rows={2}
-              className="w-full rounded-md border border-line px-3 py-2 text-sm"
+              className="w-full rounded-md border border-line px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-shadow"
             />
           </div>
 
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label className="flex items-center gap-1.5 text-sm font-medium text-ink mb-1">
+                <Folder size={13} className="text-muted" />
+                Grupo
+              </label>
+              <input
+                value={proposal.group ?? ""}
+                onChange={(e) => updateField("group", e.target.value || null)}
+                placeholder="ex: Relatórios, Pesquisa, Atendimento"
+                className="w-full rounded-md border border-line px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-shadow"
+              />
+            </div>
+            <div>
+              <label className="flex items-center gap-1.5 text-sm font-medium text-ink mb-1">
+                <Tag size={13} className="text-muted" />
+                Tags
+              </label>
+              <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-line px-2 py-1.5 focus-within:ring-2 focus-within:ring-primary/30 focus-within:border-primary/50 transition-shadow">
+                {proposal.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center gap-1 rounded-full bg-primary-soft text-primary text-xs px-2 py-0.5"
+                  >
+                    {tag}
+                    <button
+                      type="button"
+                      onClick={() => removeTag(tag)}
+                      className="hover:text-primary-hover"
+                    >
+                      <X size={11} />
+                    </button>
+                  </span>
+                ))}
+                <input
+                  value={tagDraft}
+                  onChange={(e) => setTagDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === ",") {
+                      e.preventDefault();
+                      addTag();
+                    }
+                  }}
+                  onBlur={addTag}
+                  placeholder={proposal.tags.length ? "" : "Digite e pressione Enter"}
+                  className="flex-1 min-w-[90px] text-sm focus:outline-none py-0.5"
+                />
+              </div>
+            </div>
+          </div>
+
           <div>
-            <label className="block text-sm font-medium mb-1">
-              Prompt template
-              <span className="text-ink/40 font-normal"> — use {"{{fieldKey}}"} for per-run inputs</span>
+            <label className="block text-sm font-medium text-ink mb-1">
+              Template do prompt
+              <span className="text-muted font-normal"> — use {"{{campo}}"} para inputs por execução</span>
             </label>
             <textarea
               value={proposal.promptTemplate}
               onChange={(e) => updateField("promptTemplate", e.target.value)}
               rows={5}
-              className="w-full rounded-md border border-line px-3 py-2 text-sm font-mono"
+              className="w-full rounded-md border border-line px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-shadow"
             />
           </div>
 
-          <div className="flex gap-6">
-            <label className="flex items-center gap-2 text-sm">
+          <div className="flex flex-wrap gap-3">
+            <label className="flex items-center gap-2 text-sm rounded-md border border-line px-3 py-1.5 cursor-pointer hover:bg-canvas transition-colors">
               <input
                 type="checkbox"
                 checked={proposal.needsInput}
                 onChange={(e) => updateField("needsInput", e.target.checked)}
+                className="accent-primary"
               />
-              Needs input to run
+              <PenLine size={14} className="text-muted" />
+              Precisa de input pra rodar
             </label>
-            <label className="flex items-center gap-2 text-sm">
+            <label className="flex items-center gap-2 text-sm rounded-md border border-line px-3 py-1.5 cursor-pointer hover:bg-canvas transition-colors">
               <input
                 type="checkbox"
                 checked={proposal.usesCowork}
                 onChange={(e) => updateField("usesCowork", e.target.checked)}
+                className="accent-primary"
               />
-              Runs through Claude Cowork
+              <Bot size={14} className="text-muted" />
+              Roda via Claude Cowork
             </label>
           </div>
 
           {proposal.needsInput && (
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium">Input fields</label>
+                <label className="block text-sm font-medium text-ink">Campos de input</label>
                 <button
                   type="button"
                   onClick={addInputField}
-                  className="text-xs text-accent hover:underline"
+                  className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary-hover font-medium transition-colors"
                 >
-                  + add field
+                  <Plus size={13} />
+                  adicionar campo
                 </button>
               </div>
               <div className="space-y-2">
                 {proposal.inputSchema.map((field, i) => (
-                  <div key={i} className="flex flex-wrap items-center gap-2 rounded-md border border-line p-2">
+                  <div
+                    key={i}
+                    className="flex flex-wrap items-center gap-2 rounded-md border border-line p-2 bg-canvas/40 animate-fade-in"
+                  >
                     <input
                       value={field.key}
                       onChange={(e) => updateInputField(i, { key: e.target.value })}
                       placeholder="key"
-                      className="w-28 rounded border border-line px-2 py-1 text-xs font-mono"
+                      className="w-28 rounded border border-line bg-white px-2 py-1 text-xs font-mono"
                     />
                     <input
                       value={field.label}
                       onChange={(e) => updateInputField(i, { label: e.target.value })}
                       placeholder="label"
-                      className="flex-1 min-w-[120px] rounded border border-line px-2 py-1 text-xs"
+                      className="flex-1 min-w-[120px] rounded border border-line bg-white px-2 py-1 text-xs"
                     />
                     <select
                       value={field.type}
                       onChange={(e) => updateInputField(i, { type: e.target.value as InputFieldType })}
-                      className="rounded border border-line px-2 py-1 text-xs"
+                      className="rounded border border-line bg-white px-2 py-1 text-xs"
                     >
                       {FIELD_TYPES.map((t) => (
                         <option key={t} value={t}>
@@ -206,41 +302,54 @@ export default function NewSkillForm() {
                         </option>
                       ))}
                     </select>
-                    <label className="flex items-center gap-1 text-xs">
+                    <label className="flex items-center gap-1 text-xs text-muted">
                       <input
                         type="checkbox"
                         checked={field.required}
                         onChange={(e) => updateInputField(i, { required: e.target.checked })}
+                        className="accent-primary"
                       />
-                      required
+                      obrigatório
                     </label>
                     <button
                       type="button"
                       onClick={() => removeInputField(i)}
-                      className="text-xs text-red-600 hover:underline ml-auto"
+                      className="text-red-500 hover:text-red-700 ml-auto transition-colors"
+                      title="Remover campo"
                     >
-                      remove
+                      <Trash2 size={14} />
                     </button>
                   </div>
                 ))}
                 {proposal.inputSchema.length === 0 && (
-                  <p className="text-xs text-ink/50">No fields yet — add one, or it'll run with no input.</p>
+                  <p className="text-xs text-muted">Nenhum campo ainda — adicione um, ou ela roda sem input.</p>
                 )}
               </div>
             </div>
           )}
 
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving || !proposal.name.trim() || !proposal.promptTemplate.trim()}
-            className="rounded-md bg-accent text-white px-4 py-2 text-sm font-medium hover:bg-accent/90 disabled:opacity-60 transition-colors"
-          >
-            {saving ? "Saving…" : "Save as draft"}
-          </button>
-          <p className="text-xs text-ink/50">
-            Saved as a draft — it becomes active automatically after its first successful run.
-          </p>
+          <div>
+            <div className="flex items-center gap-3 pt-1">
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={saving || !proposal.name.trim() || !proposal.promptTemplate.trim()}
+                className="inline-flex items-center gap-1.5 rounded-md bg-primary text-white px-4 py-2 text-sm font-medium hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+                {saving ? "Salvando…" : "Salvar como rascunho"}
+              </button>
+              <p className="text-xs text-muted">
+                Fica ativa sozinha depois da primeira execução bem-sucedida.
+              </p>
+            </div>
+            {saveError && (
+              <p className="flex items-start gap-2 text-sm text-red-600 mt-2">
+                <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                {saveError}
+              </p>
+            )}
+          </div>
         </div>
       )}
     </div>

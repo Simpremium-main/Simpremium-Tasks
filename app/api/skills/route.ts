@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { createSkill, listSkills } from "@/lib/data";
 import type { InputField } from "@/lib/types";
 
 export async function GET() {
-  const skills = await prisma.skill.findMany({
-    orderBy: { createdAt: "desc" },
-    include: { _count: { select: { executions: true } } },
-  });
-  return NextResponse.json(skills);
+  try {
+    const skills = await listSkills();
+    return NextResponse.json(skills);
+  } catch (err) {
+    console.error("GET /api/skills failed:", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to list skills" },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -25,19 +30,28 @@ export async function POST(req: NextRequest) {
   }
 
   const inputSchema: InputField[] = Array.isArray(body.inputSchema) ? body.inputSchema : [];
+  const tags: string[] = Array.isArray(body.tags)
+    ? body.tags.filter((t: unknown) => typeof t === "string" && t.trim()).map((t: string) => t.trim())
+    : [];
 
-  const skill = await prisma.skill.create({
-    data: {
+  try {
+    const skill = await createSkill({
       name,
       description,
       promptTemplate,
       needsInput: Boolean(body.needsInput),
       usesCowork: Boolean(body.usesCowork),
-      inputSchema: inputSchema.length ? JSON.stringify(inputSchema) : null,
+      inputSchema,
       sourcePost: typeof body.sourcePost === "string" ? body.sourcePost : null,
-      status: "draft",
-    },
-  });
-
-  return NextResponse.json(skill, { status: 201 });
+      group: typeof body.group === "string" && body.group.trim() ? body.group.trim() : null,
+      tags,
+    });
+    return NextResponse.json(skill, { status: 201 });
+  } catch (err) {
+    console.error("POST /api/skills failed:", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to create skill" },
+      { status: 500 }
+    );
+  }
 }

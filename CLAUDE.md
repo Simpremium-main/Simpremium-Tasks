@@ -85,8 +85,30 @@ defaulting to a generic style.
 
 ## Current state
 
-See `README.md` for the stack, data model, and what's built so far. In short: a Next.js +
-Prisma/SQLite dashboard implementing the onboarding flow, per-skill run + history, global
-history, and secret masking. Cowork dispatch is a pluggable adapter (`lib/cowork.ts`) currently
-flagged `needs_setup` since no Cowork dispatch mechanism was discoverable in the build
-environment — wire up `COWORK_DISPATCH_WEBHOOK_URL` once one is available.
+See `README.md` for the stack, data model, and what's built so far. In short: a Next.js
+dashboard implementing the onboarding flow, per-skill run + history, global history, and secret
+masking. Persistence is real Supabase now (`lib/data.ts` / `lib/supabaseClient.ts`, schema in
+`supabase/schema.sql`) — connected with a real project's keys. Built and type-checked in a
+sandbox whose network policy blocks the Supabase host, so the wiring couldn't be exercised
+end-to-end in a browser from here; the exact failure (403 from the sandbox's own proxy, not from
+Supabase) was confirmed directly against the real project. Worth a smoke test after deploy — see
+README's "Connecting Supabase" section. Cowork dispatch is a pluggable adapter
+(`lib/cowork.ts`) currently flagged `needs_setup` since no Cowork dispatch mechanism was
+discoverable in the build environment — wire up `COWORK_DISPATCH_WEBHOOK_URL` once one is
+available. Visual style: a `Pedido-Central-main` screenshot was shared and applied (dark
+collapsible sidebar listing skills grouped by category, sticky page headers, pill badges,
+`lucide-react` icons, animations) — see README's "Visual style" section.
+
+Login is real Supabase Auth now (email + password, `@supabase/ssr`) — no longer the fake
+any-password placeholder from earlier. Every page sits behind `/login` via `middleware.ts`; see
+README's "Login — real Supabase Auth" section before touching `lib/auth.ts`,
+`lib/supabase/server.ts`, `middleware.ts`, or `app/api/auth/*`. Accounts are created by hand in
+the Supabase dashboard (Authentication → Users) — no in-app signup. Skills have `group`/`tags`
+now, and executions record `ranBy` (the logged-in email) — shown throughout history. Execution
+rows open a details modal with copy-to-clipboard and `.txt`/`.pdf` export of the real text result
+(no skill produces an actual generated file yet — see README's "Execution details and downloads"
+section for why).
+
+## Git workflow
+
+Commit and push straight to `main` — no feature branches or PRs needed for this project.

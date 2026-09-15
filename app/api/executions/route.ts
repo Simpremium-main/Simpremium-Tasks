@@ -1,20 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { listExecutions } from "@/lib/data";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status") ?? undefined;
   const skillId = searchParams.get("skillId") ?? undefined;
 
-  const executions = await prisma.execution.findMany({
-    where: {
-      ...(status ? { status } : {}),
-      ...(skillId ? { skillId } : {}),
-    },
-    orderBy: { startedAt: "desc" },
-    include: { skill: { select: { id: true, name: true } } },
-    take: 200,
-  });
-
-  return NextResponse.json(executions);
+  try {
+    const executions = await listExecutions({ status, skillId });
+    return NextResponse.json(executions);
+  } catch (err) {
+    console.error("GET /api/executions failed:", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to list executions" },
+      { status: 500 }
+    );
+  }
 }

@@ -1,17 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { deleteSkill, getSkillWithExecutions, updateSkill, type UpdateSkillInput } from "@/lib/data";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const skill = await prisma.skill.findUnique({
-    where: { id: params.id },
-    include: { executions: { orderBy: { startedAt: "desc" } } },
-  });
-
-  if (!skill) {
-    return NextResponse.json({ error: "Skill not found" }, { status: 404 });
+  try {
+    const skill = await getSkillWithExecutions(params.id);
+    if (!skill) {
+      return NextResponse.json({ error: "Skill not found" }, { status: 404 });
+    }
+    return NextResponse.json(skill);
+  } catch (err) {
+    console.error(`GET /api/skills/${params.id} failed:`, err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to load skill" },
+      { status: 500 }
+    );
   }
-
-  return NextResponse.json(skill);
 }
 
 const EDITABLE_FIELDS = [
@@ -21,37 +24,56 @@ const EDITABLE_FIELDS = [
   "needsInput",
   "usesCowork",
   "status",
+  "group",
 ] as const;
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const body = await req.json();
-  const data: Record<string, unknown> = {};
+  const patch: UpdateSkillInput = {};
 
   for (const field of EDITABLE_FIELDS) {
-    if (field in body) data[field] = body[field];
+    if (field in body) (patch as Record<string, unknown>)[field] = body[field];
   }
 
   if (Array.isArray(body.inputSchema)) {
-    data.inputSchema = body.inputSchema.length ? JSON.stringify(body.inputSchema) : null;
+    patch.inputSchema = body.inputSchema.length ? body.inputSchema : null;
   }
 
-  if (data.status && !["draft", "active"].includes(data.status as string)) {
+  if (Array.isArray(body.tags)) {
+    patch.tags = body.tags.filter((t: unknown) => typeof t === "string" && t.trim());
+  }
+
+  if (patch.status && !["draft", "active"].includes(patch.status)) {
     return NextResponse.json({ error: "status must be draft or active" }, { status: 400 });
   }
 
   try {
-    const skill = await prisma.skill.update({ where: { id: params.id }, data });
+    const skill = await updateSkill(params.id, patch);
+    if (!skill) {
+      return NextResponse.json({ error: "Skill not found" }, { status: 404 });
+    }
     return NextResponse.json(skill);
-  } catch {
-    return NextResponse.json({ error: "Skill not found" }, { status: 404 });
+  } catch (err) {
+    console.error(`PATCH /api/skills/${params.id} failed:`, err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to update skill" },
+      { status: 500 }
+    );
   }
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   try {
-    await prisma.skill.delete({ where: { id: params.id } });
+    const ok = await deleteSkill(params.id);
+    if (!ok) {
+      return NextResponse.json({ error: "Skill not found" }, { status: 404 });
+    }
     return NextResponse.json({ ok: true });
-  } catch {
-    return NextResponse.json({ error: "Skill not found" }, { status: 404 });
+  } catch (err) {
+    console.error(`DELETE /api/skills/${params.id} failed:`, err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to delete skill" },
+      { status: 500 }
+    );
   }
 }
