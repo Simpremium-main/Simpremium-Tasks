@@ -1,3 +1,4 @@
+import { cache } from "react";
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { getSupabase } from "./supabaseClient";
 import type { Execution, ExecutionStatus, ExecutionSource, InputField, Skill } from "./types";
@@ -90,34 +91,51 @@ async function ensureSeeded(supabase: SupabaseClient): Promise<void> {
     },
   ];
 
+  // upsert + ignoreDuplicates rather than a plain insert: Next.js can render
+  // the layout and the page concurrently within one request, and both call
+  // listSkills() (and therefore this), so two calls can both see count === 0
+  // above and both try to create the seed skill at once. A plain insert
+  // would have the second one fail on the fixed id's primary key — this is
+  // exactly what happened in production. Upsert with ignoreDuplicates makes
+  // the race harmless: whichever call loses just no-ops instead of erroring.
   const {
     error: insertError,
     status: insertStatus,
     statusText: insertStatusText,
-  } = await supabase.from("skills").insert({
-    id: SEED_SKILL_ID,
-    name: "Relatório Semanal de Vendas (PDF)",
-    description:
-      "Gera um PDF resumindo a performance de vendas no período informado — tirado do " +
-      "post do chefe no Instagram sobre uma skill de relatórios da Claude.",
-    status: "draft",
-    needs_input: true,
-    uses_cowork: false,
-    prompt_template:
-      "Gere um relatório de vendas em PDF para {{periodo}}. Inclua receita, produtos mais " +
-      "vendidos e a tendência comparada ao período anterior. {{foco}}",
-    input_schema: inputSchema,
-    source_post:
-      "(exemplo) Achei essa skill da Claude — cola seus números de vendas e ela cospe um " +
-      "PDF limpo em minutos. Mudou o jogo pras revisões semanais.",
-    confirmed_once: false,
-    group: "Relatórios",
-    tags: ["vendas", "pdf"],
-  });
+  } = await supabase.from("skills").upsert(
+    {
+      id: SEED_SKILL_ID,
+      name: "Relatório Semanal de Vendas (PDF)",
+      description:
+        "Gera um PDF resumindo a performance de vendas no período informado — tirado do " +
+        "post do chefe no Instagram sobre uma skill de relatórios da Claude.",
+      status: "draft",
+      needs_input: true,
+      uses_cowork: false,
+      prompt_template:
+        "Gere um relatório de vendas em PDF para {{periodo}}. Inclua receita, produtos mais " +
+        "vendidos e a tendência comparada ao período anterior. {{foco}}",
+      input_schema: inputSchema,
+      source_post:
+        "(exemplo) Achei essa skill da Claude — cola seus números de vendas e ela cospe um " +
+        "PDF limpo em minutos. Mudou o jogo pras revisões semanais.",
+      confirmed_once: false,
+      group: "Relatórios",
+      tags: ["vendas", "pdf"],
+    },
+    { onConflict: "id", ignoreDuplicates: true }
+  );
   if (insertError) throw describeError("ensureSeeded insert", insertError, insertStatus, insertStatusText);
 }
 
-export async function listSkills(): Promise<(Skill & { _count: { executions: number } })[]> {
+// Wrapped in React's cache() so that when the layout and the page both call
+// listSkills() during the same request (a normal thing for the App Router
+// to do concurrently), it only actually hits Supabase once — saves a round
+// trip, and incidentally shrinks how often the seeding race above can even
+// occur (still safe either way, thanks to the upsert above).
+export const listSkills = cache(async (): Promise<
+  (Skill & { _count: { executions: number } })[]
+> => {
   const supabase = getSupabase();
   await ensureSeeded(supabase);
 
@@ -147,7 +165,7 @@ export async function listSkills(): Promise<(Skill & { _count: { executions: num
     ...mapSkillRow(row),
     _count: { executions: counts.get(row.id as string) ?? 0 },
   }));
-}
+});
 
 export async function getSkill(id: string): Promise<Skill | null> {
   const supabase = getSupabase();
