@@ -52,6 +52,19 @@ Everything you create afterward is real, durable Postgres data. It's a normal sk
 other — not hardcoded or protected — so once you've got real skills in place, delete it from its
 page like you would any other.
 
+**The sidebar's list not updating after creating/deleting a skill** was a second, separate bug
+found after the `cache()` fix above turned out not to be enough: `DeleteSkillButton` and
+`NewSkillForm` used to do `router.push(url); router.refresh();` right after their request
+succeeded. The sidebar lives in the shared `app/(app)/layout.tsx`, and the App Router does **not**
+automatically re-fetch a layout when client-side navigation moves to a sibling page that shares
+it — and calling `refresh()` in the same tick right after `push()` can race Next's navigation
+scheduling and miss the very route it just pushed to, so the layout (and its sidebar) can be left
+showing stale data even though the page you land on is correct. Both components now do a full
+`window.location.href = ...` navigation instead — heavier than a client-side transition, but it
+guarantees everything (layout included) is freshly fetched, for an action (create/delete a skill)
+that's infrequent enough that the tradeoff is a non-issue. `RunSkillPanel`'s plain `router.refresh()`
+(no accompanying `push()`, same page) doesn't have this race and was left as-is.
+
 `listSkills()` is intentionally a plain async function, not wrapped in React's `cache()`. An
 earlier version wrapped it to dedupe the layout + page both calling it in the same request, but
 `cache()`'s per-request reset only really applies to Server Component rendering — it doesn't

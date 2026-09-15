@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   Bot,
@@ -20,7 +19,6 @@ import type { InputField, InputFieldType, SkillDraftProposal } from "@/lib/types
 const FIELD_TYPES: InputFieldType[] = ["text", "textarea", "secret", "url", "number"];
 
 export default function NewSkillForm() {
-  const router = useRouter();
   const [postContent, setPostContent] = useState("");
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
@@ -63,8 +61,15 @@ export default function NewSkillForm() {
         throw new Error(body.error ?? `Falha ao salvar (HTTP ${res.status})`);
       }
       const skill = await res.json();
-      router.push(`/skills/${skill.id}`);
-      router.refresh();
+      // Hard navigation, not router.push()+router.refresh() — see the same
+      // note in DeleteSkillButton.tsx. The sidebar lives in the shared
+      // (app) layout, which client-side navigation to a sibling page
+      // doesn't re-fetch on its own, and refresh() called right after
+      // push() in the same tick can race the navigation and miss it —
+      // that's why a newly created skill showed up on its own page but not
+      // in the sidebar's list. A full navigation always re-fetches
+      // everything, layout included.
+      window.location.href = `/skills/${skill.id}`;
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Falha ao salvar a skill");
     } finally {

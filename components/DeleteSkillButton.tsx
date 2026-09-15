@@ -1,11 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { AlertTriangle, Loader2, Trash2 } from "lucide-react";
 
 export default function DeleteSkillButton({ skillId, skillName }: { skillId: string; skillName: string }) {
-  const router = useRouter();
   const [showConfirm, setShowConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -19,8 +17,16 @@ export default function DeleteSkillButton({ skillId, skillName }: { skillId: str
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Falha ao excluir (HTTP ${res.status})`);
       }
-      router.push("/");
-      router.refresh();
+      // A hard navigation, not router.push()+router.refresh(): the sidebar
+      // lives in the persistent (app) layout, which the App Router does NOT
+      // automatically re-fetch on a client-side route change to a page that
+      // shares it — and calling refresh() right after push() in the same
+      // tick races Next's navigation scheduling, so it can miss the new
+      // route entirely. That's what left the sidebar showing a just-deleted
+      // skill even though the delete itself succeeded. A full navigation
+      // always re-fetches everything, layout included — worth the
+      // reload flash for an action this infrequent.
+      window.location.href = "/";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao excluir a skill");
       setDeleting(false);
