@@ -3,6 +3,13 @@ import { getSkill } from "@/lib/data";
 import { runSkill } from "@/lib/runSkill";
 import { getCurrentUser } from "@/lib/auth";
 
+// A skill that fetches a page and generates a file via code execution can
+// genuinely take a few minutes — default Vercel function duration is far
+// shorter than that. 300s matches what's actually available without a
+// higher-tier plan; bump this (and the same export in run/stream/route.ts)
+// if the account's plan supports more.
+export const maxDuration = 300;
+
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const skill = await getSkill(params.id);

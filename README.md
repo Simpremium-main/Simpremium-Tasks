@@ -139,6 +139,22 @@ stream partial output, so a Cowork skill's "Pensando…" panel just shows "Despa
 until the one final result comes back. The older `POST /api/skills/[id]/run` (plain JSON, no
 streaming) is still there too, for any script that'd rather not parse SSE.
 
+**A run's execution row is written *before* dispatch, not after** — `runSkill`/`runSkillStreaming`
+(`lib/runSkill.ts`) insert it as `status: "running"` first, then update it to its final state once
+Claude/Cowork responds. A heavy skill (fetch a whole page, then generate a file via code
+execution) can genuinely take a few minutes, long enough to hit a serverless platform timeout that
+kills the process outright — no JS code runs after that, so nothing in this app could catch it and
+write a row after the fact. Writing "running" up front means a trace of the attempt still exists
+even then, instead of the run vanishing with nothing in history. Both run routes set
+`export const maxDuration = 300` (Vercel's ceiling without a higher-tier plan) so a run gets the
+most time this platform allows without extra configuration — bump it in both
+`app/api/skills/[id]/run/route.ts` and `.../run/stream/route.ts` if the account's plan supports
+more. If a skill's task is inherently heavier than any single HTTP request can finish in (a
+multi-category site scrape, say), the two real fixes are scoping the skill smaller (e.g. one skill
+per category instead of one skill for everything) or moving to a background-job architecture
+(queue + polling) — a bigger change than this app currently has, flagged here rather than
+half-built.
+
 ## Claude Cowork integration
 
 The project brief is explicit that Cowork shouldn't be special-cased, and that this integration

@@ -4,6 +4,8 @@ import { runSkillStreaming } from "@/lib/runSkill";
 import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
+// See the same export in ../route.ts for why this is set explicitly.
+export const maxDuration = 300;
 
 /**
  * Streams a skill run as Server-Sent Events instead of one blocking JSON

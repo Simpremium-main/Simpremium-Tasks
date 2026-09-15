@@ -273,6 +273,7 @@ export interface CreateExecutionInput {
 export async function createExecution(input: CreateExecutionInput): Promise<Execution> {
   const supabase = getSupabase();
   const now = new Date().toISOString();
+  const isTerminal = input.status !== "pending" && input.status !== "running";
   const { data, error, status, statusText } = await supabase
     .from("executions")
     .insert({
@@ -286,12 +287,48 @@ export async function createExecution(input: CreateExecutionInput): Promise<Exec
       files: input.files,
       ran_by: input.ranBy,
       started_at: now,
-      finished_at: now,
+      finished_at: isTerminal ? now : null,
     })
     .select()
     .single();
   if (error) throw describeError("createExecution", error, status, statusText);
   return mapExecutionRow(data);
+}
+
+export interface UpdateExecutionInput {
+  status?: ExecutionStatus;
+  result?: string | null;
+  error?: string | null;
+  files?: ExecutionFile[] | null;
+}
+
+/**
+ * Updates an in-flight execution row to its final state. Executions are
+ * written as "running" the moment a run starts (createExecution above) and
+ * finished here once dispatch completes — two steps, not one, so a run row
+ * already exists even if the process gets killed mid-dispatch (e.g. a
+ * platform timeout on a slow skill) instead of leaving no trace at all,
+ * matching the security baseline that every attempt gets recorded.
+ */
+export async function updateExecution(
+  id: string,
+  patch: UpdateExecutionInput
+): Promise<Execution | null> {
+  const supabase = getSupabase();
+  const row: Record<string, unknown> = { finished_at: new Date().toISOString() };
+  if (patch.status !== undefined) row.status = patch.status;
+  if (patch.result !== undefined) row.result = patch.result;
+  if (patch.error !== undefined) row.error = patch.error;
+  if (patch.files !== undefined) row.files = patch.files;
+
+  const { data, error, status, statusText } = await supabase
+    .from("executions")
+    .update(row)
+    .eq("id", id)
+    .select()
+    .maybeSingle();
+  if (error) throw describeError("updateExecution", error, status, statusText);
+  return data ? mapExecutionRow(data) : null;
 }
 
 /**
