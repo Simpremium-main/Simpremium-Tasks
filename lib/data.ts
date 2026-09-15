@@ -72,6 +72,34 @@ export async function listSkills(): Promise<
 > {
   const supabase = getSupabase();
 
+  // Temporary diagnostic: bypass supabase-js entirely and hit the REST API
+  // directly with a plain fetch, no-store, to rule out any caching or
+  // quirk inside the library itself — this is as close to raw ground truth
+  // as this running function can get. Logs status, a few cache-related
+  // response headers, and the raw body text.
+  try {
+    const rawUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/skills?select=id,name,created_at&order=created_at.desc`;
+    const rawRes = await fetch(rawUrl, {
+      headers: {
+        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
+        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY ?? ""}`,
+      },
+      cache: "no-store",
+    });
+    const rawText = await rawRes.text();
+    console.log(
+      `[listSkills:rawFetch] status=${rawRes.status} ` +
+        `age=${rawRes.headers.get("age")} ` +
+        `x-cache=${rawRes.headers.get("x-cache")} ` +
+        `cf-cache-status=${rawRes.headers.get("cf-cache-status")} ` +
+        `via=${rawRes.headers.get("via")} ` +
+        `date=${rawRes.headers.get("date")} ` +
+        `body=${rawText}`
+    );
+  } catch (rawErr) {
+    console.log(`[listSkills:rawFetch] threw: ${rawErr instanceof Error ? rawErr.message : rawErr}`);
+  }
+
   const {
     data: skillRows,
     error,
