@@ -64,3 +64,45 @@ export async function dispatchToClaude(prompt: string): Promise<DispatchResult> 
     };
   }
 }
+
+/**
+ * Same as dispatchToClaude, but streams text as it arrives (calling onDelta
+ * for each chunk) so the run panel can show the response building up live
+ * instead of a blank "Rodando..." spinner until the whole thing lands.
+ */
+export async function streamDispatchToClaude(
+  prompt: string,
+  onDelta: (chunk: string) => void
+): Promise<DispatchResult> {
+  const anthropic = getClient();
+  if (!anthropic) {
+    return {
+      status: "needs_setup",
+      error: "ANTHROPIC_API_KEY isn't set, so this skill can't be run yet. Add it to your environment to enable it.",
+    };
+  }
+
+  try {
+    const stream = anthropic.messages.stream({
+      model: "claude-sonnet-5",
+      max_tokens: 4096,
+      system: SKILL_EXECUTION_SYSTEM_PROMPT,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    stream.on("text", (delta) => onDelta(delta));
+
+    const final = await stream.finalMessage();
+    const text = final.content
+      .filter((block): block is Anthropic.TextBlock => block.type === "text")
+      .map((block) => block.text)
+      .join("\n");
+
+    return { status: "success", result: text };
+  } catch (err) {
+    return {
+      status: "error",
+      error: err instanceof Error ? err.message : "Unknown error calling Claude",
+    };
+  }
+}

@@ -133,7 +133,13 @@ export default function Sidebar({
           collapsed ? "lg:w-[72px]" : "lg:w-[264px]"
         } ${mounted ? "" : "duration-0"}`}
       >
-      <div className="flex items-center gap-2.5 px-4 h-16 shrink-0 border-b border-sidebar-border">
+      <div
+        className={`flex shrink-0 border-b border-sidebar-border ${
+          effectiveCollapsed
+            ? "flex-col items-center gap-2 px-2 py-3"
+            : "flex-row items-center gap-2.5 px-4 h-16"
+        }`}
+      >
         <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-primary-hover text-white shrink-0">
           <Zap size={17} strokeWidth={2.25} />
         </div>
@@ -145,7 +151,9 @@ export default function Sidebar({
         <button
           type="button"
           onClick={toggleCollapsed}
-          className="hidden lg:flex ml-auto shrink-0 text-sidebar-muted hover:text-white hover:bg-sidebar-hover rounded-md p-1.5 transition-colors"
+          className={`hidden lg:flex shrink-0 text-sidebar-muted hover:text-white hover:bg-sidebar-hover rounded-md p-1.5 transition-colors ${
+            effectiveCollapsed ? "" : "ml-auto"
+          }`}
           title={collapsed ? "Expandir" : "Recolher"}
         >
           {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}

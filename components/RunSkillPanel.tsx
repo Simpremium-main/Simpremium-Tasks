@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, History, Loader2, Play, ShieldAlert } from "lucide-react";
+import { AlertTriangle, ChevronDown, History, Loader2, Play, ShieldAlert, Sparkles } from "lucide-react";
 import DynamicForm from "./DynamicForm";
 import ExecutionList, { type ExecutionItem } from "./ExecutionList";
 import { buildPromptSnapshot } from "@/lib/mask";
@@ -35,6 +35,8 @@ export default function RunSkillPanel({
   const [formError, setFormError] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
   const [highlightId, setHighlightId] = useState<string | null>(null);
+  const [thinkingText, setThinkingText] = useState("");
+  const [showThinking, setShowThinking] = useState(false);
 
   const missingRequired = schema.filter((f) => f.required && !values[f.key]?.trim());
 
@@ -50,18 +52,53 @@ export default function RunSkillPanel({
   async function confirmAndRun() {
     setRunning(true);
     setRunError(null);
+    setThinkingText("");
     try {
-      const res = await fetch(`/api/skills/${skill.id}/run`, {
+      const res = await fetch(`/api/skills/${skill.id}/run/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ inputValues: values }),
       });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? `Falha ao rodar (HTTP ${res.status})`);
+
+      if (!res.body) {
+        throw new Error(`Falha ao rodar (HTTP ${res.status})`);
       }
-      const execution = await res.json();
-      setExecutions((prev) => [execution, ...prev]);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let execution: ExecutionItem | null = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        let boundary: number;
+        while ((boundary = buffer.indexOf("\n\n")) !== -1) {
+          const rawEvent = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+
+          const eventMatch = rawEvent.match(/^event: (.+)$/m);
+          const dataMatch = rawEvent.match(/^data: (.+)$/m);
+          if (!eventMatch || !dataMatch) continue;
+
+          const data = JSON.parse(dataMatch[1]);
+          if (eventMatch[1] === "delta") {
+            setThinkingText((prev) => prev + data.text);
+          } else if (eventMatch[1] === "done") {
+            execution = data as ExecutionItem;
+          } else if (eventMatch[1] === "error") {
+            throw new Error(data.message ?? "Falha ao rodar a skill");
+          }
+        }
+      }
+
+      if (!execution) {
+        throw new Error(`Falha ao rodar (HTTP ${res.status})`);
+      }
+
+      setExecutions((prev) => [execution!, ...prev]);
       setShowConfirm(false);
       setHighlightId(execution.id);
       setTimeout(() => setHighlightId(null), 1800);
@@ -98,9 +135,13 @@ export default function RunSkillPanel({
         <ConfirmRunModal
           skillName={skill.name}
           source={skill.usesCowork ? "Claude Cowork" : "Claude"}
+          usesCowork={skill.usesCowork}
           prompt={promptPreview}
           running={running}
           error={runError}
+          thinking={thinkingText}
+          showThinking={showThinking}
+          onToggleThinking={() => setShowThinking((prev) => !prev)}
           onCancel={() => setShowConfirm(false)}
           onConfirm={confirmAndRun}
         />
@@ -120,17 +161,25 @@ export default function RunSkillPanel({
 function ConfirmRunModal({
   skillName,
   source,
+  usesCowork,
   prompt,
   running,
   error,
+  thinking,
+  showThinking,
+  onToggleThinking,
   onCancel,
   onConfirm,
 }: {
   skillName: string;
   source: string;
+  usesCowork: boolean;
   prompt: string;
   running: boolean;
   error: string | null;
+  thinking: string;
+  showThinking: boolean;
+  onToggleThinking: () => void;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -152,6 +201,32 @@ function ConfirmRunModal({
         <pre className="mt-3 whitespace-pre-wrap break-words bg-canvas rounded-md p-3 text-xs max-h-64 overflow-y-auto">
           {prompt}
         </pre>
+        {running && (
+          <div className="mt-3 rounded-md border border-line bg-canvas overflow-hidden">
+            <button
+              type="button"
+              onClick={onToggleThinking}
+              className="w-full flex items-center justify-between gap-2 px-3 py-2 text-xs font-medium text-ink/70 hover:bg-line/40 transition-colors"
+            >
+              <span className="flex items-center gap-1.5">
+                <Sparkles size={12} className="text-primary animate-pulse" />
+                {usesCowork ? "Despachando pro Cowork…" : thinking ? "Pensando…" : "Aguardando resposta…"}
+              </span>
+              <ChevronDown
+                size={13}
+                className={`shrink-0 transition-transform ${showThinking ? "rotate-180" : ""}`}
+              />
+            </button>
+            {showThinking && (
+              <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words text-xs text-ink/70 px-3 pb-3">
+                {thinking ||
+                  (usesCowork
+                    ? "O Cowork ainda não expõe o passo a passo em tempo real — só o resultado final quando terminar."
+                    : "")}
+              </pre>
+            )}
+          </div>
+        )}
         {error && (
           <p className="flex items-start gap-2 text-sm text-red-600 mt-3">
             <AlertTriangle size={14} className="shrink-0 mt-0.5" />

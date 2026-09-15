@@ -90,6 +90,17 @@ shown in a confirmation modal, with any secret-typed field masked in the preview
 is only ever used in memory for that one dispatch call, never written to the database or shown
 in full again).
 
+The confirmation modal also has a "Pensando…" indicator once you hit run — click it to expand a
+live, streaming view of the answer as Claude writes it, instead of just staring at a spinner until
+the whole thing lands. `POST /api/skills/[id]/run/stream` (`lib/claude.ts`'s
+`streamDispatchToClaude`, `lib/runSkill.ts`'s `runSkillStreaming`) streams Server-Sent Events —
+`delta` chunks as they arrive, then one `done` event with the saved execution row, same as the
+non-streaming path. It's only real token-by-token streaming for skills that run directly through
+the Claude API; Cowork dispatch is a single blocking webhook call (see below) with no way to
+stream partial output, so a Cowork skill's "Pensando…" panel just shows "Despachando pro Cowork…"
+until the one final result comes back. The older `POST /api/skills/[id]/run` (plain JSON, no
+streaming) is still there too, for any script that'd rather not parse SSE.
+
 ## Claude Cowork integration
 
 The project brief is explicit that Cowork shouldn't be special-cased, and that this integration
