@@ -142,12 +142,19 @@ using `jspdf` client-side).
 
 **Important caveat on "generates a PDF" skills:** neither the Claude API call in `lib/claude.ts`
 nor the Cowork adapter in `lib/cowork.ts` actually returns a binary file today — Claude's API
-gives back text, full stop, and Cowork is still `needs_setup`. So a skill whose prompt says
-"generate a PDF sales report" gets back *text* describing that report, not an actual file Claude
-produced. The `.txt`/`.pdf` download buttons are an honest export of that real text result into a
-document you can save — not a fabricated file, but also not proof Claude generated a PDF itself.
-Real file generation (via Claude's code execution/files tooling, or whatever Cowork returns once
-connected) is a separate, larger piece of work than this download convenience.
+gives back text, full stop, and Cowork is still `needs_setup`. The `.txt`/`.pdf` download buttons
+are an honest export of that real text result into a document you can save — not a fabricated
+file, but also not proof Claude generated a PDF itself. Real file generation (via Claude's
+code-execution/files tooling, or whatever Cowork returns once connected) is a separate, larger
+piece of work than this download convenience.
+
+Early on, a skill whose prompt asked for "a PDF" got back Claude explaining how to write one
+yourself (chat-assistant instincts — "I can't create files, but here's some Python...") instead
+of just the content that should go in it. Fixed with a system prompt in `lib/claude.ts`
+(`SKILL_EXECUTION_SYSTEM_PROMPT`) that tells Claude it's running as a skill's execution engine,
+not a live chat: produce the content directly, no meta-commentary about its own limitations —
+the platform handles turning that content into a file. Doesn't change the underlying limitation
+above (still text, not a binary Claude generated), just makes what comes back actually usable.
 
 ## Security baseline
 
