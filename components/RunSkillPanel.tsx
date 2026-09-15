@@ -2,7 +2,17 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ChevronDown, History, Loader2, Play, ShieldAlert, Sparkles } from "lucide-react";
+import {
+  AlertTriangle,
+  Bot,
+  ChevronDown,
+  FileText,
+  History,
+  Loader2,
+  Play,
+  Sparkles,
+  X,
+} from "lucide-react";
 import DynamicForm from "./DynamicForm";
 import ExecutionList, { type ExecutionItem } from "./ExecutionList";
 import { buildPromptSnapshot } from "@/lib/mask";
@@ -208,86 +218,136 @@ function ConfirmRunModal({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const statusLabel = usesCowork
+    ? "Despachando pro Cowork…"
+    : chunkNumber > 1
+      ? `Continuando — etapa ${chunkNumber}`
+      : thinking
+        ? "Pensando…"
+        : "Preparando…";
+
   return (
-    <div className="fixed inset-0 bg-ink/40 backdrop-blur-[2px] flex items-center justify-center p-4 z-50 animate-backdrop-in">
-      <div className="bg-white rounded-xl border border-line max-w-lg w-full p-5 shadow-xl animate-scale-in">
-        <div className="flex items-start gap-2.5">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary">
-            <ShieldAlert size={16} />
-          </span>
-          <div>
-            <h3 className="font-semibold text-ink">Confirmar: rodar &ldquo;{skillName}&rdquo;?</h3>
-            <p className="text-sm text-muted mt-0.5">
-              É exatamente isso que vai ser enviado pro {source}. Valores secretos aparecem
-              mascarados abaixo, mas são usados por inteiro na execução real.
-            </p>
-          </div>
-        </div>
-        <pre className="mt-3 whitespace-pre-wrap break-words bg-canvas rounded-md p-3 text-xs max-h-64 overflow-y-auto">
-          {prompt}
-        </pre>
-        {running && (
-          <div className="mt-3 rounded-md border border-line bg-canvas overflow-hidden">
-            <button
-              type="button"
-              onClick={onToggleThinking}
-              className="w-full flex items-center justify-between gap-2 px-3 py-2 text-xs font-medium text-ink/70 hover:bg-line/40 transition-colors"
-            >
-              <span className="flex items-center gap-1.5">
-                <Sparkles size={12} className="text-primary animate-pulse" />
-                {usesCowork
-                  ? "Despachando pro Cowork…"
-                  : chunkNumber > 1
-                    ? `Continuando (etapa ${chunkNumber})…`
-                    : thinking
-                      ? "Pensando…"
-                      : "Aguardando resposta…"}
-              </span>
-              <ChevronDown
-                size={13}
-                className={`shrink-0 transition-transform ${showThinking ? "rotate-180" : ""}`}
-              />
-            </button>
-            {showThinking && (
-              <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words text-xs text-ink/70 px-3 pb-3">
-                {thinking ||
-                  (usesCowork
-                    ? "O Cowork ainda não expõe o passo a passo em tempo real — só o resultado final quando terminar."
-                    : "")}
-              </pre>
-            )}
-          </div>
-        )}
-        {running && chunkNumber > 1 && (
-          <p className="mt-2 text-xs text-muted">
-            Essa tarefa tá demorando mais que o normal — o painel continua automaticamente até
-            terminar. Pode levar alguns minutos, não precisa fechar essa janela.
-          </p>
-        )}
-        {error && (
-          <p className="flex items-start gap-2 text-sm text-red-600 mt-3">
-            <AlertTriangle size={14} className="shrink-0 mt-0.5" />
-            {error}
-          </p>
-        )}
-        <div className="mt-4 flex justify-end gap-2">
+    <div
+      className="fixed inset-0 bg-ink/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-backdrop-in"
+      onClick={running ? undefined : onCancel}
+    >
+      <div
+        className="bg-white rounded-2xl border border-line max-w-lg w-full shadow-2xl animate-scale-in overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="relative bg-gradient-to-br from-primary to-primary-hover px-5 pt-5 pb-6 text-white overflow-hidden">
+          <div className="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-white/10" />
+          <div className="absolute -right-2 top-10 h-14 w-14 rounded-full bg-white/10" />
           <button
             type="button"
             onClick={onCancel}
             disabled={running}
-            className="rounded-md px-3 py-1.5 text-sm border border-line hover:bg-canvas transition-colors"
+            aria-label="Fechar"
+            className="absolute right-3 top-3 text-white/70 hover:text-white rounded-md p-1 hover:bg-white/10 transition-colors disabled:opacity-40"
           >
-            Cancelar
+            <X size={16} />
           </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={running}
-            className="inline-flex items-center gap-1.5 rounded-md bg-primary text-white px-3.5 py-1.5 text-sm font-medium hover:bg-primary-hover disabled:opacity-60 transition-colors"
-          >
-            {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-            {running ? "Rodando…" : "Confirmar e rodar"}
-          </button>
+          <div className="relative flex items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15 backdrop-blur-sm">
+              {usesCowork ? <Bot size={19} /> : <Sparkles size={19} />}
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-white/70 uppercase tracking-wide">
+                {running ? "Rodando" : "Confirmar execução"}
+              </p>
+              <h3 className="font-semibold truncate">{skillName}</h3>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-5">
+          {!running && (
+            <p className="text-sm text-muted mb-3">
+              É exatamente isso que vai ser enviado pro {source}. Valores secretos aparecem
+              mascarados abaixo, mas são usados por inteiro na execução real.
+            </p>
+          )}
+
+          <div className="rounded-lg border border-line overflow-hidden">
+            <div className="flex items-center gap-1.5 px-3 py-2 bg-canvas border-b border-line text-xs font-medium text-ink/70">
+              <FileText size={12} className="text-muted" />
+              Prompt
+            </div>
+            <pre className="whitespace-pre-wrap break-words bg-white p-3 text-xs max-h-48 overflow-y-auto text-ink/70">
+              {prompt}
+            </pre>
+          </div>
+
+          {running && (
+            <div className="mt-3 rounded-lg border border-line overflow-hidden">
+              <button
+                type="button"
+                onClick={onToggleThinking}
+                className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-xs font-medium bg-primary-soft/60 text-ink hover:bg-primary-soft transition-colors"
+              >
+                <span className="flex items-center gap-2">
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+                  </span>
+                  {statusLabel}
+                </span>
+                <ChevronDown
+                  size={13}
+                  className={`shrink-0 transition-transform ${showThinking ? "rotate-180" : ""}`}
+                />
+              </button>
+              {showThinking && (
+                <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words text-xs text-ink/70 bg-canvas/60 px-3 py-3">
+                  {thinking ||
+                    (usesCowork
+                      ? "O Cowork ainda não expõe o passo a passo em tempo real — só o resultado final quando terminar."
+                      : "Aguardando a primeira resposta…")}
+                  {!usesCowork && <span className="inline-block w-1.5 h-3 bg-primary/60 ml-0.5 align-middle animate-pulse" />}
+                </pre>
+              )}
+            </div>
+          )}
+
+          {running && chunkNumber > 1 && (
+            <div className="mt-3 flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                {Array.from({ length: Math.min(chunkNumber, 8) }).map((_, i) => (
+                  <span key={i} className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" style={{ animationDelay: `${i * 120}ms` }} />
+                ))}
+              </div>
+              <p className="text-xs text-muted">
+                Tarefa longa — continuando automaticamente, sem precisar fechar essa janela.
+              </p>
+            </div>
+          )}
+
+          {error && (
+            <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md p-3 mt-3">
+              <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+              {error}
+            </div>
+          )}
+
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={running}
+              className="rounded-md px-3.5 py-2 text-sm border border-line hover:bg-canvas transition-colors disabled:opacity-40"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={running}
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary text-white px-4 py-2 text-sm font-medium shadow-sm shadow-primary/30 hover:bg-primary-hover hover:shadow-md hover:shadow-primary/30 disabled:opacity-60 disabled:shadow-none transition-all"
+            >
+              {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+              {running ? "Rodando…" : "Confirmar e rodar"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -216,9 +216,6 @@ Next.js App Router recipe:
   email exists), while any other failure (network/misconfiguration) shows the actual error name
   — worth knowing the difference if login ever fails after a deploy.
 
-**Accounts are managed entirely in the Supabase dashboard** (Authentication → Users) — there's no
-self-serve signup screen in the app. Add whoever needs access there.
-
 The logged-in email is stamped on every execution (`ranBy`) and shown in both the skill page's
 and the global history's execution list, detail view, and the sidebar footer.
 
@@ -227,6 +224,37 @@ browser here either (see "Connecting Supabase" above for what was verified inste
 approach applies: the code compiles and type-checks, and a standalone script against the real
 project reproduced the identical sandbox-network-block signature for `signInWithPassword`, not a
 code or credentials problem). Test the actual login after deploying.
+
+## Roles and admin user management
+
+Two roles — `admin` and `user` — stored in Supabase Auth's own `app_metadata` (`lib/auth.ts`),
+not a separate `profiles` table: `app_metadata` is only ever writable with the service role key,
+never by the user themselves (unlike `user_metadata`), which is exactly the "only an admin can
+grant this" property a role needs — and it comes back on the same `getUser()` call `getCurrentUser()`
+already makes, no second query. `requireAdmin()` throws if the caller isn't a signed-in admin —
+every admin route calls it first.
+
+**Accounts are no longer only managed by hand in the Supabase dashboard** — an admin can create,
+change the role of, reset the password for, and delete accounts from **Usuários** in the sidebar
+(only visible to admins), backed by `lib/adminUsers.ts` (thin wrappers over
+`supabase.auth.admin.*` — the same service-role client as everywhere else in this app) and
+`app/api/admin/users/*`. A few guardrails: an admin can't demote or delete their own account
+through this screen (avoids locking the only admin out), and a new account's password is set by
+the admin at creation (shown once in the form — there's no self-serve signup or invite-email flow
+yet, so tell the person their initial password out of band). The Supabase dashboard still works
+too, for anything this screen doesn't cover yet (deleting the very last account, direct SQL, etc).
+
+**Bootstrapping the first admin:** nothing in the app can grant the *first* admin — the very
+first one has to be set directly in Supabase, once, in the SQL Editor:
+
+```sql
+update auth.users
+set raw_app_meta_data = raw_app_meta_data || '{"role": "admin"}'::jsonb
+where email = 'the-first-admin@example.com';
+```
+
+After that, every other account can be created and promoted from the **Usuários** screen —
+this manual step is only ever needed once, to get the first admin in.
 
 ## Groups and tags
 
@@ -326,6 +354,14 @@ the execution row a run just added. An earlier version of that pass also added K
 (total skills, success rate, etc.) — removed after feedback that they weren't wanted; the search/
 filter bars stayed.
 
+The run confirmation modal (feedback: "too plain") and the delete-skill confirmation got a
+matching richer treatment — a gradient header band (blue for run, red for delete) with a large
+icon bubble and a close button, rounded-2xl corners, a proper live-activity section for the run
+modal (pulsing status dot, a blinking-cursor effect on the streaming text, animated step dots once
+a run needs more than one chunk — see "Long-running skills" above) instead of a plain collapsible
+row. This is an ongoing pass, not a one-shot redesign — more surfaces get the same treatment as
+feedback comes in, rather than a blind full pass across everything at once.
+
 ## Running locally
 
 ```bash
@@ -347,8 +383,10 @@ Users) to get in; see "Login — real Supabase Auth" above.
 - Skill editing (beyond the input-schema editor at creation time) is minimal — there's a `PATCH
   /api/skills/[id]` endpoint but no dedicated edit screen yet. Deleting one is possible though
   (`DeleteSkillButton` on the skill page, with a confirm step).
-- No self-serve signup — new accounts are added by hand in the Supabase dashboard. Fine for a
-  small internal team; worth a signup/invite screen if the group using this grows.
+- Admins can create accounts (see "Roles and admin user management" above), but there's still no
+  self-serve signup or invite-email flow — a new account's password is set by the admin at
+  creation and has to be shared with the person out of band. Worth an invite-email flow if the
+  group using this grows.
 - **Real file generation** (code execution + Supabase Storage) is wired up — see "Execution
   details and downloads" above — but hasn't been exercised live yet (sandbox network limits, no
   `ANTHROPIC_API_KEY` here); worth a real run after deploying.

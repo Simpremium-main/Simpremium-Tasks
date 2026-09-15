@@ -13,6 +13,7 @@ import {
   PanelLeftOpen,
   Plus,
   Search,
+  Shield,
   Sparkles,
   User,
   X,
@@ -34,9 +35,11 @@ const UNGROUPED_LABEL = "Sem grupo";
 export default function Sidebar({
   skills,
   userName,
+  isAdmin,
 }: {
   skills: SidebarSkill[];
   userName: string | null;
+  isAdmin: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -184,6 +187,15 @@ export default function Sidebar({
           label="Histórico"
           collapsed={effectiveCollapsed}
         />
+        {isAdmin && (
+          <NavLink
+            href="/admin/users"
+            active={pathname === "/admin/users"}
+            icon={<Shield size={16} />}
+            label="Usuários"
+            collapsed={effectiveCollapsed}
+          />
+        )}
 
         <div className="mt-6">
           <div className="flex items-center justify-between px-1">
