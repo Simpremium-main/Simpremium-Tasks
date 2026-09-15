@@ -1,13 +1,15 @@
--- Target schema for Skills Hub once it's connected to Supabase.
+-- Skills Hub — Supabase schema.
 --
--- Not wired up yet — the app currently runs on the in-memory mock store in
--- lib/data.ts, which mirrors these two tables field-for-field so the swap
--- is mechanical: implement lib/data.ts's exported functions against the
--- Supabase JS client instead of the mock arrays, and every page/API route
--- that calls them keeps working unchanged.
+-- Run this once in your Supabase project's SQL Editor (Project → SQL
+-- Editor → New query → paste → Run). It creates the two tables the app
+-- needs; lib/data.ts will be pointed at these once NEXT_PUBLIC_SUPABASE_URL
+-- and SUPABASE_SERVICE_ROLE_KEY are set (see README "Connecting Supabase").
 --
--- Run this in the Supabase SQL editor (or as a migration) when the project
--- is ready to connect a real Supabase instance.
+-- RLS is enabled with no policies on purpose: the app talks to these tables
+-- only from the server using the service role key, which bypasses RLS. That
+-- means the anon key (safe to expose to a browser) grants zero access to
+-- this data by default — nobody can read/write skills or executions
+-- directly from the client, only through our own API routes.
 
 create extension if not exists pgcrypto;
 
@@ -22,6 +24,8 @@ create table if not exists skills (
   input_schema    jsonb, -- InputField[] | null, see lib/types.ts
   source_post     text,
   confirmed_once  boolean not null default false,
+  "group"         text,
+  tags            text[] not null default '{}',
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );
@@ -35,6 +39,7 @@ create table if not exists executions (
   prompt_snapshot text not null, -- secret values already masked before insert
   result          text,
   error           text,
+  ran_by          text, -- display name of the logged-in user who triggered this run
   started_at      timestamptz not null default now(),
   finished_at     timestamptz
 );
@@ -42,6 +47,10 @@ create table if not exists executions (
 create index if not exists executions_skill_id_idx on executions (skill_id);
 create index if not exists executions_started_at_idx on executions (started_at desc);
 
+alter table skills enable row level security;
+alter table executions enable row level security;
+-- No policies added — see the note at the top of this file for why.
+
 -- Secrets are masked in lib/mask.ts before a row is ever written here — this
 -- schema never stores an unmasked credential/token, matching the security
--- baseline in CLAUDE.md regardless of which backend is behind lib/data.ts.
+-- baseline in CLAUDE.md.
