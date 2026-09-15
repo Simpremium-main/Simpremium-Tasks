@@ -28,7 +28,8 @@ body {
 }
 
 .animate-stagger > * {
-  animation: fade-in 0.35s ease-out both;
+  /* backwards, not both — see the fade-in comment in tailwind.config.ts */
+  animation: fade-in 0.35s ease-out backwards;
 }
 .animate-stagger > *:nth-child(1) {
   animation-delay: 0ms;

@@ -54,7 +54,14 @@ const config: Config = {
         },
       },
       animation: {
-        "fade-in": "fade-in 0.35s ease-out both",
+        // "backwards", not "both": a "both"/"forwards" fill keeps an explicit
+        // (if zero) `transform` applied after the animation ends, which
+        // silently turns the element into a new containing block for any
+        // `position: fixed` descendant — including a modal several
+        // components down the tree — breaking `fixed inset-0` centering for
+        // it. "backwards" only needs the pre-start state; the post-end state
+        // is visually identical to the element's untouched default styles.
+        "fade-in": "fade-in 0.35s ease-out backwards",
         "scale-in": "scale-in 0.18s cubic-bezier(0.16,1,0.3,1) both",
         "backdrop-in": "backdrop-in 0.18s ease-out both",
         "slide-down": "slide-down 0.25s ease-out both",
