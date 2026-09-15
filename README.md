@@ -108,6 +108,18 @@ create a skill, refresh, confirm it's still there.
    your confirmation.
 4. It saves as a `draft`. It's promoted to `active` automatically after its first successful run.
 
+**Pasting just a bare link** (`lib/parseSkillPost.ts`): the AI-assisted parser has the `web_fetch`
+tool, so it tries to actually read what's at the URL before extracting. Many social platforms
+(Instagram, TikTok, X/Twitter, LinkedIn, ...) block that — a login wall, or the page is a
+video/JS app with no readable text. That used to surface as a raw, confusing error (`Unexpected
+token 'I', "I don't ha"...`) because Claude's honest "I can't access that" reply isn't valid JSON
+and the code just tried to `JSON.parse()` it. Fixed at the prompt level: Claude now always returns
+the same JSON shape either way, and when it couldn't read the link, it says so in the draft's own
+`description` field and asks you to paste the post's actual text/caption instead — a normal,
+editable draft, not a crash. The `JSON.parse` failure path still exists as a defensive fallback
+(quoting a snippet of whatever Claude actually said, not the raw parse exception) in case a model
+response ever slips past that instruction.
+
 ## Running a skill
 
 Every skill's page shows a generated input form (when it needs one), a run button, and full

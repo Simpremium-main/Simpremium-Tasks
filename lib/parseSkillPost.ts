@@ -15,7 +15,13 @@ const EXTRACTION_SYSTEM_PROMPT = `You turn a social media post about a Claude sk
   "tags": array of short lowercase strings (0-4), e.g. ["pdf", "vendas"].
 }
 
-Never invent a credential, token or endpoint that isn't in the post — if the skill needs one, add it as a "secret" input field rather than embedding a fake value.`;
+Never invent a credential, token or endpoint that isn't in the post — if the skill needs one, add it as a "secret" input field rather than embedding a fake value.
+
+If the pasted content is just a bare link with no other text, use the web_fetch tool to read what's actually at that URL before extracting. Many social platforms (Instagram, TikTok, X/Twitter, LinkedIn, and similar) require a login and will refuse the fetch, or the page is a video/JS app with no readable text — that's expected, not an error on your part. If you can't actually read what the post says (fetch failed, blocked, login wall, no extractable text), do NOT switch to a plain-language explanation and do NOT refuse — still return the exact JSON shape above: set "name" to a short placeholder like "Nova skill (revisar)", leave "promptTemplate" as the raw URL you were given, and make "description" explain in Portuguese that you couldn't access the content behind the link and that the person should paste the post's actual text or a screenshot's transcript instead for a real draft. The JSON contract is non-negotiable — always return valid JSON, never prose, no matter what happened with the fetch.`;
+
+const PARSE_TOOLS: Anthropic.Messages.ToolUnion[] = [
+  { type: "web_fetch_20260209", name: "web_fetch", max_uses: 3 },
+];
 
 /**
  * Turns a pasted post into a draft skill proposal for the user to review
@@ -47,8 +53,9 @@ async function parseWithClaude(postContent: string): Promise<SkillDraftProposal>
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
   const message = await anthropic.messages.create({
     model: "claude-sonnet-5",
-    max_tokens: 2048,
+    max_tokens: 4096,
     system: EXTRACTION_SYSTEM_PROMPT,
+    tools: PARSE_TOOLS,
     messages: [{ role: "user", content: postContent }],
   });
 
@@ -59,7 +66,18 @@ async function parseWithClaude(postContent: string): Promise<SkillDraftProposal>
     .trim();
 
   const jsonText = stripCodeFence(text);
-  const parsed = JSON.parse(jsonText);
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(jsonText);
+  } catch {
+    // The system prompt tells Claude to always return the JSON shape, even
+    // when it couldn't fetch/read a link — this is the defensive fallback
+    // for the rare case it doesn't. Surface what Claude actually said
+    // (truncated) instead of the raw JSON.parse exception text, which was
+    // confusing on its own ("Unexpected token 'I'...").
+    const snippet = text.length > 200 ? `${text.slice(0, 200)}…` : text;
+    throw new Error(`Claude didn't return the expected format — it said: "${snippet}"`);
+  }
 
   return {
     name: String(parsed.name ?? "Untitled skill"),
