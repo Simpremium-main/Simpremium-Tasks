@@ -36,11 +36,13 @@ const UNGROUPED_LABEL = "Sem grupo";
 
 export default function Sidebar({
   skills,
+  archivedCount,
   userDisplayName,
   userNickname,
   isAdmin,
 }: {
   skills: SidebarSkill[];
+  archivedCount: number;
   userDisplayName: string | null;
   userNickname: string | null;
   isAdmin: boolean;
@@ -234,7 +236,11 @@ export default function Sidebar({
           )}
 
           {groups.length === 0 && !effectiveCollapsed && (
-            <p className="px-3 py-2 text-xs text-sidebar-muted">Nenhuma skill ainda.</p>
+            <p className="px-3 py-2 text-xs text-sidebar-muted">
+              {archivedCount > 0
+                ? `Todas as suas skills estão arquivadas (${archivedCount}).`
+                : "Nenhuma skill ainda."}
+            </p>
           )}
 
           {groups.map(([groupName, groupSkills]) => (

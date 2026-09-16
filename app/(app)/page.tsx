@@ -37,6 +37,7 @@ export default async function DashboardPage() {
 
   const claudeReady = isClaudeConfigured();
   const coworkReady = Boolean(process.env.COWORK_DISPATCH_WEBHOOK_URL);
+  const archivedCount = skills.filter((s) => s.status === "archived").length;
   const boardSkills = skills.map((s) => ({
     id: s.id,
     name: s.name,
@@ -55,7 +56,10 @@ export default async function DashboardPage() {
       <PageHeader
         icon={<LayoutGrid size={18} />}
         title="Skills"
-        subtitle={`${skills.length} skill${skills.length === 1 ? "" : "s"} centralizada${skills.length === 1 ? "" : "s"}`}
+        subtitle={
+          `${skills.length} skill${skills.length === 1 ? "" : "s"} centralizada${skills.length === 1 ? "" : "s"}` +
+          (archivedCount > 0 ? ` (${archivedCount} arquivada${archivedCount === 1 ? "" : "s"})` : "")
+        }
         actions={
           <Link
             href="/skills/new"

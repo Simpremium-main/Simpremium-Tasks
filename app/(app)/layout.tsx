@@ -20,11 +20,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       usesCowork: s.usesCowork,
       group: s.group,
     }));
+  const archivedCount = skills.length - sidebarSkills.length;
 
   return (
     <div className="flex h-dvh overflow-hidden">
       <Sidebar
         skills={sidebarSkills}
+        archivedCount={archivedCount}
         userDisplayName={user?.displayName ?? null}
         userNickname={user?.nickname ?? null}
         isAdmin={user?.role === "admin"}

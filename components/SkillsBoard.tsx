@@ -108,9 +108,22 @@ export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
       </div>
 
       {filtered.length === 0 ? (
-        <p className="text-sm text-muted border border-dashed border-line rounded-xl p-10 text-center">
-          Nenhuma skill encontrada com esse filtro.
-        </p>
+        <div className="text-sm text-muted border border-dashed border-line rounded-xl p-10 text-center">
+          {filter === "all" && hasArchived ? (
+            <>
+              <p>Todas as suas skills estão arquivadas.</p>
+              <button
+                type="button"
+                onClick={() => setFilter("archived")}
+                className="mt-2 text-primary hover:underline font-medium"
+              >
+                Ver arquivadas
+              </button>
+            </>
+          ) : (
+            <p>Nenhuma skill encontrada com esse filtro.</p>
+          )}
+        </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 animate-stagger">
           {filtered.map((skill) => (
