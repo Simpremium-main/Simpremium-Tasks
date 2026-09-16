@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, Archive, CheckSquare, Loader2, Search, Trash2, X } from "lucide-react";
+import { AlertTriangle, Archive, CheckSquare, Loader2, Pin, Search, Trash2, X } from "lucide-react";
 import SkillCard from "./SkillCard";
 import type { InputField, SkillSchedule } from "@/lib/types";
 
@@ -21,6 +21,7 @@ export interface BoardSkill {
   scheduleInputValues: Record<string, string> | null;
   scheduleLastRunAt: string | null;
   hasUnschedulableSecret: boolean;
+  pinned: boolean;
 }
 
 type Filter = "all" | "active" | "draft" | "needs_setup" | "archived";
@@ -121,6 +122,39 @@ export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
     }
     return list;
   }, [skills, filter, group, query]);
+
+  // Pinned skills always sort to their own section at the top, regardless
+  // of which status/group/search filter is active — a quick-access row for
+  // whatever's run most often, separate from browsing the full list.
+  const pinnedSkills = useMemo(() => filtered.filter((s) => s.pinned), [filtered]);
+  const restSkills = useMemo(() => filtered.filter((s) => !s.pinned), [filtered]);
+
+  function renderCard(skill: BoardSkill) {
+    return (
+      <SkillCard
+        key={skill.id}
+        id={skill.id}
+        name={skill.name}
+        description={skill.description}
+        status={skill.status}
+        needsInput={skill.needsInput}
+        usesCowork={skill.usesCowork}
+        executionCount={skill.executionCount}
+        needsSetup={skill.needsSetup}
+        group={skill.group}
+        tags={skill.tags}
+        inputSchema={skill.inputSchema}
+        schedule={skill.schedule}
+        scheduleInputValues={skill.scheduleInputValues}
+        scheduleLastRunAt={skill.scheduleLastRunAt}
+        hasUnschedulableSecret={skill.hasUnschedulableSecret}
+        pinned={skill.pinned}
+        selectable={selectMode}
+        selected={selectedIds.has(skill.id)}
+        onToggleSelect={() => toggleSelected(skill.id)}
+      />
+    );
+  }
 
   return (
     <div>
@@ -238,31 +272,25 @@ export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
           )}
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 animate-stagger">
-          {filtered.map((skill) => (
-            <SkillCard
-              key={skill.id}
-              id={skill.id}
-              name={skill.name}
-              description={skill.description}
-              status={skill.status}
-              needsInput={skill.needsInput}
-              usesCowork={skill.usesCowork}
-              executionCount={skill.executionCount}
-              needsSetup={skill.needsSetup}
-              group={skill.group}
-              tags={skill.tags}
-              inputSchema={skill.inputSchema}
-              schedule={skill.schedule}
-              scheduleInputValues={skill.scheduleInputValues}
-              scheduleLastRunAt={skill.scheduleLastRunAt}
-              hasUnschedulableSecret={skill.hasUnschedulableSecret}
-              selectable={selectMode}
-              selected={selectedIds.has(skill.id)}
-              onToggleSelect={() => toggleSelected(skill.id)}
-            />
-          ))}
-        </div>
+        <>
+          {pinnedSkills.length > 0 && (
+            <div className="mb-4">
+              <div className="flex items-center gap-1.5 mb-2 text-xs font-medium text-muted uppercase tracking-wide">
+                <Pin size={11} className="fill-current text-primary" />
+                Fixadas
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 animate-stagger">{pinnedSkills.map(renderCard)}</div>
+            </div>
+          )}
+          {restSkills.length > 0 && (
+            <div>
+              {pinnedSkills.length > 0 && (
+                <div className="mb-2 text-xs font-medium text-muted uppercase tracking-wide">Todas</div>
+              )}
+              <div className="grid gap-3 sm:grid-cols-2 animate-stagger">{restSkills.map(renderCard)}</div>
+            </div>
+          )}
+        </>
       )}
 
       {confirmBulkDelete && (

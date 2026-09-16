@@ -29,6 +29,7 @@ create table if not exists skills (
   schedule        jsonb, -- SkillSchedule | null, see lib/types.ts — null means not scheduled
   schedule_input_values jsonb, -- Record<string, string> | null — saved defaults for a scheduled run's form, never includes secret-typed fields
   schedule_last_run_at timestamptz,
+  pinned          boolean not null default false, -- personal dashboard preference, not part of the skill's definition (not carried by export/import)
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );

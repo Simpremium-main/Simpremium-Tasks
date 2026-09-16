@@ -116,6 +116,10 @@ export interface Skill {
    *  since there's nowhere safe to store them for an unattended run. */
   scheduleInputValues: Record<string, string> | null;
   scheduleLastRunAt: Date | null;
+  /** Personal dashboard-organization preference — pinned skills sort to the
+   *  top of the skills list. Not part of the skill's definition, so it's
+   *  left out of export/import. */
+  pinned: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

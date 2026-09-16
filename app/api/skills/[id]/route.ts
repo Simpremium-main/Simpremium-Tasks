@@ -25,6 +25,7 @@ const EDITABLE_FIELDS = [
   "usesCowork",
   "status",
   "group",
+  "pinned",
 ] as const;
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {

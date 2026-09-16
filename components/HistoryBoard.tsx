@@ -18,7 +18,13 @@ export default function HistoryBoard({ executions }: { executions: ExecutionItem
     else if (filter !== "all") list = list.filter((e) => e.status === filter);
     if (query.trim()) {
       const q = query.trim().toLowerCase();
-      list = list.filter((e) => e.skill?.name.toLowerCase().includes(q));
+      list = list.filter(
+        (e) =>
+          e.skill?.name.toLowerCase().includes(q) ||
+          e.result?.toLowerCase().includes(q) ||
+          e.error?.toLowerCase().includes(q) ||
+          e.promptSnapshot.toLowerCase().includes(q)
+      );
     }
     return list;
   }, [executions, filter, query]);
@@ -39,7 +45,7 @@ export default function HistoryBoard({ executions }: { executions: ExecutionItem
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar por skill..."
+            placeholder="Buscar por skill ou conteúdo do resultado..."
             className="w-full rounded-md border border-line bg-white pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-shadow"
           />
         </div>

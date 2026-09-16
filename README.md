@@ -417,6 +417,10 @@ execution.
 The global history page (`/history`, `components/HistoryBoard.tsx`) has an **Arquivos** filter
 tab — shown only when at least one execution actually has files — that narrows the list down to
 runs that produced a real file, for "that file I generated last week" without opening every row.
+Its search box matches skill name *and* the execution's own content (`result`, `error`,
+`promptSnapshot`) — so "that report I ran last week" is findable by a phrase you remember from the
+result itself, not just by which skill produced it. Same 200-execution window `listExecutions`
+already loads (`lib/data.ts`), so it's searching recent history, not the entire database.
 
 ### Real file generation (PDF, CSV, XLSX, DOCX, PPTX, ...)
 
@@ -578,6 +582,7 @@ alter table skills add column if not exists schedule_input_values jsonb;
 alter table skills add column if not exists schedule_last_run_at timestamptz;
 alter table executions drop constraint executions_source_check;
 alter table executions add constraint executions_source_check check (source in ('cowork', 'claude', 'manual', 'scheduled'));
+alter table skills add column if not exists pinned boolean not null default false;
 ```
 
 ### Agendamentos overview page, and flagging a scheduled run that failed
@@ -595,6 +600,33 @@ border and an explicit "última execução agendada falhou" tag, and `ExecutionL
 per-skill and global history views) tags the row itself with a red "falhou sozinha" badge
 whenever `source === "scheduled"` and the status is `error`/`needs_setup` — the same visual
 pattern as the amber "demorando" badge for a stuck run, just a different signal.
+
+### Alerting when a scheduled run fails
+
+The badges above only help once you're looking at the app — a scheduled run that fails at 3am gets
+found whenever you next open it, which could be days. Set `SCHEDULE_FAILURE_WEBHOOK_URL` (env var,
+Vercel or `.env`) and the cron route (`app/api/cron/run-scheduled/route.ts`) POSTs a
+`{"text": "..."}` payload to it — that's Slack's own "Incoming Webhook" shape, so a Slack webhook
+URL works with zero extra config; any other endpoint that accepts that JSON shape works too
+(`lib/notify.ts`'s `notifyScheduleFailure`). Fires only for a scheduled execution that actually
+ran and ended in `error`/`needs_setup` — not for a skill skipped because of an unschedulable secret
+field, since that's a standing config state already visible on `/schedules`, not a one-off failure
+worth interrupting you for. Never throws: a broken webhook logs to the server console but never
+fails the scheduled run itself, which is already fully recorded in execution history regardless.
+Without the env var set, this is a silent no-op — same "surface as pending, don't invent" instinct
+as the rest of this app's integrations.
+
+### Pinning skills to the top of the dashboard
+
+A small pin toggle (`Pin`/`Loader2` icon, top-right of each card, hidden while bulk-select mode is
+on) lets a skill stay at the top of the dashboard regardless of the active status/group filter or
+search — for the 2-3 skills you run constantly, so you're not scrolling past everything else to
+find them. Toggled right from the card, no need to open the skill first
+(`components/SkillCard.tsx`'s `togglePin`, `PATCH /api/skills/[id]` with `{ pinned }`).
+`SkillsBoard.tsx` splits the filtered list into a **Fixadas** section and the rest, so pinned
+skills aren't just sorted first — they get their own clearly-labeled row. Purely a personal
+dashboard-organization preference, not part of the skill's definition, so `pinned` isn't included
+in export/import — an imported skill always starts unpinned, matching its fresh `draft` status.
 
 ### Exporting and importing skills
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { listScheduledSkills, updateSkill } from "@/lib/data";
 import { runSkill } from "@/lib/runSkill";
 import { isDue, hasUnschedulableSecret } from "@/lib/schedule";
+import { notifyScheduleFailure } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 // Same reasoning as the other run routes — see app/api/skills/[id]/run/route.ts.
@@ -59,6 +60,9 @@ export async function GET(req: NextRequest) {
           "scheduled"
         );
         results.push({ skillId: skill.id, name: skill.name, ran: true, status: execution.status });
+        if (execution.status === "error" || execution.status === "needs_setup") {
+          await notifyScheduleFailure(skill, execution);
+        }
       } catch (err) {
         results.push({
           skillId: skill.id,

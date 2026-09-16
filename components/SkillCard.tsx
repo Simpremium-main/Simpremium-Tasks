@@ -9,7 +9,9 @@ import {
   CheckSquare,
   Folder,
   History,
+  Loader2,
   PenLine,
+  Pin,
   Square,
   Sparkles,
 } from "lucide-react";
@@ -33,6 +35,7 @@ interface SkillCardProps {
   scheduleInputValues: Record<string, string> | null;
   scheduleLastRunAt: string | null;
   hasUnschedulableSecret: boolean;
+  pinned: boolean;
   /** Bulk-select mode (SkillsBoard) — when set, the card toggles selection
    *  on click instead of navigating. */
   selectable?: boolean;
@@ -56,11 +59,30 @@ export default function SkillCard({
   scheduleInputValues,
   scheduleLastRunAt,
   hasUnschedulableSecret,
+  pinned,
   selectable = false,
   selected = false,
   onToggleSelect,
 }: SkillCardProps) {
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [pinWorking, setPinWorking] = useState(false);
+
+  async function togglePin(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setPinWorking(true);
+    try {
+      const res = await fetch(`/api/skills/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pinned: !pinned }),
+      });
+      if (!res.ok) throw new Error();
+      window.location.reload();
+    } catch {
+      setPinWorking(false);
+    }
+  }
 
   return (
     <>
@@ -113,6 +135,23 @@ export default function SkillCard({
               </span>
             )}
             <StatusBadge status={status} />
+            {!selectable && (
+              <button
+                type="button"
+                onClick={togglePin}
+                disabled={pinWorking}
+                title={pinned ? "Desafixar" : "Fixar no topo"}
+                className={`rounded-md p-0.5 transition-colors disabled:opacity-60 ${
+                  pinned ? "text-primary" : "text-muted/40 hover:text-primary"
+                }`}
+              >
+                {pinWorking ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Pin size={14} className={pinned ? "fill-current" : ""} />
+                )}
+              </button>
+            )}
           </div>
         </div>
         <p className="mt-2.5 text-sm text-ink/60 line-clamp-2 min-h-[2.5rem]">

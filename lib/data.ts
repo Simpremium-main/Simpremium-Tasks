@@ -53,6 +53,7 @@ function mapSkillRow(row: Record<string, unknown>): Skill {
     schedule: (row.schedule as SkillSchedule | null) ?? null,
     scheduleInputValues: (row.schedule_input_values as Record<string, string> | null) ?? null,
     scheduleLastRunAt: row.schedule_last_run_at ? new Date(row.schedule_last_run_at as string) : null,
+    pinned: Boolean(row.pinned),
     createdAt: new Date(row.created_at as string),
     updatedAt: new Date(row.updated_at as string),
   };
@@ -252,6 +253,7 @@ export interface UpdateSkillInput {
   schedule?: SkillSchedule | null;
   scheduleInputValues?: Record<string, string> | null;
   scheduleLastRunAt?: Date;
+  pinned?: boolean;
 }
 
 export async function updateSkill(id: string, patch: UpdateSkillInput): Promise<Skill | null> {
@@ -270,6 +272,7 @@ export async function updateSkill(id: string, patch: UpdateSkillInput): Promise<
   if (patch.schedule !== undefined) row.schedule = patch.schedule;
   if (patch.scheduleInputValues !== undefined) row.schedule_input_values = patch.scheduleInputValues;
   if (patch.scheduleLastRunAt !== undefined) row.schedule_last_run_at = patch.scheduleLastRunAt.toISOString();
+  if (patch.pinned !== undefined) row.pinned = patch.pinned;
 
   const { data, error, status, statusText } = await supabase
     .from("skills")
