@@ -377,6 +377,16 @@ filter alongside the status filter and search. Both are editable in the new-skil
 saving; the AI-assisted parser proposes a group/tags guess when `ANTHROPIC_API_KEY` is set (the
 heuristic fallback leaves them blank for you to fill in — it doesn't guess).
 
+### Bulk actions on the skills list
+
+The dashboard's **Selecionar** toggle (`components/SkillsBoard.tsx`) switches the grid into
+multi-select — cards show a checkbox and clicking toggles selection instead of navigating to the
+skill — with an action bar to **Arquivar** or **Excluir** everything selected at once. There's no
+dedicated bulk API route: it fires the same per-skill `PATCH`/`DELETE` `/api/skills/[id]` calls
+the single-skill actions already use, in parallel via `Promise.all`, and reports how many failed
+if any did. Bulk delete gets the same irreversible-action confirm modal as the single delete;
+bulk archive doesn't, matching the single archive button (reversible, no confirm needed).
+
 ## Execution details and downloads
 
 Each execution row has a "Ver detalhes" button opening a modal with the full prompt, result,

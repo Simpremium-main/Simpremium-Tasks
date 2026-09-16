@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { AlertTriangle, Archive, CheckSquare, Loader2, Search, Trash2, X } from "lucide-react";
 import SkillCard from "./SkillCard";
 
 export interface BoardSkill {
@@ -24,6 +24,65 @@ export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [group, setGroup] = useState(ALL_GROUPS);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkWorking, setBulkWorking] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+
+  function toggleSelectMode() {
+    setSelectMode((prev) => !prev);
+    setSelectedIds(new Set());
+    setBulkError(null);
+  }
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function bulkArchive() {
+    setBulkWorking(true);
+    setBulkError(null);
+    try {
+      const results = await Promise.all(
+        Array.from(selectedIds).map((id) =>
+          fetch(`/api/skills/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: "archived" }),
+          })
+        )
+      );
+      const failed = results.filter((r) => !r.ok).length;
+      if (failed > 0) throw new Error(`${failed} de ${results.length} não foram arquivadas`);
+      window.location.href = "/";
+    } catch (err) {
+      setBulkError(err instanceof Error ? err.message : "Falha ao arquivar em lote");
+      setBulkWorking(false);
+    }
+  }
+
+  async function bulkDelete() {
+    setBulkWorking(true);
+    setBulkError(null);
+    try {
+      const results = await Promise.all(
+        Array.from(selectedIds).map((id) => fetch(`/api/skills/${id}`, { method: "DELETE" }))
+      );
+      const failed = results.filter((r) => !r.ok).length;
+      if (failed > 0) throw new Error(`${failed} de ${results.length} não foram excluídas`);
+      window.location.href = "/";
+    } catch (err) {
+      setBulkError(err instanceof Error ? err.message : "Falha ao excluir em lote");
+      setBulkWorking(false);
+      setConfirmBulkDelete(false);
+    }
+  }
 
   const groups = useMemo(() => {
     const set = new Set(skills.map((s) => s.group).filter((g): g is string => Boolean(g)));
@@ -105,7 +164,55 @@ export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
             </button>
           ))}
         </div>
+        {filtered.length > 0 && (
+          <button
+            type="button"
+            onClick={toggleSelectMode}
+            className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-2 text-xs font-medium transition-colors ${
+              selectMode
+                ? "border-primary/30 bg-primary-soft text-primary"
+                : "border-line bg-white text-muted hover:text-ink"
+            }`}
+          >
+            <CheckSquare size={13} />
+            {selectMode ? "Cancelar seleção" : "Selecionar"}
+          </button>
+        )}
       </div>
+
+      {selectMode && (
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-primary/20 bg-primary-soft/50 px-3.5 py-2.5">
+          <span className="text-sm font-medium text-ink">
+            {selectedIds.size} selecionada{selectedIds.size === 1 ? "" : "s"}
+          </span>
+          <div className="flex items-center gap-2 ml-auto">
+            <button
+              type="button"
+              onClick={bulkArchive}
+              disabled={selectedIds.size === 0 || bulkWorking}
+              className="inline-flex items-center gap-1.5 rounded-md border border-line bg-white px-3 py-1.5 text-xs font-medium text-ink/80 hover:border-primary/30 hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {bulkWorking ? <Loader2 size={13} className="animate-spin" /> : <Archive size={13} />}
+              Arquivar
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmBulkDelete(true)}
+              disabled={selectedIds.size === 0 || bulkWorking}
+              className="inline-flex items-center gap-1.5 rounded-md border border-line bg-white px-3 py-1.5 text-xs font-medium text-ink/80 hover:border-red-300 hover:text-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Trash2 size={13} />
+              Excluir
+            </button>
+          </div>
+          {bulkError && (
+            <span className="w-full inline-flex items-center gap-1 text-xs text-red-600">
+              <AlertTriangle size={12} />
+              {bulkError}
+            </span>
+          )}
+        </div>
+      )}
 
       {filtered.length === 0 ? (
         <div className="text-sm text-muted border border-dashed border-line rounded-xl p-10 text-center">
@@ -139,8 +246,80 @@ export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
               needsSetup={skill.needsSetup}
               group={skill.group}
               tags={skill.tags}
+              selectable={selectMode}
+              selected={selectedIds.has(skill.id)}
+              onToggleSelect={() => toggleSelected(skill.id)}
             />
           ))}
+        </div>
+      )}
+
+      {confirmBulkDelete && (
+        <div
+          className="fixed inset-0 bg-ink/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-backdrop-in"
+          onClick={() => !bulkWorking && setConfirmBulkDelete(false)}
+        >
+          <div
+            className="bg-white rounded-2xl border border-line max-w-md w-full shadow-2xl animate-scale-in overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="relative bg-gradient-to-br from-red-500 to-red-600 px-5 pt-5 pb-6 text-white overflow-hidden">
+              <div className="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-white/10" />
+              <button
+                type="button"
+                onClick={() => setConfirmBulkDelete(false)}
+                disabled={bulkWorking}
+                aria-label="Fechar"
+                className="absolute right-3 top-3 text-white/70 hover:text-white rounded-md p-1 hover:bg-white/10 transition-colors disabled:opacity-40"
+              >
+                <X size={16} />
+              </button>
+              <div className="relative flex items-center gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15 backdrop-blur-sm">
+                  <AlertTriangle size={19} />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-white/70 uppercase tracking-wide">Excluir em lote</p>
+                  <h3 className="font-semibold truncate">
+                    {selectedIds.size} skill{selectedIds.size === 1 ? "" : "s"}
+                  </h3>
+                </div>
+              </div>
+            </div>
+            <div className="p-5">
+              <p className="text-sm text-muted">
+                Isso apaga {selectedIds.size === 1 ? "essa skill" : "essas skills"} e todo o
+                histórico de execuções delas. Não dá pra desfazer.
+              </p>
+              {bulkError && (
+                <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md p-3 mt-3">
+                  <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+                  <span>
+                    <strong className="font-semibold">Não excluiu.</strong> {bulkError}
+                  </span>
+                </div>
+              )}
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmBulkDelete(false)}
+                  disabled={bulkWorking}
+                  className="rounded-md px-3.5 py-2 text-sm border border-line hover:bg-canvas transition-colors disabled:opacity-40"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={bulkDelete}
+                  disabled={bulkWorking}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-red-600 text-white px-4 py-2 text-sm font-medium shadow-sm shadow-red-600/30 hover:bg-red-700 hover:shadow-md hover:shadow-red-600/30 disabled:opacity-60 disabled:shadow-none transition-all"
+                >
+                  {bulkWorking ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                  {bulkWorking ? "Excluindo…" : "Excluir"}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, Bot, Folder, History, PenLine, Sparkles } from "lucide-react";
+import { AlertTriangle, Bot, CheckSquare, Folder, History, PenLine, Square, Sparkles } from "lucide-react";
 import StatusBadge from "./StatusBadge";
 
 interface SkillCardProps {
@@ -13,6 +13,11 @@ interface SkillCardProps {
   needsSetup?: boolean;
   group?: string | null;
   tags?: string[];
+  /** Bulk-select mode (SkillsBoard) — when set, the card toggles selection
+   *  on click instead of navigating. */
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }
 
 export default function SkillCard({
@@ -26,21 +31,41 @@ export default function SkillCard({
   needsSetup,
   group,
   tags = [],
+  selectable = false,
+  selected = false,
+  onToggleSelect,
 }: SkillCardProps) {
   return (
     <Link
       href={`/skills/${id}`}
-      className="group block rounded-xl border border-line bg-white p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
+      onClick={(e) => {
+        if (!selectable) return;
+        e.preventDefault();
+        onToggleSelect?.();
+      }}
+      className={`group block rounded-xl border bg-white p-4 transition-all duration-200 ${
+        selectable
+          ? selected
+            ? "border-primary/50 ring-1 ring-primary/30"
+            : "border-line hover:border-primary/30"
+          : "border-line hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
+      }`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0">
-          <span
-            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors ${
-              usesCowork ? "bg-cowork-soft text-cowork" : "bg-primary-soft text-primary"
-            }`}
-          >
-            {usesCowork ? <Bot size={16} /> : <Sparkles size={16} />}
-          </span>
+          {selectable ? (
+            <span className={`shrink-0 ${selected ? "text-primary" : "text-muted"}`}>
+              {selected ? <CheckSquare size={18} /> : <Square size={18} />}
+            </span>
+          ) : (
+            <span
+              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors ${
+                usesCowork ? "bg-cowork-soft text-cowork" : "bg-primary-soft text-primary"
+              }`}
+            >
+              {usesCowork ? <Bot size={16} /> : <Sparkles size={16} />}
+            </span>
+          )}
           <div className="min-w-0">
             <h3 className="font-medium text-ink truncate group-hover:text-primary transition-colors">
               {name}
