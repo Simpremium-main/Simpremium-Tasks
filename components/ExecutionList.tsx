@@ -11,6 +11,7 @@ import {
   FileText,
   Hand,
   Paperclip,
+  RotateCcw,
   Sparkles,
   User,
   X,
@@ -61,10 +62,14 @@ export default function ExecutionList({
   executions,
   showSkillName = false,
   highlightId,
+  onRetry,
 }: {
   executions: ExecutionItem[];
   showSkillName?: boolean;
   highlightId?: string | null;
+  /** Present only on the skill's own page (RunSkillPanel owns the run form
+   *  to prefill) — the global history list has no form to retry into. */
+  onRetry?: (execution: ExecutionItem) => void;
 }) {
   const [detailsFor, setDetailsFor] = useState<ExecutionItem | null>(null);
 
@@ -74,6 +79,11 @@ export default function ExecutionList({
         Nenhuma execução ainda.
       </p>
     );
+  }
+
+  function retry(execution: ExecutionItem) {
+    onRetry?.(execution);
+    setDetailsFor(null);
   }
 
   return (
@@ -86,11 +96,16 @@ export default function ExecutionList({
             showSkillName={showSkillName}
             highlighted={execution.id === highlightId}
             onViewDetails={() => setDetailsFor(execution)}
+            onRetry={onRetry ? () => retry(execution) : undefined}
           />
         ))}
       </ul>
       {detailsFor && (
-        <ExecutionDetailsModal execution={detailsFor} onClose={() => setDetailsFor(null)} />
+        <ExecutionDetailsModal
+          execution={detailsFor}
+          onClose={() => setDetailsFor(null)}
+          onRetry={onRetry ? () => retry(detailsFor) : undefined}
+        />
       )}
     </>
   );
@@ -101,11 +116,13 @@ function ExecutionRow({
   showSkillName,
   highlighted,
   onViewDetails,
+  onRetry,
 }: {
   execution: ExecutionItem;
   showSkillName: boolean;
   highlighted?: boolean;
   onViewDetails: () => void;
+  onRetry?: () => void;
 }) {
   return (
     <li
@@ -113,48 +130,61 @@ function ExecutionRow({
         highlighted ? "border-primary/40 animate-highlight" : "border-line"
       }`}
     >
-      <button
-        type="button"
-        onClick={onViewDetails}
-        className="w-full flex items-center gap-3 px-4 py-3 text-left"
-      >
-        <StatusBadge status={execution.status} />
-        <span className="inline-flex items-center gap-1 text-xs text-muted">
-          {SOURCE_ICONS[execution.source]}
-          {SOURCE_LABELS[execution.source] ?? execution.source}
-        </span>
-        {execution.ranBy && (
-          <span className="hidden sm:inline-flex items-center gap-1 text-xs text-muted">
-            <User size={11} />
-            {execution.ranBy}
+      <div className="w-full flex items-center gap-3 px-4 py-3">
+        <button type="button" onClick={onViewDetails} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+          <StatusBadge status={execution.status} />
+          <span className="inline-flex items-center gap-1 text-xs text-muted">
+            {SOURCE_ICONS[execution.source]}
+            {SOURCE_LABELS[execution.source] ?? execution.source}
           </span>
-        )}
-        {execution.files && execution.files.length > 0 && (
-          <span
-            className="inline-flex items-center gap-1 text-xs text-primary"
-            title={`${execution.files.length} arquivo(s) gerado(s)`}
-          >
-            <Paperclip size={11} />
-            {execution.files.length}
+          {execution.ranBy && (
+            <span className="hidden sm:inline-flex items-center gap-1 text-xs text-muted">
+              <User size={11} />
+              {execution.ranBy}
+            </span>
+          )}
+          {execution.files && execution.files.length > 0 && (
+            <span
+              className="inline-flex items-center gap-1 text-xs text-primary"
+              title={`${execution.files.length} arquivo(s) gerado(s)`}
+            >
+              <Paperclip size={11} />
+              {execution.files.length}
+            </span>
+          )}
+          {showSkillName && execution.skill && (
+            <Link
+              href={`/skills/${execution.skill.id}`}
+              onClick={(e) => e.stopPropagation()}
+              className="text-sm font-medium hover:text-primary transition-colors"
+            >
+              {execution.skill.name}
+            </Link>
+          )}
+          <span className="ml-auto text-xs text-muted hidden sm:inline">
+            {new Date(execution.startedAt).toLocaleString("pt-BR")}
           </span>
-        )}
-        {showSkillName && execution.skill && (
-          <Link
-            href={`/skills/${execution.skill.id}`}
-            onClick={(e) => e.stopPropagation()}
-            className="text-sm font-medium hover:text-primary transition-colors"
+        </button>
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            title="Rodar de novo"
+            className="inline-flex items-center gap-1 text-xs text-muted hover:text-primary transition-colors shrink-0"
           >
-            {execution.skill.name}
-          </Link>
+            <RotateCcw size={13} />
+            <span className="hidden sm:inline">Rodar de novo</span>
+          </button>
         )}
-        <span className="ml-auto text-xs text-muted hidden sm:inline">
-          {new Date(execution.startedAt).toLocaleString("pt-BR")}
-        </span>
-        <span className="inline-flex items-center gap-1 text-xs font-medium text-primary shrink-0">
+        <button
+          type="button"
+          onClick={onViewDetails}
+          className="inline-flex items-center gap-1 text-xs font-medium text-primary shrink-0"
+        >
           <Eye size={13} />
           <span className="hidden sm:inline">Ver detalhes</span>
-        </span>
-      </button>
+        </button>
+      </div>
     </li>
   );
 }
@@ -162,9 +192,11 @@ function ExecutionRow({
 function ExecutionDetailsModal({
   execution,
   onClose,
+  onRetry,
 }: {
   execution: ExecutionItem;
   onClose: () => void;
+  onRetry?: () => void;
 }) {
   const fileBase = `execucao-${execution.id.slice(0, 8)}`;
 
@@ -253,6 +285,17 @@ function ExecutionDetailsModal({
         )}
 
         {execution.error && <DetailBlock label="Erro" text={execution.error} tone="red" />}
+
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="mt-1 inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-1.5 text-sm text-ink/80 hover:border-primary/30 hover:text-primary hover:bg-primary-soft transition-colors"
+          >
+            <RotateCcw size={13} />
+            Rodar de novo
+          </button>
+        )}
       </div>
     </div>
   );

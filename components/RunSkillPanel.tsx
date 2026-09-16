@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import DynamicForm from "./DynamicForm";
 import ExecutionList, { type ExecutionItem } from "./ExecutionList";
-import { buildPromptSnapshot } from "@/lib/mask";
+import { buildPromptSnapshot, looksLikeSecretKey } from "@/lib/mask";
 import type { InputField } from "@/lib/types";
 
 interface Skill {
@@ -44,12 +44,39 @@ export default function RunSkillPanel({
   const [executions, setExecutions] = useState(initialExecutions);
   const [formError, setFormError] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
+  const [retryNote, setRetryNote] = useState<string | null>(null);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [thinkingText, setThinkingText] = useState("");
   const [showThinking, setShowThinking] = useState(false);
   const [chunkNumber, setChunkNumber] = useState(1);
 
   const missingRequired = schema.filter((f) => f.required && !values[f.key]?.trim());
+
+  // Prefills the form from a past execution's inputs so re-running it doesn't
+  // mean retyping everything — but secret fields (token/senha/etc.) are never
+  // stored in plain text in history (masked before the row is even written,
+  // see lib/mask.ts), so there's nothing safe to reuse for those: leave them
+  // blank and tell the person why, instead of silently sending the masked
+  // "••••1234" placeholder as if it were a real credential.
+  function handleRetry(execution: ExecutionItem) {
+    const prefill: Record<string, string> = {};
+    let skippedSecrets = false;
+    for (const field of schema) {
+      if (field.type === "secret" || looksLikeSecretKey(field.key)) {
+        if (execution.inputValues?.[field.key] !== undefined) skippedSecrets = true;
+        continue;
+      }
+      const value = execution.inputValues?.[field.key];
+      if (value !== undefined) prefill[field.key] = value;
+    }
+    setValues(prefill);
+    setFormError(null);
+    setRetryNote(
+      skippedSecrets
+        ? "Reaproveitei os campos dessa execução — só os de senha/token ficaram em branco, preenche de novo antes de rodar."
+        : "Reaproveitei os campos dessa execução — confira antes de rodar."
+    );
+  }
 
   function handleRunClick() {
     if (missingRequired.length > 0) {
@@ -132,6 +159,7 @@ export default function RunSkillPanel({
 
       setExecutions((prev) => [execution, ...prev]);
       setShowConfirm(false);
+      setRetryNote(null);
       setHighlightId(execution.id);
       setTimeout(() => setHighlightId(null), 1800);
       router.refresh();
@@ -152,6 +180,7 @@ export default function RunSkillPanel({
           Rodar essa skill
         </h2>
         <DynamicForm schema={schema} values={values} onChange={(k, v) => setValues((p) => ({ ...p, [k]: v }))} />
+        {retryNote && <p className="mt-2 text-sm text-primary">{retryNote}</p>}
         {formError && <p className="mt-2 text-sm text-red-600">{formError}</p>}
         <button
           type="button"
@@ -185,7 +214,7 @@ export default function RunSkillPanel({
           <History size={15} className="text-primary" />
           Histórico de execuções
         </h2>
-        <ExecutionList executions={executions} highlightId={highlightId} />
+        <ExecutionList executions={executions} highlightId={highlightId} onRetry={handleRetry} />
       </div>
     </div>
   );

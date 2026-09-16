@@ -4,15 +4,18 @@ import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import ExecutionList, { type ExecutionItem } from "./ExecutionList";
 
-type Filter = "all" | "success" | "error" | "needs_setup";
+type Filter = "all" | "success" | "error" | "needs_setup" | "files";
 
 export default function HistoryBoard({ executions }: { executions: ExecutionItem[] }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
 
+  const hasFiles = useMemo(() => executions.some((e) => e.files && e.files.length > 0), [executions]);
+
   const filtered = useMemo(() => {
     let list = executions;
-    if (filter !== "all") list = list.filter((e) => e.status === filter);
+    if (filter === "files") list = list.filter((e) => e.files && e.files.length > 0);
+    else if (filter !== "all") list = list.filter((e) => e.status === filter);
     if (query.trim()) {
       const q = query.trim().toLowerCase();
       list = list.filter((e) => e.skill?.name.toLowerCase().includes(q));
@@ -47,6 +50,7 @@ export default function HistoryBoard({ executions }: { executions: ExecutionItem
               ["success", "Sucesso"],
               ["error", "Erro"],
               ["needs_setup", "Setup"],
+              ...(hasFiles ? [["files", "Arquivos"] as [Filter, string]] : []),
             ] as [Filter, string][]
           ).map(([value, label]) => (
             <button
