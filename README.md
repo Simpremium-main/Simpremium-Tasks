@@ -292,6 +292,13 @@ client-side with `useMemo` from the same execution list already loaded for the p
 query. Success rate only counts finished executions (excludes anything still `pending`/`running`)
 so an in-flight run doesn't briefly drag the percentage down.
 
+**Lifetime total**: `/history`'s header shows a "~$X gasto no total" pill — the true sum across
+*every* execution ever recorded, not just the 200 most recent ones `listExecutions` loads for the
+list itself. `lib/data.ts`'s `getTotalUsage()` is a separate, deliberately narrow query (just the
+`usage` column, no prompt/result text) so this stays cheap no matter how much history piles up —
+a workspace with thousands of executions shouldn't have to choose between an accurate total and a
+fast page load.
+
 ## Claude Cowork integration
 
 The project brief is explicit that Cowork shouldn't be special-cased, and that this integration

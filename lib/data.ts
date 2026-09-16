@@ -1,5 +1,6 @@
 import type { PostgrestError } from "@supabase/supabase-js";
 import { getSupabase } from "./supabaseClient";
+import { sumTokenUsage } from "./cost";
 import type {
   ConversationState,
   Execution,
@@ -321,6 +322,29 @@ export async function listExecutions(
       skill: { id: skill?.id ?? (row.skill_id as string), name: skill?.name ?? "Deleted skill" },
     };
   });
+}
+
+/**
+ * True lifetime total across every execution ever recorded — unlike
+ * listExecutions' 200-row cap (built for a fast, recent-first list view),
+ * this exists so a "how much have I spent" total isn't quietly wrong once a
+ * workspace has more history than that. Only pulls the `usage` column, not
+ * full rows (prompt/result text can be large), to stay cheap regardless of
+ * how much history there is.
+ */
+export async function getTotalUsage(): Promise<{ usage: TokenUsage; executionsWithUsage: number }> {
+  const supabase = getSupabase();
+  const { data, error, status, statusText } = await supabase
+    .from("executions")
+    .select("usage")
+    .not("usage", "is", null);
+  if (error) throw describeError("getTotalUsage", error, status, statusText);
+
+  let usage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
+  for (const row of data ?? []) {
+    usage = sumTokenUsage(usage, row.usage as TokenUsage);
+  }
+  return { usage, executionsWithUsage: (data ?? []).length };
 }
 
 export async function getExecution(id: string): Promise<Execution | null> {
