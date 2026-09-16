@@ -58,15 +58,43 @@ export async function runSkillStreaming(
 ): Promise<RunStepResult> {
   const execution = await startExecution(skill, inputValues, ranBy);
 
-  if (skill.usesCowork) {
-    const { rawPrompt } = buildPrompts(skill, inputValues);
-    const dispatch = await dispatchToCowork(rawPrompt);
-    return { execution: await finishExecution(skill, execution.id, dispatch), done: true };
-  }
+  return withFailureRecorded(skill, execution.id, async () => {
+    if (skill.usesCowork) {
+      const { rawPrompt } = buildPrompts(skill, inputValues);
+      const dispatch = await dispatchToCowork(rawPrompt);
+      return { execution: await finishExecution(skill, execution.id, dispatch), done: true };
+    }
 
-  const { rawPrompt } = buildPrompts(skill, inputValues);
-  const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: rawPrompt }];
-  return advance(skill, execution.id, messages, 0, [], onDelta);
+    const { rawPrompt } = buildPrompts(skill, inputValues);
+    const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: rawPrompt }];
+    return advance(skill, execution.id, messages, 0, [], onDelta);
+  });
+}
+
+/**
+ * Guarantees a dispatch attempt always ends with the execution row finalized
+ * — status "error" if anything throws here — rather than left at "running"
+ * forever. dispatchClaudeChunk already catches its own failures (a bad API
+ * call, a file-upload error) and returns a normal error result; this is the
+ * backstop for whatever gets past that (e.g. the DB write in finishExecution
+ * itself failing) or throws from dispatchToCowork. Without it, the caller
+ * (the stream route) only tells the client something went wrong — it never
+ * touches the DB row that startExecution() already wrote as "running".
+ */
+async function withFailureRecorded(
+  skill: Skill,
+  executionId: string,
+  run: () => Promise<RunStepResult>
+): Promise<RunStepResult> {
+  try {
+    return await run();
+  } catch (err) {
+    const dispatch: DispatchResult = {
+      status: "error",
+      error: err instanceof Error ? err.message : "Unexpected error running this skill",
+    };
+    return { execution: await finishExecution(skill, executionId, dispatch), done: true };
+  }
 }
 
 /**
@@ -104,13 +132,15 @@ export async function continueSkillRun(
   if (!state) {
     throw new Error(`Execution ${execution.id} has no saved state to continue from`);
   }
-  return advance(
-    skill,
-    execution.id,
-    state.messages as Anthropic.Beta.BetaMessageParam[],
-    state.chunkCount,
-    state.files,
-    onDelta
+  return withFailureRecorded(skill, execution.id, () =>
+    advance(
+      skill,
+      execution.id,
+      state.messages as Anthropic.Beta.BetaMessageParam[],
+      state.chunkCount,
+      state.files,
+      onDelta
+    )
   );
 }
 

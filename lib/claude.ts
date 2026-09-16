@@ -132,7 +132,13 @@ export async function dispatchClaudeChunk(
         model: MODEL,
         max_tokens: 16000,
         system: SKILL_EXECUTION_SYSTEM_PROMPT,
-        thinking: { type: "adaptive" },
+        // display: "summarized" — without it, Sonnet 5 defaults to
+        // "omitted" (thinking still happens and is billed, but the delta
+        // text is empty), so a task that spends a while thinking before its
+        // first visible token showed no progress at all: the run panel sat
+        // on "Aguardando a primeira resposta…" looking stuck even on a
+        // perfectly healthy run.
+        thinking: { type: "adaptive", display: "summarized" },
         tools: TOOLS,
         betas: [CODE_EXECUTION_BETA],
         messages,
@@ -140,6 +146,7 @@ export async function dispatchClaudeChunk(
       { timeout: CHUNK_TIMEOUT_MS }
     );
     stream.on("text", (delta) => onDelta(delta));
+    stream.on("thinking", (delta) => onDelta(delta));
     const message = await stream.finalMessage();
 
     const newMessages: Anthropic.Beta.BetaMessageParam[] = [
