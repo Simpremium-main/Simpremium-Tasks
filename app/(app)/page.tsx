@@ -4,6 +4,7 @@ import { listSkills } from "@/lib/data";
 import { isClaudeConfigured } from "@/lib/claude";
 import SkillsBoard from "@/components/SkillsBoard";
 import PageHeader from "@/components/PageHeader";
+import ImportSkillsButton from "@/components/ImportSkillsButton";
 
 export const dynamic = "force-dynamic";
 
@@ -23,13 +24,16 @@ export default async function DashboardPage() {
             Cole o próximo post sobre uma skill/MCP e transforme em algo pronto pra rodar quando
             quiser.
           </p>
-          <Link
-            href="/skills/new"
-            className="mt-5 inline-flex items-center gap-1.5 rounded-md bg-primary text-white px-4 py-2 text-sm font-medium hover:bg-primary-hover transition-colors"
-          >
-            <Plus size={15} />
-            Nova skill
-          </Link>
+          <div className="mt-5 flex items-center justify-center gap-2">
+            <Link
+              href="/skills/new"
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary text-white px-4 py-2 text-sm font-medium hover:bg-primary-hover transition-colors"
+            >
+              <Plus size={15} />
+              Nova skill
+            </Link>
+            <ImportSkillsButton />
+          </div>
         </div>
       </div>
     );
@@ -70,6 +74,7 @@ export default async function DashboardPage() {
               <Download size={15} />
               Exportar
             </a>
+            <ImportSkillsButton />
             <Link
               href="/skills/new"
               className="inline-flex items-center gap-1.5 rounded-md bg-primary text-white px-3.5 py-2 text-sm font-medium hover:bg-primary-hover transition-colors"

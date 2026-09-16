@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   Bot,
   ChevronDown,
+  Coins,
   FileText,
   History,
   Loader2,
@@ -16,6 +17,7 @@ import {
 import DynamicForm from "./DynamicForm";
 import ExecutionList, { type ExecutionItem } from "./ExecutionList";
 import { buildPromptSnapshot, looksLikeSecretKey } from "@/lib/mask";
+import { estimateCostUsd, formatCostUsd } from "@/lib/cost";
 import type { InputField } from "@/lib/types";
 
 interface Skill {
@@ -172,6 +174,20 @@ export default function RunSkillPanel({
 
   const promptPreview = buildPromptSnapshot(skill.promptTemplate, values, schema);
 
+  const stats = useMemo(() => {
+    const finished = executions.filter((e) => e.status !== "pending" && e.status !== "running");
+    const successCount = finished.filter((e) => e.status === "success").length;
+    const totalCost = executions.reduce(
+      (sum, e) => sum + (e.usage ? estimateCostUsd(e.usage) : 0),
+      0
+    );
+    return {
+      total: executions.length,
+      successRate: finished.length > 0 ? Math.round((successCount / finished.length) * 100) : null,
+      totalCost,
+    };
+  }, [executions]);
+
   return (
     <div className="space-y-6">
       <div className="rounded-xl border border-line bg-white p-5">
@@ -210,10 +226,25 @@ export default function RunSkillPanel({
       )}
 
       <div>
-        <h2 className="font-semibold text-ink mb-3 flex items-center gap-2">
-          <History size={15} className="text-primary" />
-          Histórico de execuções
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h2 className="font-semibold text-ink flex items-center gap-2">
+            <History size={15} className="text-primary" />
+            Histórico de execuções
+          </h2>
+          {stats.total > 0 && (
+            <div className="flex items-center gap-3 text-xs text-muted">
+              <span>
+                {stats.total} execuç{stats.total === 1 ? "ão" : "ões"}
+              </span>
+              {stats.successRate !== null && <span>{stats.successRate}% sucesso</span>}
+              {stats.totalCost > 0 && (
+                <span className="inline-flex items-center gap-1" title="Soma das estimativas de custo de todas as execuções">
+                  <Coins size={11} />~{formatCostUsd(stats.totalCost)} ao todo
+                </span>
+              )}
+            </div>
+          )}
+        </div>
         <ExecutionList executions={executions} highlightId={highlightId} onRetry={handleRetry} />
       </div>
     </div>

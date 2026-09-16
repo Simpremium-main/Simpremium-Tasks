@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, CalendarClock, Loader2, Trash2 } from "lucide-react";
+import { AlertTriangle, CalendarClock, Loader2, PlayCircle, Trash2 } from "lucide-react";
 import DynamicForm from "./DynamicForm";
 import { SCHEDULE_DAYS, describeSchedule } from "@/lib/schedule";
 import type { InputField, SkillSchedule } from "@/lib/types";
@@ -28,6 +28,7 @@ export default function ScheduleSkillPanel({
   const [values, setValues] = useState<Record<string, string>>(scheduleInputValues ?? {});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
 
   const schedulableSchema = inputSchema.filter((f) => f.type !== "secret");
   const missingRequired = schedulableSchema.filter((f) => f.required && !values[f.key]?.trim());
@@ -79,6 +80,26 @@ export default function ScheduleSkillPanel({
     }
   }
 
+  async function testNow() {
+    setTesting(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/skills/${skillId}/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inputValues: scheduleInputValues ?? {} }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Falha ao testar (HTTP ${res.status})`);
+      }
+      window.location.reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao testar o agendamento");
+      setTesting(false);
+    }
+  }
+
   if (hasUnschedulableSecret) {
     return (
       <div className="rounded-xl border border-line bg-white p-5">
@@ -123,13 +144,31 @@ export default function ScheduleSkillPanel({
               ? `Última execução agendada: ${new Date(scheduleLastRunAt).toLocaleString("pt-BR")}`
               : "Ainda não rodou pelo agendamento."}
           </p>
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className="mt-3 text-sm text-primary hover:underline font-medium"
-          >
-            Editar agendamento
-          </button>
+          {error && (
+            <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md p-3 mt-3">
+              <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+              {error}
+            </div>
+          )}
+          <div className="mt-3 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="text-sm text-primary hover:underline font-medium"
+            >
+              Editar agendamento
+            </button>
+            <button
+              type="button"
+              onClick={testNow}
+              disabled={testing}
+              title="Roda a skill agora, com os mesmos valores salvos pro agendamento — sem esperar o horário"
+              className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-primary transition-colors disabled:opacity-50"
+            >
+              {testing ? <Loader2 size={13} className="animate-spin" /> : <PlayCircle size={13} />}
+              {testing ? "Testando…" : "Testar agora"}
+            </button>
+          </div>
         </div>
       ) : (
         <div className="space-y-3">

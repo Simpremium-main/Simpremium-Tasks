@@ -255,6 +255,12 @@ promotional credit, or prompt caching (none of which this app uses today). Cowor
 heuristic-fallback executions have no Claude API call to report on, so `usage` stays `null` and
 no token/cost badge shows for those rows.
 
+**Per-skill rollup**: the skill's own page (`RunSkillPanel.tsx`) shows a total execution count,
+success rate, and summed estimated cost next to the "Histórico de execuções" heading — computed
+client-side with `useMemo` from the same execution list already loaded for the page, no extra
+query. Success rate only counts finished executions (excludes anything still `pending`/`running`)
+so an in-flight run doesn't briefly drag the percentage down.
+
 ## Claude Cowork integration
 
 The project brief is explicit that Cowork shouldn't be special-cased, and that this integration
@@ -548,6 +554,12 @@ daily or weekly recurrence — no external service, this runs on Vercel Cron. Th
   automatically sends it as `Authorization: Bearer <CRON_SECRET>` on its own cron requests; the
   route rejects anything else once that env var is set. Without it, the route runs unauthenticated
   — fine for local testing, not for a deployed app anyone could hit the URL of.
+- **Testar agora**, on a saved schedule, runs the skill immediately with the same saved default
+  values (`POST /api/skills/[id]/run`, the plain non-streaming route) instead of waiting for the
+  scheduled time — lets you confirm the automation actually works right after setting it up,
+  rather than finding out tomorrow. It's a normal manual run as far as the rest of the app is
+  concerned (tagged by the usual `claude`/`cowork` source, not `scheduled` — a person triggered
+  it), so it shows up in history like any other run.
 
 Needs three new columns on `skills` that a fresh `supabase/schema.sql` already includes — if you
 set this project up earlier, run in the SQL Editor:
@@ -576,13 +588,23 @@ per-skill and global history views) tags the row itself with a red "falhou sozin
 whenever `source === "scheduled"` and the status is `error`/`needs_setup` — the same visual
 pattern as the amber "demorando" badge for a stuck run, just a different signal.
 
-### Exporting skills
+### Exporting and importing skills
 
 **Exportar** on the dashboard (`GET /api/skills/export`) downloads every skill as JSON — name,
-description, prompt template, input schema, group/tags, schedule, everything needed to recreate
-them elsewhere or restore one you deleted by hand. Deliberately a skill-definitions backup, not a
-full data export: no execution history, and nothing secret-shaped to leave out in the first place
-— no skill has ever had a real credential value persisted anywhere (see the security baseline).
+description, prompt template, input schema, group/tags, schedule, everything about how it's
+currently configured. Deliberately a skill-definitions backup, not a full data export: no
+execution history, and nothing secret-shaped to leave out in the first place — no skill has ever
+had a real credential value persisted anywhere (see the security baseline).
+
+**Importar** (`ImportSkillsButton.tsx`, `POST /api/skills/import`) reads that same JSON shape (a
+bare array, or `{ "skills": [...] }`) back in and bulk-creates skills from it, reporting per-item
+success/failure rather than failing the whole batch on one bad entry. Every imported skill lands
+as a fresh `draft`, whatever `status` it had in the file — same reasoning as
+`DuplicateSkillButton`: it hasn't run successfully in *this* environment yet, so it gets the same
+"prove it works once" gate as a skill pasted in by hand. `schedule`/`scheduleInputValues` aren't
+carried over either, on purpose — an imported skill running unattended before anyone here has
+reviewed it would defeat that gate entirely; re-add the schedule from the skill's own page once
+you've confirmed it works.
 
 ## Running locally
 
