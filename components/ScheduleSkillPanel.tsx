@@ -3,9 +3,8 @@
 import { useState } from "react";
 import { AlertTriangle, CalendarClock, Loader2, Trash2 } from "lucide-react";
 import DynamicForm from "./DynamicForm";
+import { SCHEDULE_DAYS, describeSchedule } from "@/lib/schedule";
 import type { InputField, SkillSchedule } from "@/lib/types";
-
-const DAYS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 
 export default function ScheduleSkillPanel({
   skillId,
@@ -118,10 +117,7 @@ export default function ScheduleSkillPanel({
 
       {schedule && !editing ? (
         <div>
-          <p className="text-sm text-ink/80">
-            Roda {schedule.frequency === "daily" ? "todo dia" : `toda ${DAYS[schedule.dayOfWeek ?? 0]}`}{" "}
-            por volta de {schedule.time} UTC.
-          </p>
+          <p className="text-sm text-ink/80">Roda {describeSchedule(schedule)}.</p>
           <p className="mt-1 text-xs text-muted">
             {scheduleLastRunAt
               ? `Última execução agendada: ${new Date(scheduleLastRunAt).toLocaleString("pt-BR")}`
@@ -160,7 +156,7 @@ export default function ScheduleSkillPanel({
                   onChange={(e) => setDayOfWeek(Number(e.target.value))}
                   className="rounded-md border border-line px-2.5 py-1.5 text-sm"
                 >
-                  {DAYS.map((day, i) => (
+                  {SCHEDULE_DAYS.map((day, i) => (
                     <option key={day} value={i}>
                       {day}
                     </option>

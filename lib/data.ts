@@ -128,6 +128,53 @@ export async function listScheduledSkills(): Promise<Skill[]> {
   return (data ?? []).map(mapSkillRow);
 }
 
+/** Same set as listScheduledSkills, but for the "Agendamentos" overview
+ *  page (a person reading it, not the cron route) — each skill paired with
+ *  its own most recent *scheduled* execution (if any), so the page can show
+ *  whether the automation itself is actually working without opening every
+ *  skill individually. */
+export async function listScheduledSkillsOverview(): Promise<
+  (Skill & { lastScheduledRun: Execution | null })[]
+> {
+  const supabase = getSupabase();
+  const {
+    data: skillRows,
+    error,
+    status,
+    statusText,
+  } = await supabase.from("skills").select("*").not("schedule", "is", null).order("name");
+  if (error) throw describeError("listScheduledSkillsOverview", error, status, statusText);
+
+  const skills = (skillRows ?? []).map(mapSkillRow);
+  if (skills.length === 0) return [];
+
+  const {
+    data: execRows,
+    error: execError,
+    status: execStatus,
+    statusText: execStatusText,
+  } = await supabase
+    .from("executions")
+    .select("*")
+    .in(
+      "skill_id",
+      skills.map((s) => s.id)
+    )
+    .eq("source", "scheduled")
+    .order("started_at", { ascending: false });
+  if (execError) {
+    throw describeError("listScheduledSkillsOverview (executions)", execError, execStatus, execStatusText);
+  }
+
+  const latestBySkill = new Map<string, Execution>();
+  for (const row of execRows ?? []) {
+    const skillId = row.skill_id as string;
+    if (!latestBySkill.has(skillId)) latestBySkill.set(skillId, mapExecutionRow(row));
+  }
+
+  return skills.map((skill) => ({ ...skill, lastScheduledRun: latestBySkill.get(skill.id) ?? null }));
+}
+
 export async function getSkill(id: string): Promise<Skill | null> {
   const supabase = getSupabase();
   const { data, error, status, statusText } = await supabase

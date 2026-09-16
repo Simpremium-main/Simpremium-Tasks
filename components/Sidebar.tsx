@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import {
   Bot,
+  CalendarClock,
   History,
   Loader2,
   LogOut,
@@ -192,6 +193,13 @@ export default function Sidebar({
           active={pathname === "/history"}
           icon={<History size={16} />}
           label="Histórico"
+          collapsed={effectiveCollapsed}
+        />
+        <NavLink
+          href="/schedules"
+          active={pathname === "/schedules"}
+          icon={<CalendarClock size={16} />}
+          label="Agendamentos"
           collapsed={effectiveCollapsed}
         />
         {isAdmin && (

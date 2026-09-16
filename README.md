@@ -560,6 +560,30 @@ alter table executions drop constraint executions_source_check;
 alter table executions add constraint executions_source_check check (source in ('cowork', 'claude', 'manual', 'scheduled'));
 ```
 
+### Agendamentos overview page, and flagging a scheduled run that failed
+
+`/schedules` (`app/(app)/schedules/page.tsx`, linked from the sidebar) lists every skill with an
+active schedule in one place — recurrence in plain language, a rough next-run estimate
+(`lib/schedule.ts`'s `nextDueAt`, display only; the cron route itself still decides with
+`isDue()`), and that skill's most recent *scheduled* execution with its status — instead of
+opening each skill individually to check whether the automation is actually working.
+
+A scheduled run that failed is easy to miss compared to a manual one — you were watching when you
+clicked "Rodar" and saw the error immediately; nobody was watching this one. Two places surface
+it instead of letting it blend into a normal list: the `/schedules` page gives that skill a red
+border and an explicit "última execução agendada falhou" tag, and `ExecutionList.tsx` (the
+per-skill and global history views) tags the row itself with a red "falhou sozinha" badge
+whenever `source === "scheduled"` and the status is `error`/`needs_setup` — the same visual
+pattern as the amber "demorando" badge for a stuck run, just a different signal.
+
+### Exporting skills
+
+**Exportar** on the dashboard (`GET /api/skills/export`) downloads every skill as JSON — name,
+description, prompt template, input schema, group/tags, schedule, everything needed to recreate
+them elsewhere or restore one you deleted by hand. Deliberately a skill-definitions backup, not a
+full data export: no execution history, and nothing secret-shaped to leave out in the first place
+— no skill has ever had a real credential value persisted anywhere (see the security baseline).
+
 ## Running locally
 
 ```bash

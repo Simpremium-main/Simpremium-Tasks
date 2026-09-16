@@ -94,6 +94,14 @@ function isLikelyStuck(execution: ExecutionItem, now: number): boolean {
   return execution.status === "running" && now - new Date(execution.startedAt).getTime() > STUCK_AFTER_MS;
 }
 
+// A scheduled run that failed is easy to miss compared to a manual one — you
+// were there when you clicked "Rodar" and saw the error immediately; nobody
+// was watching this one, so it deserves to stand out instead of blending
+// into the rest of the list.
+function isFailedScheduled(execution: ExecutionItem): boolean {
+  return execution.source === "scheduled" && (execution.status === "error" || execution.status === "needs_setup");
+}
+
 export default function ExecutionList({
   executions,
   showSkillName = false,
@@ -168,10 +176,15 @@ function ExecutionRow({
   onViewDetails: () => void;
   onRetry?: () => void;
 }) {
+  const failedScheduled = isFailedScheduled(execution);
   return (
     <li
       className={`rounded-lg border bg-white transition-shadow hover:shadow-sm ${
-        highlighted ? "border-primary/40 animate-highlight" : "border-line"
+        highlighted
+          ? "border-primary/40 animate-highlight"
+          : failedScheduled
+            ? "border-red-200 bg-red-50/30"
+            : "border-line"
       }`}
     >
       <div className="w-full flex items-center gap-3 px-4 py-3">
@@ -184,6 +197,15 @@ function ExecutionRow({
             >
               <AlertTriangle size={11} />
               demorando
+            </span>
+          )}
+          {failedScheduled && (
+            <span
+              className="inline-flex items-center gap-1 text-xs text-red-700 bg-red-100 rounded-full px-2 py-0.5"
+              title="Rodou sozinha pelo agendamento e falhou — ninguém estava vendo na hora."
+            >
+              <AlertTriangle size={11} />
+              falhou sozinha
             </span>
           )}
           <span className="inline-flex items-center gap-1 text-xs text-muted">
@@ -314,6 +336,15 @@ function ExecutionDetailsModal({
               >
                 <AlertTriangle size={11} />
                 demorando
+              </span>
+            )}
+            {isFailedScheduled(execution) && (
+              <span
+                className="inline-flex items-center gap-1 text-xs text-red-700 bg-red-100 rounded-full px-2 py-0.5"
+                title="Rodou sozinha pelo agendamento e falhou — ninguém estava vendo na hora."
+              >
+                <AlertTriangle size={11} />
+                falhou sozinha
               </span>
             )}
             <span className="inline-flex items-center gap-1 text-xs text-muted">

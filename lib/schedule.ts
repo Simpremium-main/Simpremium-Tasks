@@ -35,3 +35,34 @@ export function isDue(schedule: SkillSchedule, now: Date, lastRunAt: Date | null
 export function hasUnschedulableSecret(schema: InputField[]): boolean {
   return schema.some((f) => f.type === "secret" && f.required);
 }
+
+export const SCHEDULE_DAYS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+
+export function describeSchedule(schedule: SkillSchedule): string {
+  const day = schedule.frequency === "weekly" ? `toda ${SCHEDULE_DAYS[schedule.dayOfWeek ?? 0]}` : "todo dia";
+  return `${day}, por volta de ${schedule.time} UTC`;
+}
+
+/** The next UTC instant this schedule should fire at, from `now` — used only
+ *  to show a rough "próxima execução" estimate in the UI; the cron route
+ *  itself uses isDue(), not this, to decide whether to actually run. */
+export function nextDueAt(schedule: SkillSchedule, now: Date): Date {
+  const [hourStr, minuteStr] = schedule.time.split(":");
+  const hour = Number(hourStr);
+  const minute = Number(minuteStr);
+
+  const candidate = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour, minute)
+  );
+
+  if (schedule.frequency === "daily") {
+    if (candidate <= now) candidate.setUTCDate(candidate.getUTCDate() + 1);
+    return candidate;
+  }
+
+  const targetDay = schedule.dayOfWeek ?? 0;
+  let daysAhead = (targetDay - candidate.getUTCDay() + 7) % 7;
+  if (daysAhead === 0 && candidate <= now) daysAhead = 7;
+  candidate.setUTCDate(candidate.getUTCDate() + daysAhead);
+  return candidate;
+}

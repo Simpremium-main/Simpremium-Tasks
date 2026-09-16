@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { LayoutGrid, Plus, Sparkles } from "lucide-react";
+import { Download, LayoutGrid, Plus, Sparkles } from "lucide-react";
 import { listSkills } from "@/lib/data";
 import { isClaudeConfigured } from "@/lib/claude";
 import SkillsBoard from "@/components/SkillsBoard";
@@ -61,13 +61,23 @@ export default async function DashboardPage() {
           (archivedCount > 0 ? ` (${archivedCount} arquivada${archivedCount === 1 ? "" : "s"})` : "")
         }
         actions={
-          <Link
-            href="/skills/new"
-            className="inline-flex items-center gap-1.5 rounded-md bg-primary text-white px-3.5 py-2 text-sm font-medium hover:bg-primary-hover transition-colors"
-          >
-            <Plus size={15} />
-            Nova skill
-          </Link>
+          <>
+            <a
+              href="/api/skills/export"
+              title="Baixar todas as skills como JSON"
+              className="inline-flex items-center gap-1.5 rounded-md border border-line px-3.5 py-2 text-sm font-medium text-ink/80 hover:border-primary/30 hover:text-primary hover:bg-primary-soft transition-colors"
+            >
+              <Download size={15} />
+              Exportar
+            </a>
+            <Link
+              href="/skills/new"
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary text-white px-3.5 py-2 text-sm font-medium hover:bg-primary-hover transition-colors"
+            >
+              <Plus size={15} />
+              Nova skill
+            </Link>
+          </>
         }
       />
       <SkillsBoard skills={boardSkills} />
