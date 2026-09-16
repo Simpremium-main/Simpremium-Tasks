@@ -215,6 +215,18 @@ something went wrong; it never touched the row `startExecution()` had already wr
 (`lib/runSkill.ts`), which finalizes the row as `"error"` on any throw instead of leaving it
 stranded.
 
+**A row can still end up "running" forever for a reason no server-side code can catch: nothing in
+this app drives a multi-chunk run forward except the browser tab that started it** — there's no
+cron or background worker calling `/continue` on your behalf, so closing that tab (or a hard
+platform kill mid-chunk) orphans the row with no error to record. `ExecutionList.tsx` flags this
+in the UI instead: any execution still `"running"` more than 5 minutes after it started (longer
+than a single chunk should plausibly take — `dispatchClaudeChunk` is bounded to ~280s) gets an
+amber "demorando" badge next to its status, in both the row and the details modal, ticking live
+every 30s so it doesn't need a page refresh to show up. It's a soft, time-based warning, not a
+certainty — another tab or device could genuinely still be driving it — worded that way in the
+tooltip. Pairs naturally with the retry button below: notice it's stuck, "Rodar de novo" right
+there.
+
 ### Retrying a run
 
 Every execution row (`components/ExecutionList.tsx`, wired up from the skill's own page via

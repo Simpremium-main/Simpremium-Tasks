@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
+  AlertTriangle,
   Bot,
   Check,
   Coins,
@@ -66,6 +67,30 @@ const SOURCE_LABELS: Record<string, string> = {
   manual: "Manual",
 };
 
+// Nothing in this app drives a run forward except the browser tab that
+// started it (no server-side/cron continuation) — so a "running" row is
+// only ever still legitimately in flight while that tab stays open. Once a
+// row has sat at "running" for longer than a single chunk could plausibly
+// take (dispatchClaudeChunk is bounded to ~280s), it's almost certainly
+// orphaned: the tab was closed, or the process was hard-killed by the
+// platform before withFailureRecorded's own cleanup could run. This is a
+// soft, time-based warning, not a certainty — flagged instead of asserted,
+// since another open tab or device could still genuinely be driving it.
+const STUCK_AFTER_MS = 5 * 60 * 1000;
+
+function useTicker(intervalMs: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return now;
+}
+
+function isLikelyStuck(execution: ExecutionItem, now: number): boolean {
+  return execution.status === "running" && now - new Date(execution.startedAt).getTime() > STUCK_AFTER_MS;
+}
+
 export default function ExecutionList({
   executions,
   showSkillName = false,
@@ -80,6 +105,10 @@ export default function ExecutionList({
   onRetry?: (execution: ExecutionItem) => void;
 }) {
   const [detailsFor, setDetailsFor] = useState<ExecutionItem | null>(null);
+  // Only running while some row is actually "running" — no point ticking a
+  // 30s timer forever on a history page full of finished executions.
+  const anyRunning = executions.some((e) => e.status === "running");
+  const now = useTicker(anyRunning ? 30_000 : 3_600_000);
 
   if (executions.length === 0) {
     return (
@@ -103,6 +132,7 @@ export default function ExecutionList({
             execution={execution}
             showSkillName={showSkillName}
             highlighted={execution.id === highlightId}
+            stuck={isLikelyStuck(execution, now)}
             onViewDetails={() => setDetailsFor(execution)}
             onRetry={onRetry ? () => retry(execution) : undefined}
           />
@@ -111,6 +141,7 @@ export default function ExecutionList({
       {detailsFor && (
         <ExecutionDetailsModal
           execution={detailsFor}
+          stuck={isLikelyStuck(detailsFor, now)}
           onClose={() => setDetailsFor(null)}
           onRetry={onRetry ? () => retry(detailsFor) : undefined}
         />
@@ -123,12 +154,14 @@ function ExecutionRow({
   execution,
   showSkillName,
   highlighted,
+  stuck,
   onViewDetails,
   onRetry,
 }: {
   execution: ExecutionItem;
   showSkillName: boolean;
   highlighted?: boolean;
+  stuck: boolean;
   onViewDetails: () => void;
   onRetry?: () => void;
 }) {
@@ -141,6 +174,15 @@ function ExecutionRow({
       <div className="w-full flex items-center gap-3 px-4 py-3">
         <button type="button" onClick={onViewDetails} className="flex items-center gap-3 flex-1 min-w-0 text-left">
           <StatusBadge status={execution.status} />
+          {stuck && (
+            <span
+              className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 rounded-full px-2 py-0.5"
+              title="Passou de 5 minutos rodando — nada nesse app continua uma execução sozinho depois que a aba que a iniciou fecha, então isso provavelmente travou."
+            >
+              <AlertTriangle size={11} />
+              demorando
+            </span>
+          )}
           <span className="inline-flex items-center gap-1 text-xs text-muted">
             {SOURCE_ICONS[execution.source]}
             {SOURCE_LABELS[execution.source] ?? execution.source}
@@ -239,10 +281,12 @@ function CopyPromptButton({ text }: { text: string }) {
 
 function ExecutionDetailsModal({
   execution,
+  stuck,
   onClose,
   onRetry,
 }: {
   execution: ExecutionItem;
+  stuck: boolean;
   onClose: () => void;
   onRetry?: () => void;
 }) {
@@ -260,6 +304,15 @@ function ExecutionDetailsModal({
         <div className="flex items-start justify-between gap-3 mb-4">
           <div className="flex items-center gap-2 flex-wrap">
             <StatusBadge status={execution.status} />
+            {stuck && (
+              <span
+                className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 rounded-full px-2 py-0.5"
+                title="Passou de 5 minutos rodando — nada nesse app continua uma execução sozinho depois que a aba que a iniciou fecha, então isso provavelmente travou."
+              >
+                <AlertTriangle size={11} />
+                demorando
+              </span>
+            )}
             <span className="inline-flex items-center gap-1 text-xs text-muted">
               {SOURCE_ICONS[execution.source]}
               {SOURCE_LABELS[execution.source] ?? execution.source}
