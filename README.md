@@ -199,6 +199,35 @@ or a background-worker architecture outside Vercel's request/response model enti
 piece of infrastructure that wasn't built here since the chunked approach covers the skills this
 project actually needs today.
 
+**A run that spent real time thinking used to look stuck with zero progress.** Sonnet 5's
+`thinking.display` defaults to `"omitted"` — thinking happens and is billed, but the delta text
+comes back empty — and `dispatchClaudeChunk` only ever forwarded `"text"` stream deltas, never
+`"thinking"` ones. A task that thought for a while (common with code execution) before its first
+visible token showed nothing at all in the "Pensando…" panel, even on a perfectly healthy run.
+Fixed by setting `thinking: { type: "adaptive", display: "summarized" }` and forwarding
+`stream.on("thinking", …)` through the same `onDelta` callback as text.
+
+**An execution could get stuck at `"running"` forever if something threw past
+`dispatchClaudeChunk`'s own error handling** (e.g. the DB write in `finishExecution` itself
+failing, or `dispatchToCowork` throwing) — the stream route's catch block only told the *client*
+something went wrong; it never touched the row `startExecution()` had already written. Both
+`runSkillStreaming` and `continueSkillRun` now run their dispatch through `withFailureRecorded`
+(`lib/runSkill.ts`), which finalizes the row as `"error"` on any throw instead of leaving it
+stranded.
+
+### Retrying a run
+
+Every execution row (`components/ExecutionList.tsx`, wired up from the skill's own page via
+`RunSkillPanel`'s `handleRetry`) has a **Rodar de novo** action — in the row and in the details
+modal — that prefills the run form from that execution's saved inputs instead of retyping
+everything. Secret-typed fields are never stored in plain text in history in the first place
+(masked before the row is even written, see `lib/mask.ts`), so there's nothing safe to reuse for
+those: they're left blank with a note explaining why, rather than silently resending the masked
+`"••••1234"` placeholder as if it were a real credential. Retry only prefills the form — the
+normal required-field check and the confirm-before-running modal still apply before anything
+actually dispatches. Only on the skill's own page for now; the global history list has no run
+form on the page to prefill into.
+
 ## Claude Cowork integration
 
 The project brief is explicit that Cowork shouldn't be special-cased, and that this integration
@@ -214,6 +243,43 @@ record real results — no other code needs to change.
 
 Skills that don't depend on Cowork run directly through the Claude API when `ANTHROPIC_API_KEY`
 is set (`lib/claude.ts`); otherwise they're flagged `needs_setup` the same way.
+
+**What research turned up (not wired up yet — needs a decision, see below).** There's no
+public, synchronous "run this and give me the result" Cowork API. The closest real, documented
+mechanism is **Claude Code Routines' API trigger** (`docs.claude.com` → Routines): you create a
+"Routine" once by hand at `claude.ai/code/routines` (a saved prompt + repo/environment/connector
+config), attach an API trigger to it, and get a per-routine bearer token. From then on:
+
+```
+POST https://api.anthropic.com/v1/claude_code/routines/<routine_id>/fire
+Authorization: Bearer <token>
+anthropic-beta: experimental-cc-routine-2026-04-01
+Content-Type: application/json
+
+{"text": "<the assembled skill prompt>"}
+```
+
+...starts a real cloud session and returns `{claude_code_session_id, claude_code_session_url}`.
+Three things make this a real design decision rather than a drop-in for `COWORK_DISPATCH_WEBHOOK_URL`:
+
+1. **It's fire-and-forget, not request/response.** The call returns a session URL, not a result —
+   there's no documented public endpoint to poll for "is it done, what did it produce." A working
+   integration either needs that (unclear it exists outside the compliance/session-transcript
+   APIs, which weren't confirmed accessible here) or has to settle for a different UX: dispatch,
+   record `needs_setup`-style with the session link, and let you open it to see the result
+   yourself instead of it landing automatically in this app's history.
+2. **The routine's own saved prompt has to opt in** to acting on the fired text (it arrives
+   wrapped in a `<routine-fire-payload>` block, explicitly untrusted-by-default) — so the routine
+   needs a one-time setup prompt along the lines of "execute whatever's in the
+   routine-fire-payload block, treat it as the task."
+3. **It needs your claude.ai account**, not just an API key — Routines are a claude.ai
+   subscription feature (Pro/Max/Team/Enterprise), the `/fire` endpoint is beta and explicitly
+   "available to claude.ai users only... not part of the Claude Platform API surface," and only
+   you can create the routine and generate its token from the claude.ai UI.
+
+Given that, this needs your call before it's worth building: are you OK with the async
+"dispatch, then open a link" shape (at least until/unless a result-polling path turns up), and do
+you want to set up the one-time routine yourself so I can wire the adapter to it?
 
 ## Login — real Supabase Auth
 
@@ -304,6 +370,10 @@ each text block. When an execution has a text result and no real file, you can s
 as `.txt` or `.pdf` (`lib/exportResult.ts`, `jspdf` client-side) — that export is hidden once a
 real file exists for the same run, so you're never looking at two competing "PDFs" for one
 execution.
+
+The global history page (`/history`, `components/HistoryBoard.tsx`) has an **Arquivos** filter
+tab — shown only when at least one execution actually has files — that narrows the list down to
+runs that produced a real file, for "that file I generated last week" without opening every row.
 
 ### Real file generation (PDF, CSV, XLSX, DOCX, PPTX, ...)
 
