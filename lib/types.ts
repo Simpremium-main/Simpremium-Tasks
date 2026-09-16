@@ -49,6 +49,12 @@ export interface ExecutionFile {
 export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
+  /** Tokens written to Anthropic's prompt cache this call (billed ~1.25x the
+   *  normal input rate) and tokens read from it (billed ~0.1x) — see
+   *  lib/claude.ts's cache_control usage. Optional/undefined on executions
+   *  recorded before caching was added, or on non-Claude dispatch. */
+  cacheCreationInputTokens?: number;
+  cacheReadInputTokens?: number;
 }
 
 export interface DispatchResult {

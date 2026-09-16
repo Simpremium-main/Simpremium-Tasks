@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { uploadExecutionFile } from "./data";
+import { sumTokenUsage } from "./cost";
 import type { DispatchResult, DispatchStatus, ExecutionFile, TokenUsage } from "./types";
 
 let client: Anthropic | null = null;
@@ -48,6 +49,47 @@ const TOOLS: Anthropic.Beta.BetaToolUnion[] = [
   { type: "code_execution_20260521", name: "code_execution" },
   { type: "web_search_20260209", name: "web_search" },
 ];
+
+/**
+ * Marks a cache breakpoint on the last content block of the last message —
+ * Anthropic caches everything up to that point, so the next chunk of a
+ * multi-request run (which resends this exact array unchanged, plus new
+ * turns — see lib/runSkill.ts's advance()) reads the whole prior
+ * conversation from cache (~10% of the normal input price) instead of
+ * paying full price to resend it, which is what made a long multi-chunk
+ * run cost roughly the square of its length before this. A no-op, not an
+ * error, if the cached span is too small to qualify (Anthropic's own
+ * per-model minimum) — this only ever saves money, never costs correctness.
+ * Doesn't mutate `messages`: the caller still feeds the plain array forward
+ * into conversationState/newMessages, so cache_control markers don't pile
+ * up across chunks.
+ */
+function withCacheBreakpoint(
+  messages: Anthropic.Beta.BetaMessageParam[]
+): Anthropic.Beta.BetaMessageParam[] {
+  if (messages.length === 0) return messages;
+  const last = messages[messages.length - 1];
+  const cacheControl = { type: "ephemeral" as const };
+
+  if (typeof last.content === "string") {
+    return [
+      ...messages.slice(0, -1),
+      { ...last, content: [{ type: "text", text: last.content, cache_control: cacheControl }] },
+    ];
+  }
+
+  if (last.content.length === 0) return messages;
+  const lastBlockIndex = last.content.length - 1;
+  return [
+    ...messages.slice(0, -1),
+    {
+      ...last,
+      content: last.content.map((block, i) =>
+        i === lastBlockIndex ? { ...block, cache_control: cacheControl } : block
+      ),
+    },
+  ];
+}
 
 function extractText(content: Anthropic.Beta.BetaContentBlock[]): string {
   return content
@@ -135,7 +177,13 @@ export async function dispatchClaudeChunk(
       {
         model: MODEL,
         max_tokens: 16000,
-        system: SKILL_EXECUTION_SYSTEM_PROMPT,
+        // Cached: this system prompt is byte-identical on every single call,
+        // across every skill and every chunk, so it's the cheapest possible
+        // cache breakpoint to add — cost only if/once it clears Anthropic's
+        // per-model minimum cacheable length.
+        system: [
+          { type: "text", text: SKILL_EXECUTION_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+        ],
         // display: "summarized" — without it, Sonnet 5 defaults to
         // "omitted" (thinking still happens and is billed, but the delta
         // text is empty), so a task that spends a while thinking before its
@@ -145,7 +193,7 @@ export async function dispatchClaudeChunk(
         thinking: { type: "adaptive", display: "summarized" },
         tools: TOOLS,
         betas: [CODE_EXECUTION_BETA],
-        messages,
+        messages: withCacheBreakpoint(messages),
       },
       { timeout: CHUNK_TIMEOUT_MS }
     );
@@ -161,6 +209,8 @@ export async function dispatchClaudeChunk(
     const usage: TokenUsage = {
       inputTokens: message.usage.input_tokens,
       outputTokens: message.usage.output_tokens,
+      cacheCreationInputTokens: message.usage.cache_creation_input_tokens ?? undefined,
+      cacheReadInputTokens: message.usage.cache_read_input_tokens ?? undefined,
     };
 
     if (message.stop_reason === "pause_turn") {
@@ -200,16 +250,13 @@ const SINGLE_CALL_MAX_CHUNKS = 3;
 export async function dispatchToClaude(prompt: string): Promise<DispatchResult> {
   let messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: prompt }];
   let files: ExecutionFile[] = [];
-  const usage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
+  let usage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
 
   for (let i = 0; i < SINGLE_CALL_MAX_CHUNKS; i++) {
     const chunk = await dispatchClaudeChunk(messages, () => {});
     messages = chunk.messages;
     files = [...files, ...chunk.files];
-    if (chunk.usage) {
-      usage.inputTokens += chunk.usage.inputTokens;
-      usage.outputTokens += chunk.usage.outputTokens;
-    }
+    if (chunk.usage) usage = sumTokenUsage(usage, chunk.usage);
     if (chunk.done) {
       return { status: chunk.status!, result: chunk.result, error: chunk.error, files, usage };
     }

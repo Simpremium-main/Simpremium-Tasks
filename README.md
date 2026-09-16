@@ -246,14 +246,45 @@ Every Claude-direct execution (row or chunk) records `message.usage.input_tokens
 `.output_tokens` from the Anthropic response (`lib/claude.ts`) and rolls it up on the execution
 row (`usage` jsonb column — `TokenUsage` in `lib/types.ts`). A multi-chunk run sums each chunk's
 own usage rather than just keeping the last one: the Messages API is stateless, so every chunk
-resends the whole conversation so far, and Anthropic bills every one of those calls in full — so
-summing is the correct total cost, not double-counting. `lib/cost.ts` turns that into a rough
-`$` estimate using `claude-sonnet-5`'s public per-token rate, shown next to the token count
-everywhere usage appears (`components/ExecutionList.tsx`'s row badge and details modal) and
-labeled "estimativa" — it's not pulled from a live pricing API and won't track a rate change,
-promotional credit, or prompt caching (none of which this app uses today). Cowork-dispatched and
-heuristic-fallback executions have no Claude API call to report on, so `usage` stays `null` and
+resends the whole conversation so far — see "Prompt caching" right below for why that resend isn't
+full price anymore. `lib/cost.ts` turns the total into a rough `$` estimate using
+`claude-sonnet-5`'s public per-token rate (weighing cache writes/reads at their own rates, not the
+plain input rate), shown next to the token count everywhere usage appears
+(`components/ExecutionList.tsx`'s row badge and details modal) and labeled "estimativa" — it's not
+pulled from a live pricing API and won't track a rate change or promotional credit. Cowork-dispatched
+and heuristic-fallback executions have no Claude API call to report on, so `usage` stays `null` and
 no token/cost badge shows for those rows.
+
+### Prompt caching (cutting the API cost per skill run)
+
+Two Anthropic ephemeral cache breakpoints are set on every Claude-direct call
+(`lib/claude.ts`, `dispatchClaudeChunk`):
+
+- The system prompt (`cache_control` on `SKILL_EXECUTION_SYSTEM_PROMPT`) — identical on every
+  single call, across every skill and every chunk, so it's the cheapest possible thing to cache.
+- The end of the conversation sent so far (`withCacheBreakpoint`, applied to the last content block
+  of the last message) — this is the one that actually matters for cost. A multi-chunk run resends
+  the *entire* growing conversation on every chunk (the Messages API is stateless), so before this
+  change a task that took 4 chunks was paying full input price for turn 1's content four separate
+  times. With the breakpoint, chunk 2 reads chunk 1's whole prefix from cache (~10% of the normal
+  input rate) instead of paying full price for it again — the saving compounds with every extra
+  chunk a task needs.
+
+Cache writes cost ~1.25x the normal input rate and cache reads cost ~0.1x (`lib/cost.ts`'s
+`CACHE_WRITE_MULTIPLIER`/`CACHE_READ_MULTIPLIER`) — Anthropic's own standard ephemeral-cache
+pricing, not something specific to this app. Below Anthropic's own per-model minimum cacheable
+length, a `cache_control` marker is silently ignored (no error, no cost difference) — this can
+never make a run more expensive, only sometimes fail to make it cheaper. `TokenUsage` gained
+optional `cacheCreationInputTokens`/`cacheReadInputTokens` fields to carry this through
+accurately; older execution rows recorded before this change simply don't have them, and the
+cost/token math treats a missing value as 0 rather than requiring a migration.
+
+**What actually cuts your bill**: this helps automatically on every run with no setup, but the
+biggest lever is still on your side — a skill that needs several chunks to finish costs
+meaningfully more than one that answers in a single round trip, cache or no cache. Prompt
+templates that are unnecessarily long, or skills that end up asking Claude to redo work across
+many turns, are the more direct place to look if a specific skill's cost (visible per-execution
+and per-skill, see above) still looks high after this change.
 
 **Per-skill rollup**: the skill's own page (`RunSkillPanel.tsx`) shows a total execution count,
 success rate, and summed estimated cost next to the "Histórico de execuções" heading — computed

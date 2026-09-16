@@ -3,6 +3,7 @@ import { buildPromptSnapshot, buildRawPrompt, maskInputValues } from "./mask";
 import { dispatchToCowork } from "./cowork";
 import { dispatchClaudeChunk, dispatchToClaude } from "./claude";
 import type { ClaudeChunkResult } from "./claude";
+import { sumTokenUsage } from "./cost";
 import type {
   ConversationState,
   DispatchResult,
@@ -170,12 +171,7 @@ async function advance(
 
   const chunk: ClaudeChunkResult = await dispatchClaudeChunk(messages, onDelta);
   const files = [...priorFiles, ...chunk.files];
-  const usage: TokenUsage = chunk.usage
-    ? {
-        inputTokens: priorUsage.inputTokens + chunk.usage.inputTokens,
-        outputTokens: priorUsage.outputTokens + chunk.usage.outputTokens,
-      }
-    : priorUsage;
+  const usage: TokenUsage = chunk.usage ? sumTokenUsage(priorUsage, chunk.usage) : priorUsage;
 
   if (!chunk.done) {
     const state: ConversationState = { messages: chunk.messages, chunkCount, files, usage };

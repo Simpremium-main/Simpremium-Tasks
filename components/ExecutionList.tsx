@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import StatusBadge from "./StatusBadge";
 import { downloadPdf, downloadText } from "@/lib/exportResult";
-import { estimateCostUsd, formatCostUsd, formatTokens } from "@/lib/cost";
+import { estimateCostUsd, formatCostUsd, formatTokens, totalTokens } from "@/lib/cost";
 
 export interface ExecutionFileItem {
   name: string;
@@ -32,6 +32,8 @@ export interface ExecutionFileItem {
 export interface ExecutionUsageItem {
   inputTokens: number;
   outputTokens: number;
+  cacheCreationInputTokens?: number;
+  cacheReadInputTokens?: number;
 }
 
 export interface ExecutionItem {
@@ -230,10 +232,10 @@ function ExecutionRow({
           {execution.usage && (
             <span
               className="hidden sm:inline-flex items-center gap-1 text-xs text-muted"
-              title={`${execution.usage.inputTokens} tokens de entrada, ${execution.usage.outputTokens} de saída — estimativa de custo, não a cobrança real`}
+              title={`${execution.usage.inputTokens} tokens de entrada, ${execution.usage.outputTokens} de saída${execution.usage.cacheReadInputTokens ? `, ${execution.usage.cacheReadInputTokens} lidos do cache` : ""} — estimativa de custo, não a cobrança real`}
             >
               <Coins size={11} />
-              {formatTokens(execution.usage.inputTokens + execution.usage.outputTokens)} tok · ~
+              {formatTokens(totalTokens(execution.usage))} tok · ~
               {formatCostUsd(estimateCostUsd(execution.usage))}
             </span>
           )}
@@ -390,6 +392,11 @@ function ExecutionDetailsModal({
             </span>
             <span>{formatTokens(execution.usage.inputTokens)} tokens de entrada</span>
             <span>{formatTokens(execution.usage.outputTokens)} de saída</span>
+            {Boolean(execution.usage.cacheReadInputTokens) && (
+              <span title="Lidos do cache de prompt — cobrados a ~10% do preço normal de entrada">
+                {formatTokens(execution.usage.cacheReadInputTokens!)} do cache
+              </span>
+            )}
             <span className="ml-auto text-muted/70" title="Baseado no preço público do claude-sonnet-5 — não é a cobrança real da Anthropic">
               estimativa
             </span>
