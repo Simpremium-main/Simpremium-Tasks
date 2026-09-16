@@ -8,6 +8,7 @@ import type {
   ExecutionSource,
   InputField,
   Skill,
+  TokenUsage,
 } from "./types";
 
 // Supabase's client can return an error with an empty `.message` when the
@@ -65,6 +66,7 @@ function mapExecutionRow(row: Record<string, unknown>): Execution {
     error: (row.error as string | null) ?? null,
     files: (row.files as ExecutionFile[] | null) ?? null,
     conversationState: (row.conversation_state as ConversationState | null) ?? null,
+    usage: (row.usage as TokenUsage | null) ?? null,
     ranBy: (row.ran_by as string | null) ?? null,
     startedAt: new Date(row.started_at as string),
     finishedAt: row.finished_at ? new Date(row.finished_at as string) : null,
@@ -303,6 +305,7 @@ export interface UpdateExecutionInput {
   error?: string | null;
   files?: ExecutionFile[] | null;
   conversationState?: ConversationState | null;
+  usage?: TokenUsage | null;
 }
 
 /**
@@ -333,6 +336,7 @@ export async function updateExecution(
   if (patch.error !== undefined) row.error = patch.error;
   if (patch.files !== undefined) row.files = patch.files;
   if (patch.conversationState !== undefined) row.conversation_state = patch.conversationState;
+  if (patch.usage !== undefined) row.usage = patch.usage;
 
   const { data, error, status, statusText } = await supabase
     .from("executions")

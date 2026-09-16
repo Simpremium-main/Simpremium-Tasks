@@ -228,6 +228,21 @@ normal required-field check and the confirm-before-running modal still apply bef
 actually dispatches. Only on the skill's own page for now; the global history list has no run
 form on the page to prefill into.
 
+### Token usage and estimated cost
+
+Every Claude-direct execution (row or chunk) records `message.usage.input_tokens` /
+`.output_tokens` from the Anthropic response (`lib/claude.ts`) and rolls it up on the execution
+row (`usage` jsonb column — `TokenUsage` in `lib/types.ts`). A multi-chunk run sums each chunk's
+own usage rather than just keeping the last one: the Messages API is stateless, so every chunk
+resends the whole conversation so far, and Anthropic bills every one of those calls in full — so
+summing is the correct total cost, not double-counting. `lib/cost.ts` turns that into a rough
+`$` estimate using `claude-sonnet-5`'s public per-token rate, shown next to the token count
+everywhere usage appears (`components/ExecutionList.tsx`'s row badge and details modal) and
+labeled "estimativa" — it's not pulled from a live pricing API and won't track a rate change,
+promotional credit, or prompt caching (none of which this app uses today). Cowork-dispatched and
+heuristic-fallback executions have no Claude API call to report on, so `usage` stays `null` and
+no token/cost badge shows for those rows.
+
 ## Claude Cowork integration
 
 The project brief is explicit that Cowork shouldn't be special-cased, and that this integration
@@ -414,6 +429,13 @@ constraint in place, so this drops and recreates it):
 ```sql
 alter table skills drop constraint skills_status_check;
 alter table skills add constraint skills_status_check check (status in ('draft', 'active', 'archived'));
+```
+
+Same for token-usage tracking (see "Token usage and estimated cost" below) — add the column if
+your project predates it:
+
+```sql
+alter table executions add column if not exists usage jsonb;
 ```
 
 The bucket is private — same bypass-RLS-with-the-service-role-key pattern as the tables, so the

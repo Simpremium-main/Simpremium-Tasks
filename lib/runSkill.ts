@@ -10,6 +10,7 @@ import type {
   ExecutionFile,
   InputField,
   Skill,
+  TokenUsage,
 } from "./types";
 import type Anthropic from "@anthropic-ai/sdk";
 
@@ -67,7 +68,7 @@ export async function runSkillStreaming(
 
     const { rawPrompt } = buildPrompts(skill, inputValues);
     const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: rawPrompt }];
-    return advance(skill, execution.id, messages, 0, [], onDelta);
+    return advance(skill, execution.id, messages, 0, [], { inputTokens: 0, outputTokens: 0 }, onDelta);
   });
 }
 
@@ -139,6 +140,7 @@ export async function continueSkillRun(
       state.messages as Anthropic.Beta.BetaMessageParam[],
       state.chunkCount,
       state.files,
+      state.usage,
       onDelta
     )
   );
@@ -150,6 +152,7 @@ async function advance(
   messages: Anthropic.Beta.BetaMessageParam[],
   priorChunkCount: number,
   priorFiles: ExecutionFile[],
+  priorUsage: TokenUsage,
   onDelta: (chunk: string) => void
 ): Promise<RunStepResult> {
   const chunkCount = priorChunkCount + 1;
@@ -159,21 +162,34 @@ async function advance(
       status: "error",
       error: `This task took more than ${MAX_CHUNKS} steps to finish and was stopped rather than run indefinitely.`,
       files: priorFiles,
+      usage: priorUsage,
     };
     return { execution: await finishExecution(skill, executionId, dispatch), done: true };
   }
 
   const chunk: ClaudeChunkResult = await dispatchClaudeChunk(messages, onDelta);
   const files = [...priorFiles, ...chunk.files];
+  const usage: TokenUsage = chunk.usage
+    ? {
+        inputTokens: priorUsage.inputTokens + chunk.usage.inputTokens,
+        outputTokens: priorUsage.outputTokens + chunk.usage.outputTokens,
+      }
+    : priorUsage;
 
   if (!chunk.done) {
-    const state: ConversationState = { messages: chunk.messages, chunkCount, files };
+    const state: ConversationState = { messages: chunk.messages, chunkCount, files, usage };
     const execution = await updateExecution(executionId, { conversationState: state });
     if (!execution) throw new Error(`Execution ${executionId} vanished mid-run`);
     return { execution, done: false };
   }
 
-  const dispatch: DispatchResult = { status: chunk.status!, result: chunk.result, error: chunk.error, files };
+  const dispatch: DispatchResult = {
+    status: chunk.status!,
+    result: chunk.result,
+    error: chunk.error,
+    files,
+    usage,
+  };
   return { execution: await finishExecution(skill, executionId, dispatch), done: true };
 }
 
@@ -212,6 +228,7 @@ async function finishExecution(skill: Skill, executionId: string, dispatch: Disp
     error: dispatch.error ?? null,
     files: dispatch.files && dispatch.files.length ? dispatch.files : null,
     conversationState: null,
+    usage: dispatch.usage ?? null,
   });
   if (!execution) {
     // Shouldn't happen — startExecution() just inserted this row — but the

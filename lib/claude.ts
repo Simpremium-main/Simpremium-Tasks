@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { uploadExecutionFile } from "./data";
-import type { DispatchResult, DispatchStatus, ExecutionFile } from "./types";
+import type { DispatchResult, DispatchStatus, ExecutionFile, TokenUsage } from "./types";
 
 let client: Anthropic | null = null;
 
@@ -103,6 +103,9 @@ export interface ClaudeChunkResult {
   result?: string;
   status?: DispatchStatus;
   error?: string;
+  /** This one chunk's own token usage — null when the call never reached
+   *  Anthropic (e.g. no API key configured). */
+  usage: TokenUsage | null;
 }
 
 /**
@@ -121,6 +124,7 @@ export async function dispatchClaudeChunk(
       done: true,
       messages,
       files: [],
+      usage: null,
       status: "needs_setup",
       error: "ANTHROPIC_API_KEY isn't set, so this skill can't be run yet. Add it to your environment to enable it.",
     };
@@ -154,20 +158,25 @@ export async function dispatchClaudeChunk(
       { role: "assistant", content: message.content },
     ];
     const files = await collectGeneratedFiles(anthropic, message.content);
+    const usage: TokenUsage = {
+      inputTokens: message.usage.input_tokens,
+      outputTokens: message.usage.output_tokens,
+    };
 
     if (message.stop_reason === "pause_turn") {
-      return { done: false, messages: newMessages, files };
+      return { done: false, messages: newMessages, files, usage };
     }
     if (message.stop_reason === "refusal") {
-      return { done: true, messages: newMessages, files, status: "error", error: "Claude refused to run this prompt." };
+      return { done: true, messages: newMessages, files, usage, status: "error", error: "Claude refused to run this prompt." };
     }
 
-    return { done: true, messages: newMessages, files, result: extractText(message.content), status: "success" };
+    return { done: true, messages: newMessages, files, usage, result: extractText(message.content), status: "success" };
   } catch (err) {
     return {
       done: true,
       messages,
       files: [],
+      usage: null,
       status: "error",
       error: err instanceof Error ? err.message : "Unknown error calling Claude",
     };
@@ -191,13 +200,18 @@ const SINGLE_CALL_MAX_CHUNKS = 3;
 export async function dispatchToClaude(prompt: string): Promise<DispatchResult> {
   let messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: prompt }];
   let files: ExecutionFile[] = [];
+  const usage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
 
   for (let i = 0; i < SINGLE_CALL_MAX_CHUNKS; i++) {
     const chunk = await dispatchClaudeChunk(messages, () => {});
     messages = chunk.messages;
     files = [...files, ...chunk.files];
+    if (chunk.usage) {
+      usage.inputTokens += chunk.usage.inputTokens;
+      usage.outputTokens += chunk.usage.outputTokens;
+    }
     if (chunk.done) {
-      return { status: chunk.status!, result: chunk.result, error: chunk.error, files };
+      return { status: chunk.status!, result: chunk.result, error: chunk.error, files, usage };
     }
   }
 
@@ -207,5 +221,6 @@ export async function dispatchToClaude(prompt: string): Promise<DispatchResult> 
       "This task needed more steps than a single request allows here — run it from the skill's " +
       "page instead, which can continue automatically across multiple requests.",
     files,
+    usage,
   };
 }

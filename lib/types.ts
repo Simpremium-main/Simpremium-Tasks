@@ -40,11 +40,23 @@ export interface ExecutionFile {
   sizeBytes: number;
 }
 
+/** Raw token counts as Anthropic bills them — each chunk of a multi-request
+ *  run resends the whole conversation so far (the Messages API is
+ *  stateless), and Anthropic bills every one of those calls in full, so
+ *  summing each chunk's own input/output tokens is the correct total cost,
+ *  not double-counting. null for Cowork/heuristic dispatch, which don't go
+ *  through the Claude API directly and have no token count to report. */
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface DispatchResult {
   status: DispatchStatus;
   result?: string;
   error?: string;
   files?: ExecutionFile[];
+  usage?: TokenUsage | null;
 }
 
 export type SkillStatus = "draft" | "active" | "archived";
@@ -65,6 +77,9 @@ export interface ConversationState {
    *  have already generated a real file even though the run isn't done yet,
    *  so this carries them forward rather than only keeping the last chunk's. */
   files: ExecutionFile[];
+  /** Token usage summed across every chunk so far — see TokenUsage for why
+   *  summing (not just keeping the latest chunk's) is the correct total. */
+  usage: TokenUsage;
 }
 
 export interface Skill {
@@ -95,6 +110,7 @@ export interface Execution {
   error: string | null;
   files: ExecutionFile[] | null;
   conversationState: ConversationState | null;
+  usage: TokenUsage | null;
   ranBy: string | null;
   startedAt: Date;
   finishedAt: Date | null;

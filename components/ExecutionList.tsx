@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   Bot,
   Check,
+  Coins,
   Copy,
   Download,
   Eye,
@@ -18,11 +19,17 @@ import {
 } from "lucide-react";
 import StatusBadge from "./StatusBadge";
 import { downloadPdf, downloadText } from "@/lib/exportResult";
+import { estimateCostUsd, formatCostUsd, formatTokens } from "@/lib/cost";
 
 export interface ExecutionFileItem {
   name: string;
   mimeType: string;
   sizeBytes: number;
+}
+
+export interface ExecutionUsageItem {
+  inputTokens: number;
+  outputTokens: number;
 }
 
 export interface ExecutionItem {
@@ -34,6 +41,7 @@ export interface ExecutionItem {
   result: string | null;
   error: string | null;
   files: ExecutionFileItem[] | null;
+  usage: ExecutionUsageItem | null;
   ranBy: string | null;
   startedAt: string;
   finishedAt: string | null;
@@ -152,6 +160,16 @@ function ExecutionRow({
               {execution.files.length}
             </span>
           )}
+          {execution.usage && (
+            <span
+              className="hidden sm:inline-flex items-center gap-1 text-xs text-muted"
+              title={`${execution.usage.inputTokens} tokens de entrada, ${execution.usage.outputTokens} de saída — estimativa de custo, não a cobrança real`}
+            >
+              <Coins size={11} />
+              {formatTokens(execution.usage.inputTokens + execution.usage.outputTokens)} tok · ~
+              {formatCostUsd(estimateCostUsd(execution.usage))}
+            </span>
+          )}
           {showSkillName && execution.skill && (
             <Link
               href={`/skills/${execution.skill.id}`}
@@ -165,6 +183,7 @@ function ExecutionRow({
             {new Date(execution.startedAt).toLocaleString("pt-BR")}
           </span>
         </button>
+        <CopyPromptButton text={execution.promptSnapshot} />
         {onRetry && (
           <button
             type="button"
@@ -186,6 +205,35 @@ function ExecutionRow({
         </button>
       </div>
     </li>
+  );
+}
+
+/** Copies the prompt straight from the row — the details modal has its own
+ *  copy button on the same text, this just saves opening it for that alone. */
+function CopyPromptButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy(e: React.MouseEvent) {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // clipboard unavailable — silently ignore, button just won't confirm
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      title="Copiar prompt"
+      className="inline-flex items-center gap-1 text-xs text-muted hover:text-primary transition-colors shrink-0"
+    >
+      {copied ? <Check size={13} /> : <Copy size={13} />}
+      <span className="hidden sm:inline">{copied ? "Copiado" : "Copiar prompt"}</span>
+    </button>
   );
 }
 
@@ -246,6 +294,20 @@ function ExecutionDetailsModal({
           {execution.finishedAt &&
             ` · finalizada em ${new Date(execution.finishedAt).toLocaleString("pt-BR")}`}
         </div>
+
+        {execution.usage && (
+          <div className="mb-4 flex items-center gap-4 rounded-md border border-line bg-canvas/60 px-3 py-2 text-xs text-ink/70">
+            <span className="inline-flex items-center gap-1.5 font-medium text-ink">
+              <Coins size={13} className="text-primary" />
+              ~{formatCostUsd(estimateCostUsd(execution.usage))}
+            </span>
+            <span>{formatTokens(execution.usage.inputTokens)} tokens de entrada</span>
+            <span>{formatTokens(execution.usage.outputTokens)} de saída</span>
+            <span className="ml-auto text-muted/70" title="Baseado no preço público do claude-sonnet-5 — não é a cobrança real da Anthropic">
+              estimativa
+            </span>
+          </div>
+        )}
 
         <DetailBlock label="Prompt enviado" text={execution.promptSnapshot} tone="canvas" />
 
