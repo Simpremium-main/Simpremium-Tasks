@@ -61,7 +61,22 @@ export interface DispatchResult {
 
 export type SkillStatus = "draft" | "active" | "archived";
 export type ExecutionStatus = "pending" | "running" | "success" | "error" | "needs_setup";
-export type ExecutionSource = "cowork" | "claude" | "manual";
+export type ExecutionSource = "cowork" | "claude" | "manual" | "scheduled";
+
+/**
+ * A recurring schedule for a skill to run itself, checked (not precisely
+ * timed) by GET /api/cron/run-scheduled on whatever cadence Vercel Cron
+ * actually fires at — see lib/schedule.ts's isDue() for why that's fine.
+ * `time` is "HH:MM" in UTC (24h) — deliberately not the browser's local
+ * timezone, since the check runs server-side with no browser to ask.
+ */
+export interface SkillSchedule {
+  frequency: "daily" | "weekly";
+  time: string;
+  /** 0 (Sunday) - 6 (Saturday), matching Date#getUTCDay(). Required (and only
+   *  meaningful) when frequency is "weekly". */
+  dayOfWeek?: number;
+}
 
 /**
  * Saved mid-flight state for a Claude-direct run that didn't finish in one
@@ -95,6 +110,12 @@ export interface Skill {
   confirmedOnce: boolean;
   group: string | null;
   tags: string[];
+  schedule: SkillSchedule | null;
+  /** Saved defaults for a scheduled run's input form — secret-typed fields
+   *  are never included (see lib/schedule.ts's hasUnschedulableSecret),
+   *  since there's nowhere safe to store them for an unattended run. */
+  scheduleInputValues: Record<string, string> | null;
+  scheduleLastRunAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }

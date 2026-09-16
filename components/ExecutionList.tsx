@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   AlertTriangle,
   Bot,
+  CalendarClock,
   Check,
   Coins,
   Copy,
@@ -59,12 +60,14 @@ const SOURCE_ICONS: Record<string, React.ReactNode> = {
   cowork: <Bot size={13} />,
   claude: <Sparkles size={13} />,
   manual: <Hand size={13} />,
+  scheduled: <CalendarClock size={13} />,
 };
 
 const SOURCE_LABELS: Record<string, string> = {
   cowork: "Cowork",
   claude: "Claude",
   manual: "Manual",
+  scheduled: "Agendado",
 };
 
 // Nothing in this app drives a run forward except the browser tab that

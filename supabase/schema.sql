@@ -26,6 +26,9 @@ create table if not exists skills (
   confirmed_once  boolean not null default false,
   "group"         text,
   tags            text[] not null default '{}',
+  schedule        jsonb, -- SkillSchedule | null, see lib/types.ts — null means not scheduled
+  schedule_input_values jsonb, -- Record<string, string> | null — saved defaults for a scheduled run's form, never includes secret-typed fields
+  schedule_last_run_at timestamptz,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );
@@ -34,7 +37,7 @@ create table if not exists executions (
   id              uuid primary key default gen_random_uuid(),
   skill_id        uuid not null references skills(id) on delete cascade,
   status          text not null check (status in ('pending', 'running', 'success', 'error', 'needs_setup')),
-  source          text not null check (source in ('cowork', 'claude', 'manual')),
+  source          text not null check (source in ('cowork', 'claude', 'manual', 'scheduled')),
   input_values    jsonb, -- Record<string, string> | null — secret fields already masked before insert
   prompt_snapshot text not null, -- secret values already masked before insert
   result          text,

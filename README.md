@@ -518,6 +518,48 @@ a run needs more than one chunk — see "Long-running skills" above) instead of 
 row. This is an ongoing pass, not a one-shot redesign — more surfaces get the same treatment as
 feedback comes in, rather than a blind full pass across everything at once.
 
+## Scheduling a skill to run itself
+
+Any skill's page has an **Agendamento** panel (`components/ScheduleSkillPanel.tsx`) to set a
+daily or weekly recurrence — no external service, this runs on Vercel Cron. The moving parts:
+
+- **`vercel.json`** declares a cron hitting `GET /api/cron/run-scheduled` hourly
+  (`0 * * * *`). **Vercel's Hobby plan restricts cron frequency** (historically to once a day) —
+  check your plan's actual limit and adjust the `schedule` cron expression if Vercel rejects the
+  hourly one at deploy time.
+- **`lib/schedule.ts`'s `isDue()`** doesn't assume the cron fires at any particular precision —
+  it checks "has this skill's scheduled time today (or this week) already passed, and did it not
+  already run since then," which is safe to call as often or as rarely as the plan allows.
+  Calling it twice in the same due window is a no-op (`scheduleLastRunAt` is stamped *before*
+  dispatch, same "record the attempt first" pattern as every other run in this app), and if the
+  cron only fires once a day, a skill just runs whenever that daily check lands rather than at
+  the exact minute you picked.
+- **Time is UTC**, not your browser's timezone — the check runs server-side with nothing to tell
+  it what timezone you're in, and the form says so.
+- **A skill with a required `secret`-typed input field can't be scheduled** — there's nowhere
+  safe to store that value for a run nobody's watching (`lib/schedule.ts`'s
+  `hasUnschedulableSecret`, enforced both in the UI and defensively again in the cron route
+  itself). Optional secret fields are fine; they're just left out of the scheduled prompt, same
+  as the person leaving them blank.
+- Scheduled runs go through the same `runSkill()` path as `POST /api/skills/[id]/run`, tagged
+  `source: "scheduled"` (a new `ExecutionSource` value) so they're distinguishable in history —
+  same full recording, same masking, same everything else.
+- **Protect the endpoint**: set a `CRON_SECRET` env var in your Vercel project. Vercel
+  automatically sends it as `Authorization: Bearer <CRON_SECRET>` on its own cron requests; the
+  route rejects anything else once that env var is set. Without it, the route runs unauthenticated
+  — fine for local testing, not for a deployed app anyone could hit the URL of.
+
+Needs three new columns on `skills` that a fresh `supabase/schema.sql` already includes — if you
+set this project up earlier, run in the SQL Editor:
+
+```sql
+alter table skills add column if not exists schedule jsonb;
+alter table skills add column if not exists schedule_input_values jsonb;
+alter table skills add column if not exists schedule_last_run_at timestamptz;
+alter table executions drop constraint executions_source_check;
+alter table executions add constraint executions_source_check check (source in ('cowork', 'claude', 'manual', 'scheduled'));
+```
+
 ## Running locally
 
 ```bash

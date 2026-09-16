@@ -108,9 +108,10 @@ async function withFailureRecorded(
 export async function runSkill(
   skill: Skill,
   inputValues: Record<string, string>,
-  ranBy: string | null
+  ranBy: string | null,
+  sourceOverride?: Execution["source"]
 ): Promise<Execution> {
-  const execution = await startExecution(skill, inputValues, ranBy);
+  const execution = await startExecution(skill, inputValues, ranBy, sourceOverride);
   const { rawPrompt } = buildPrompts(skill, inputValues);
   const dispatch = skill.usesCowork
     ? await dispatchToCowork(rawPrompt)
@@ -205,13 +206,14 @@ function buildPrompts(skill: Skill, inputValues: Record<string, string>) {
 async function startExecution(
   skill: Skill,
   inputValues: Record<string, string>,
-  ranBy: string | null
+  ranBy: string | null,
+  sourceOverride?: Execution["source"]
 ) {
   const { promptSnapshot, maskedInputs } = buildPrompts(skill, inputValues);
   return createExecution({
     skillId: skill.id,
     status: "running",
-    source: skill.usesCowork ? "cowork" : "claude",
+    source: sourceOverride ?? (skill.usesCowork ? "cowork" : "claude"),
     inputValues: Object.keys(maskedInputs).length ? maskedInputs : null,
     promptSnapshot,
     result: null,

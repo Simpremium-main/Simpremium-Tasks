@@ -47,6 +47,34 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: "status must be draft, active or archived" }, { status: 400 });
   }
 
+  if ("schedule" in body) {
+    if (body.schedule === null) {
+      patch.schedule = null;
+    } else if (
+      body.schedule &&
+      ["daily", "weekly"].includes(body.schedule.frequency) &&
+      typeof body.schedule.time === "string" &&
+      /^\d{2}:\d{2}$/.test(body.schedule.time) &&
+      (body.schedule.frequency !== "weekly" ||
+        (Number.isInteger(body.schedule.dayOfWeek) && body.schedule.dayOfWeek >= 0 && body.schedule.dayOfWeek <= 6))
+    ) {
+      patch.schedule = {
+        frequency: body.schedule.frequency,
+        time: body.schedule.time,
+        ...(body.schedule.frequency === "weekly" ? { dayOfWeek: body.schedule.dayOfWeek } : {}),
+      };
+    } else {
+      return NextResponse.json({ error: "Invalid schedule" }, { status: 400 });
+    }
+  }
+
+  if ("scheduleInputValues" in body) {
+    patch.scheduleInputValues =
+      body.scheduleInputValues && typeof body.scheduleInputValues === "object"
+        ? body.scheduleInputValues
+        : null;
+  }
+
   try {
     const skill = await updateSkill(params.id, patch);
     if (!skill) {

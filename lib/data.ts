@@ -8,6 +8,7 @@ import type {
   ExecutionSource,
   InputField,
   Skill,
+  SkillSchedule,
   TokenUsage,
 } from "./types";
 
@@ -49,6 +50,9 @@ function mapSkillRow(row: Record<string, unknown>): Skill {
     confirmedOnce: Boolean(row.confirmed_once),
     group: (row.group as string | null) ?? null,
     tags: (row.tags as string[] | null) ?? [],
+    schedule: (row.schedule as SkillSchedule | null) ?? null,
+    scheduleInputValues: (row.schedule_input_values as Record<string, string> | null) ?? null,
+    scheduleLastRunAt: row.schedule_last_run_at ? new Date(row.schedule_last_run_at as string) : null,
     createdAt: new Date(row.created_at as string),
     updatedAt: new Date(row.updated_at as string),
   };
@@ -110,6 +114,18 @@ export async function listSkills(): Promise<
     ...mapSkillRow(row),
     _count: { executions: counts.get(row.id as string) ?? 0 },
   }));
+}
+
+/** Every skill with an active schedule — GET /api/cron/run-scheduled's
+ *  input, checked against lib/schedule.ts's isDue() per skill. */
+export async function listScheduledSkills(): Promise<Skill[]> {
+  const supabase = getSupabase();
+  const { data, error, status, statusText } = await supabase
+    .from("skills")
+    .select("*")
+    .not("schedule", "is", null);
+  if (error) throw describeError("listScheduledSkills", error, status, statusText);
+  return (data ?? []).map(mapSkillRow);
 }
 
 export async function getSkill(id: string): Promise<Skill | null> {
@@ -186,6 +202,9 @@ export interface UpdateSkillInput {
   inputSchema?: InputField[] | null;
   group?: string | null;
   tags?: string[];
+  schedule?: SkillSchedule | null;
+  scheduleInputValues?: Record<string, string> | null;
+  scheduleLastRunAt?: Date;
 }
 
 export async function updateSkill(id: string, patch: UpdateSkillInput): Promise<Skill | null> {
@@ -201,6 +220,9 @@ export async function updateSkill(id: string, patch: UpdateSkillInput): Promise<
   if (patch.inputSchema !== undefined) row.input_schema = patch.inputSchema;
   if (patch.group !== undefined) row.group = patch.group;
   if (patch.tags !== undefined) row.tags = patch.tags;
+  if (patch.schedule !== undefined) row.schedule = patch.schedule;
+  if (patch.scheduleInputValues !== undefined) row.schedule_input_values = patch.scheduleInputValues;
+  if (patch.scheduleLastRunAt !== undefined) row.schedule_last_run_at = patch.scheduleLastRunAt.toISOString();
 
   const { data, error, status, statusText } = await supabase
     .from("skills")
