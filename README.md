@@ -526,8 +526,16 @@ feedback comes in, rather than a blind full pass across everything at once.
 
 ## Scheduling a skill to run itself
 
-Any skill's page has an **Agendamento** panel (`components/ScheduleSkillPanel.tsx`) to set a
-daily or weekly recurrence — no external service, this runs on Vercel Cron. The moving parts:
+The schedule form itself lives in one shared, portaled modal (`components/ScheduleModal.tsx`) for
+setting a daily or weekly recurrence — no external service, this runs on Vercel Cron. It started
+as a full-width panel permanently open on the skill's page, but that made every skill's page feel
+cluttered whether or not you actually wanted to schedule it — so it's now opened on demand from a
+compact **Agendar**/**Agendada** button, available from two places: next to the other actions
+(Editar, Arquivar, Excluir) on the skill's own page (`components/ScheduleButton.tsx`), and as a
+small pill directly on each card in the skills list (`components/SkillCard.tsx`) — so setting up
+or checking a schedule no longer requires opening the skill first. Both trigger points render the
+exact same modal component, so the form, validation, and save/remove/test-now logic only exist
+once. The moving parts:
 
 - **`vercel.json`** declares a cron hitting `GET /api/cron/run-scheduled` hourly
   (`0 * * * *`). **Vercel's Hobby plan restricts cron frequency** (historically to once a day) —

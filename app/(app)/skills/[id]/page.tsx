@@ -8,7 +8,7 @@ import PageHeader from "@/components/PageHeader";
 import DeleteSkillButton from "@/components/DeleteSkillButton";
 import DuplicateSkillButton from "@/components/DuplicateSkillButton";
 import ArchiveSkillButton from "@/components/ArchiveSkillButton";
-import ScheduleSkillPanel from "@/components/ScheduleSkillPanel";
+import ScheduleButton from "@/components/ScheduleButton";
 import { isClaudeConfigured } from "@/lib/claude";
 import { hasUnschedulableSecret } from "@/lib/schedule";
 
@@ -51,6 +51,15 @@ export default async function SkillDetailPage({ params }: { params: { id: string
               sourcePost={skill.sourcePost}
             />
             <ArchiveSkillButton skillId={skill.id} status={skill.status} confirmedOnce={skill.confirmedOnce} />
+            <ScheduleButton
+              skillId={skill.id}
+              skillName={skill.name}
+              inputSchema={skill.inputSchema ?? []}
+              schedule={skill.schedule}
+              scheduleInputValues={skill.scheduleInputValues}
+              scheduleLastRunAt={skill.scheduleLastRunAt?.toISOString() ?? null}
+              hasUnschedulableSecret={hasUnschedulableSecret(skill.inputSchema ?? [])}
+            />
             <Link
               href={`/skills/${skill.id}/edit`}
               title="Editar skill"
@@ -116,15 +125,6 @@ export default async function SkillDetailPage({ params }: { params: { id: string
             {skill.promptTemplate}
           </pre>
         </details>
-
-        <ScheduleSkillPanel
-          skillId={skill.id}
-          inputSchema={skill.inputSchema ?? []}
-          schedule={skill.schedule}
-          scheduleInputValues={skill.scheduleInputValues}
-          scheduleLastRunAt={skill.scheduleLastRunAt?.toISOString() ?? null}
-          hasUnschedulableSecret={hasUnschedulableSecret(skill.inputSchema ?? [])}
-        />
 
         <RunSkillPanel
           skill={{

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Download, LayoutGrid, Plus, Sparkles } from "lucide-react";
 import { listSkills } from "@/lib/data";
 import { isClaudeConfigured } from "@/lib/claude";
+import { hasUnschedulableSecret } from "@/lib/schedule";
 import SkillsBoard from "@/components/SkillsBoard";
 import PageHeader from "@/components/PageHeader";
 import ImportSkillsButton from "@/components/ImportSkillsButton";
@@ -53,6 +54,11 @@ export default async function DashboardPage() {
     needsSetup: s.usesCowork ? !coworkReady : !claudeReady,
     group: s.group,
     tags: s.tags,
+    inputSchema: s.inputSchema ?? [],
+    schedule: s.schedule,
+    scheduleInputValues: s.scheduleInputValues,
+    scheduleLastRunAt: s.scheduleLastRunAt?.toISOString() ?? null,
+    hasUnschedulableSecret: hasUnschedulableSecret(s.inputSchema ?? []),
   }));
 
   return (

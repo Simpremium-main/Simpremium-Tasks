@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle, Archive, CheckSquare, Loader2, Search, Trash2, X } from "lucide-react";
 import SkillCard from "./SkillCard";
+import type { InputField, SkillSchedule } from "@/lib/types";
 
 export interface BoardSkill {
   id: string;
@@ -15,6 +16,11 @@ export interface BoardSkill {
   needsSetup: boolean;
   group: string | null;
   tags: string[];
+  inputSchema: InputField[];
+  schedule: SkillSchedule | null;
+  scheduleInputValues: Record<string, string> | null;
+  scheduleLastRunAt: string | null;
+  hasUnschedulableSecret: boolean;
 }
 
 type Filter = "all" | "active" | "draft" | "needs_setup" | "archived";
@@ -246,6 +252,11 @@ export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
               needsSetup={skill.needsSetup}
               group={skill.group}
               tags={skill.tags}
+              inputSchema={skill.inputSchema}
+              schedule={skill.schedule}
+              scheduleInputValues={skill.scheduleInputValues}
+              scheduleLastRunAt={skill.scheduleLastRunAt}
+              hasUnschedulableSecret={skill.hasUnschedulableSecret}
               selectable={selectMode}
               selected={selectedIds.has(skill.id)}
               onToggleSelect={() => toggleSelected(skill.id)}

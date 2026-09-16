@@ -1,6 +1,21 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, Bot, CheckSquare, Folder, History, PenLine, Square, Sparkles } from "lucide-react";
+import {
+  AlertTriangle,
+  Bot,
+  CalendarClock,
+  CheckSquare,
+  Folder,
+  History,
+  PenLine,
+  Square,
+  Sparkles,
+} from "lucide-react";
 import StatusBadge from "./StatusBadge";
+import ScheduleModal from "./ScheduleModal";
+import type { InputField, SkillSchedule } from "@/lib/types";
 
 interface SkillCardProps {
   id: string;
@@ -13,6 +28,11 @@ interface SkillCardProps {
   needsSetup?: boolean;
   group?: string | null;
   tags?: string[];
+  inputSchema: InputField[];
+  schedule: SkillSchedule | null;
+  scheduleInputValues: Record<string, string> | null;
+  scheduleLastRunAt: string | null;
+  hasUnschedulableSecret: boolean;
   /** Bulk-select mode (SkillsBoard) — when set, the card toggles selection
    *  on click instead of navigating. */
   selectable?: boolean;
@@ -31,91 +51,131 @@ export default function SkillCard({
   needsSetup,
   group,
   tags = [],
+  inputSchema,
+  schedule,
+  scheduleInputValues,
+  scheduleLastRunAt,
+  hasUnschedulableSecret,
   selectable = false,
   selected = false,
   onToggleSelect,
 }: SkillCardProps) {
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+
   return (
-    <Link
-      href={`/skills/${id}`}
-      onClick={(e) => {
-        if (!selectable) return;
-        e.preventDefault();
-        onToggleSelect?.();
-      }}
-      className={`group block rounded-xl border bg-white p-4 transition-all duration-200 ${
-        selectable
-          ? selected
-            ? "border-primary/50 ring-1 ring-primary/30"
-            : "border-line hover:border-primary/30"
-          : "border-line hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
-      }`}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2.5 min-w-0">
-          {selectable ? (
-            <span className={`shrink-0 ${selected ? "text-primary" : "text-muted"}`}>
-              {selected ? <CheckSquare size={18} /> : <Square size={18} />}
-            </span>
-          ) : (
-            <span
-              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors ${
-                usesCowork ? "bg-cowork-soft text-cowork" : "bg-primary-soft text-primary"
-              }`}
-            >
-              {usesCowork ? <Bot size={16} /> : <Sparkles size={16} />}
-            </span>
-          )}
-          <div className="min-w-0">
-            <h3 className="font-medium text-ink truncate group-hover:text-primary transition-colors">
-              {name}
-            </h3>
-            {group && (
-              <span className="flex items-center gap-1 text-[11px] text-muted truncate">
-                <Folder size={10} />
-                {group}
+    <>
+      <Link
+        href={`/skills/${id}`}
+        onClick={(e) => {
+          if (!selectable) return;
+          e.preventDefault();
+          onToggleSelect?.();
+        }}
+        className={`group block rounded-xl border bg-white p-4 transition-all duration-200 ${
+          selectable
+            ? selected
+              ? "border-primary/50 ring-1 ring-primary/30"
+              : "border-line hover:border-primary/30"
+            : "border-line hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
+        }`}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            {selectable ? (
+              <span className={`shrink-0 ${selected ? "text-primary" : "text-muted"}`}>
+                {selected ? <CheckSquare size={18} /> : <Square size={18} />}
+              </span>
+            ) : (
+              <span
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors ${
+                  usesCowork ? "bg-cowork-soft text-cowork" : "bg-primary-soft text-primary"
+                }`}
+              >
+                {usesCowork ? <Bot size={16} /> : <Sparkles size={16} />}
               </span>
             )}
+            <div className="min-w-0">
+              <h3 className="font-medium text-ink truncate group-hover:text-primary transition-colors">
+                {name}
+              </h3>
+              {group && (
+                <span className="flex items-center gap-1 text-[11px] text-muted truncate">
+                  <Folder size={10} />
+                  {group}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {needsSetup && (
+              <span title="Precisa de configuração manual" className="text-amber-500">
+                <AlertTriangle size={14} />
+              </span>
+            )}
+            <StatusBadge status={status} />
           </div>
         </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          {needsSetup && (
-            <span title="Precisa de configuração manual" className="text-amber-500">
-              <AlertTriangle size={14} />
+        <p className="mt-2.5 text-sm text-ink/60 line-clamp-2 min-h-[2.5rem]">
+          {description || "Sem descrição ainda."}
+        </p>
+        <div className="mt-3 flex items-center gap-2 text-xs text-muted flex-wrap">
+          {needsInput && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5" title="Precisa de input para rodar">
+              <PenLine size={11} />
+              input
             </span>
           )}
-          <StatusBadge status={status} />
+          {usesCowork && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-cowork-soft text-cowork px-2 py-0.5"
+              title="Roda via Claude Cowork"
+            >
+              <Bot size={11} />
+              Cowork
+            </span>
+          )}
+          {tags.slice(0, 3).map((tag) => (
+            <span key={tag} className="inline-flex items-center rounded-full bg-primary-soft text-primary px-2 py-0.5">
+              {tag}
+            </span>
+          ))}
+          {!selectable && !hasUnschedulableSecret && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setScheduleOpen(true);
+              }}
+              title={schedule ? "Editar agendamento" : "Agendar essa skill"}
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 transition-colors ${
+                schedule
+                  ? "bg-primary-soft text-primary"
+                  : "bg-slate-100 text-muted hover:text-primary hover:bg-primary-soft"
+              }`}
+            >
+              <CalendarClock size={11} />
+              {schedule ? "Agendada" : "Agendar"}
+            </button>
+          )}
+          <span className="ml-auto inline-flex items-center gap-1 shrink-0">
+            <History size={11} />
+            {executionCount}
+          </span>
         </div>
-      </div>
-      <p className="mt-2.5 text-sm text-ink/60 line-clamp-2 min-h-[2.5rem]">
-        {description || "Sem descrição ainda."}
-      </p>
-      <div className="mt-3 flex items-center gap-2 text-xs text-muted flex-wrap">
-        {needsInput && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5" title="Precisa de input para rodar">
-            <PenLine size={11} />
-            input
-          </span>
-        )}
-        {usesCowork && (
-          <span
-            className="inline-flex items-center gap-1 rounded-full bg-cowork-soft text-cowork px-2 py-0.5"
-            title="Roda via Claude Cowork"
-          >
-            <Bot size={11} />
-            Cowork
-          </span>
-        )}
-        {tags.slice(0, 3).map((tag) => (
-          <span key={tag} className="inline-flex items-center rounded-full bg-primary-soft text-primary px-2 py-0.5">
-            {tag}
-          </span>
-        ))}
-        <span className="ml-auto inline-flex items-center gap-1 shrink-0">
-          <History size={11} />
-          {executionCount}
-        </span>
-      </div>
-    </Link>
+      </Link>
+      {scheduleOpen && (
+        <ScheduleModal
+          skillId={id}
+          skillName={name}
+          inputSchema={inputSchema}
+          schedule={schedule}
+          scheduleInputValues={scheduleInputValues}
+          scheduleLastRunAt={scheduleLastRunAt}
+          hasUnschedulableSecret={hasUnschedulableSecret}
+          onClose={() => setScheduleOpen(false)}
+        />
+      )}
+    </>
   );
 }
