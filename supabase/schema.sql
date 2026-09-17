@@ -30,6 +30,7 @@ create table if not exists skills (
   schedule_input_values jsonb, -- Record<string, string> | null — saved defaults for a scheduled run's form, never includes secret-typed fields
   schedule_last_run_at timestamptz,
   pinned          boolean not null default false, -- personal dashboard preference, not part of the skill's definition (not carried by export/import)
+  share_token     text unique, -- null means not shared; set means /share/<token> shows a read-only public view of this skill
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );

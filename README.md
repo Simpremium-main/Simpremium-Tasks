@@ -753,6 +753,32 @@ no persisted link between the two skills, no automatic re-run. The handoff is a 
 navigating and consumed once, on `RunSkillPanel`'s first render, then immediately cleared — so it
 never leaks into an unrelated later run, round-trips through a URL, or needs its own persistence.
 
+### Sharing a skill via a public read-only link
+
+**Compartilhar**, next to the other actions on a skill's page (`ShareSkillButton.tsx`), turns on a
+public, no-login page at `/share/<token>` — for showing a skill's results to someone without
+giving them an account. `token` is a fresh `crypto.randomUUID()` (`lib/data.ts`'s
+`enableSkillSharing`), stored on the skill's own `share_token` column; `middleware.ts` excludes
+`/share/` from the auth gate that otherwise protects every page. **Desativar link** clears the
+token outright rather than just flagging it off, so a link that already circulated stops resolving
+immediately — re-enabling later generates a brand new one, the old link is gone for good.
+
+Deliberately narrower than the real skill page: name, description, group/tags, status, and
+execution history (`components/ExecutionList.tsx`, same component the real pages use, so a shared
+skill's history looks and behaves the same) — **no prompt template**, no run button, no edit/delete.
+The prompt template is the skill's internal configuration, not the point of sharing its output, so
+it's left off the public view entirely (`app/share/[token]/page.tsx` never reads
+`skill.promptTemplate`). Nothing secret-shaped is exposed either way: values are already masked
+before they're ever written to execution history (see the security baseline), same as on every
+other page in this app.
+
+Needs one new column on `skills` that a fresh `supabase/schema.sql` already includes — if you set
+this project up earlier, run in the SQL Editor:
+
+```sql
+alter table skills add column if not exists share_token text unique;
+```
+
 ### Exporting and importing skills
 
 **Exportar** on the dashboard (`GET /api/skills/export`) downloads every skill as JSON — name,

@@ -132,6 +132,10 @@ export interface Skill {
    *  top of the skills list. Not part of the skill's definition, so it's
    *  left out of export/import. */
   pinned: boolean;
+  /** Set means /share/<token> shows a read-only public view of this skill
+   *  (name, description, execution history — no prompt template, no run
+   *  button, no login required). Null means sharing is off. */
+  shareToken: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

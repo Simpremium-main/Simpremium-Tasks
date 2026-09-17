@@ -9,6 +9,7 @@ import DeleteSkillButton from "@/components/DeleteSkillButton";
 import DuplicateSkillButton from "@/components/DuplicateSkillButton";
 import ArchiveSkillButton from "@/components/ArchiveSkillButton";
 import ScheduleButton from "@/components/ScheduleButton";
+import ShareSkillButton from "@/components/ShareSkillButton";
 import { isClaudeConfigured } from "@/lib/claude";
 import { hasUnschedulableSecret } from "@/lib/schedule";
 
@@ -60,6 +61,7 @@ export default async function SkillDetailPage({ params }: { params: { id: string
               scheduleLastRunAt={skill.scheduleLastRunAt?.toISOString() ?? null}
               hasUnschedulableSecret={hasUnschedulableSecret(skill.inputSchema ?? [])}
             />
+            <ShareSkillButton skillId={skill.id} shareToken={skill.shareToken} />
             <Link
               href={`/skills/${skill.id}/edit`}
               title="Editar skill"

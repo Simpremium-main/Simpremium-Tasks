@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import type { PostgrestError } from "@supabase/supabase-js";
 import { getSupabase } from "./supabaseClient";
 import { sumTokenUsage } from "./cost";
@@ -56,6 +57,7 @@ function mapSkillRow(row: Record<string, unknown>): Skill {
     scheduleInputValues: (row.schedule_input_values as Record<string, string> | null) ?? null,
     scheduleLastRunAt: row.schedule_last_run_at ? new Date(row.schedule_last_run_at as string) : null,
     pinned: Boolean(row.pinned),
+    shareToken: (row.share_token as string | null) ?? null,
     createdAt: new Date(row.created_at as string),
     updatedAt: new Date(row.updated_at as string),
   };
@@ -214,6 +216,58 @@ export async function getSkillWithExecutions(
   if (error) throw describeError("getSkillWithExecutions", error, status, statusText);
 
   return { ...skill, executions: (data ?? []).map(mapExecutionRow) };
+}
+
+/** Looks up a skill by its public share token (see enableSkillSharing) and
+ *  returns the same shape as getSkillWithExecutions — the /share/[token]
+ *  page's only entry point, so a disabled/never-shared token just returns
+ *  null instead of leaking anything. */
+export async function getSkillWithExecutionsByShareToken(
+  token: string
+): Promise<(Skill & { executions: Execution[] }) | null> {
+  const supabase = getSupabase();
+  const { data, error, status, statusText } = await supabase
+    .from("skills")
+    .select("id")
+    .eq("share_token", token)
+    .maybeSingle();
+  if (error) throw describeError("getSkillWithExecutionsByShareToken", error, status, statusText);
+  if (!data) return null;
+  return getSkillWithExecutions(data.id as string);
+}
+
+/** Turns sharing on for a skill, generating a fresh unguessable token if it
+ *  doesn't already have one (idempotent — re-enabling an already-shared
+ *  skill keeps its existing link working instead of silently breaking it). */
+export async function enableSkillSharing(id: string): Promise<Skill | null> {
+  const skill = await getSkill(id);
+  if (!skill) return null;
+  if (skill.shareToken) return skill;
+
+  const supabase = getSupabase();
+  const { data, error, status, statusText } = await supabase
+    .from("skills")
+    .update({ share_token: randomUUID(), updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select()
+    .maybeSingle();
+  if (error) throw describeError("enableSkillSharing", error, status, statusText);
+  return data ? mapSkillRow(data) : null;
+}
+
+/** Turns sharing off — the old token stops resolving immediately (it's
+ *  cleared, not just flagged), so a link that already circulated can be
+ *  revoked for good. */
+export async function disableSkillSharing(id: string): Promise<Skill | null> {
+  const supabase = getSupabase();
+  const { data, error, status, statusText } = await supabase
+    .from("skills")
+    .update({ share_token: null, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select()
+    .maybeSingle();
+  if (error) throw describeError("disableSkillSharing", error, status, statusText);
+  return data ? mapSkillRow(data) : null;
 }
 
 export interface CreateSkillInput {
