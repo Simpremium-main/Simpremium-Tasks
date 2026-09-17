@@ -1,4 +1,10 @@
-export type InputFieldType = "text" | "textarea" | "secret" | "url" | "number";
+// "file" lets a run-time value come from an uploaded file instead of being
+// typed — but only text-extractable files (txt/csv/json/md), decoded
+// client-side (DynamicForm) into a plain string, exactly like a textarea.
+// It's not a separate storage kind: everywhere downstream (masking, retry
+// prefill, scheduling defaults, history) treats it as ordinary text, since
+// that's literally what it becomes the moment it's read.
+export type InputFieldType = "text" | "textarea" | "secret" | "url" | "number" | "file";
 
 export interface InputField {
   key: string;
