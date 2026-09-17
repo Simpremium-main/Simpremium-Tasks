@@ -139,7 +139,17 @@ export default function RunSkillPanel({
     }
 
     if (!execution) {
-      throw new Error(`Falha ao rodar (HTTP ${res.status})`);
+      // The stream ended without ever sending a proper "done"/"continue"/
+      // "error" event — normally impossible (the route's own try/catch
+      // always sends one before closing), so this means something killed
+      // the connection from outside our code entirely (most likely the
+      // platform's own hard timeout). Whatever text is sitting unparsed in
+      // the buffer at that point is the only clue to what actually
+      // happened — surface it instead of a dead-end generic message.
+      const leftover = buffer.trim();
+      throw new Error(
+        `Falha ao rodar (HTTP ${res.status})` + (leftover ? `: ${leftover.slice(0, 500)}` : "")
+      );
     }
     return { execution, done: legDone };
   }
