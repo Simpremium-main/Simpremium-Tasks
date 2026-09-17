@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import {
-  Activity,
   Bot,
   CalendarClock,
   History,
@@ -222,13 +221,6 @@ export default function Sidebar({
           active={pathname === "/schedules"}
           icon={<CalendarClock size={16} />}
           label="Agendamentos"
-          collapsed={effectiveCollapsed}
-        />
-        <NavLink
-          href="/status"
-          active={pathname === "/status"}
-          icon={<Activity size={16} />}
-          label="Status"
           collapsed={effectiveCollapsed}
         />
         {isAdmin && (

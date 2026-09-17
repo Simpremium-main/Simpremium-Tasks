@@ -857,20 +857,10 @@ it, token counts, estimated cost, generated-file count, result, error.
 
 A small "Buscar" button in the sidebar footer (or ⌘K/Ctrl+K from anywhere) opens a "go to" palette
 (`CommandPalette.tsx`, mounted once in `(app)/layout.tsx`) — type to jump straight to a skill or a
-main page (Skills, Histórico, Agendamentos, Status, Nova skill) instead of navigating through the
-sidebar. Not a text search across execution content — `/history`'s own search box already covers
-that — just fast navigation, fed the same skill list the sidebar already has server-side (no extra
-fetch). Arrow keys move the selection, Enter opens it, Esc (or the backdrop) closes it.
-
-### System status page
-
-`/status` (`Activity` in the sidebar) is a plain checklist of what's actually configured — Supabase
-connectivity (a live, cheap round-trip via `lib/data.ts`'s `checkSupabaseConnection`, not just "is
-the env var set"), `ANTHROPIC_API_KEY`, `COWORK_DISPATCH_WEBHOOK_URL`, `CRON_SECRET`, and
-`SCHEDULE_FAILURE_WEBHOOK_URL` — instead of discovering each one is missing separately, scattered
-across different pages, the way `needsSetup` badges and amber warning banners already surface them
-individually. Shows presence/absence and a plain-language explanation of what's affected, never the
-actual secret value of anything.
+main page (Skills, Histórico, Agendamentos, Nova skill) instead of navigating through the sidebar.
+Not a text search across execution content — `/history`'s own search box already covers that —
+just fast navigation, fed the same skill list the sidebar already has server-side (no extra fetch).
+Arrow keys move the selection, Enter opens it, Esc (or the backdrop) closes it.
 
 ## Running locally
 

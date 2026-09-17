@@ -484,24 +484,6 @@ export async function getTotalUsage(): Promise<{ usage: TokenUsage; executionsWi
   return { usage, executionsWithUsage: (data ?? []).length };
 }
 
-/**
- * Cheapest possible real round trip to Supabase — used by the /status page
- * to show whether the database is actually reachable right now, not just
- * whether its env vars are set. Every other page assumes this succeeds (and
- * crashes if it doesn't); this is the one place that's supposed to survive
- * it failing and report that fact instead.
- */
-export async function checkSupabaseConnection(): Promise<{ ok: boolean; error?: string }> {
-  try {
-    const supabase = getSupabase();
-    const { error, status, statusText } = await supabase.from("skills").select("id").limit(1);
-    if (error) return { ok: false, error: describeError("checkSupabaseConnection", error, status, statusText).message };
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
-  }
-}
-
 export async function getExecution(id: string): Promise<Execution | null> {
   const supabase = getSupabase();
   const { data, error, status, statusText } = await supabase

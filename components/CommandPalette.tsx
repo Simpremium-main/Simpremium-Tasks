@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
-import { Bot, CalendarClock, History, LayoutGrid, Plus, Search, Sparkles, Activity } from "lucide-react";
+import { Bot, CalendarClock, History, LayoutGrid, Plus, Search, Sparkles } from "lucide-react";
 
 interface PaletteSkill {
   id: string;
@@ -41,7 +41,6 @@ export default function CommandPalette({ skills }: { skills: PaletteSkill[] }) {
       { key: "dashboard", label: "Skills", href: "/", icon: <LayoutGrid size={15} /> },
       { key: "history", label: "Histórico", href: "/history", icon: <History size={15} /> },
       { key: "schedules", label: "Agendamentos", href: "/schedules", icon: <CalendarClock size={15} /> },
-      { key: "status", label: "Status do sistema", href: "/status", icon: <Activity size={15} /> },
       { key: "new-skill", label: "Nova skill", href: "/skills/new", icon: <Plus size={15} /> },
     ],
     []
