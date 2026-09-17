@@ -20,11 +20,37 @@ const MODEL = "claude-sonnet-5";
 const CODE_EXECUTION_BETA = "code-execution-2025-08-25";
 
 // Vercel's own ceiling for a single function invocation is 300s (see
-// maxDuration on the run routes) — keep each individual Claude call safely
-// under that so a slow chunk fails cleanly (caught below, recorded as an
-// error) instead of the whole process getting hard-killed by the platform
-// with no chance for any of this file's error handling to run.
-const CHUNK_TIMEOUT_MS = 280_000;
+// maxDuration on the run routes). The Claude call itself isn't the only
+// thing that takes time after it starts — collectGeneratedFiles below still
+// has to download every generated file from Anthropic and upload it to
+// Supabase Storage before this function can return anything. Budgeting
+// 240s for the model call and 45s for file collection leaves real headroom
+// under 300s for that plus JSON/SSE/DB overhead, so a genuinely slow chunk
+// fails cleanly through this file's own error handling (recorded, visible,
+// retryable) instead of Vercel hard-killing the process mid-flight — which
+// leaves no chance for anything here to run, including the DB write that's
+// supposed to guarantee every execution gets recorded (see
+// withFailureRecorded in lib/runSkill.ts and the security baseline in
+// CLAUDE.md: even a failed run must leave a trace, not sit "running"
+// forever with nothing watching it).
+const CHUNK_TIMEOUT_MS = 240_000;
+const FILE_COLLECTION_TIMEOUT_MS = 45_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
 
 /**
  * Claude gets real tools here, the same way it does in the Claude.ai
@@ -205,7 +231,12 @@ export async function dispatchClaudeChunk(
       ...messages,
       { role: "assistant", content: message.content },
     ];
-    const files = await collectGeneratedFiles(anthropic, message.content);
+    const files = await withTimeout(
+      collectGeneratedFiles(anthropic, message.content),
+      FILE_COLLECTION_TIMEOUT_MS,
+      "Generating this chunk's files took too long and was stopped rather than risk the whole " +
+        "run getting hard-killed by the platform with nothing recorded."
+    );
     const usage: TokenUsage = {
       inputTokens: message.usage.input_tokens,
       outputTokens: message.usage.output_tokens,

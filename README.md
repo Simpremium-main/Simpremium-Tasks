@@ -173,11 +173,14 @@ so a run gets the most this platform allows without extra config — bump it in
 setting raises that ceiling arbitrarily high, though, so a Claude-direct run is split into chunks
 instead of one long blocking call:
 
-- `lib/claude.ts`'s `dispatchClaudeChunk` makes one Claude API call, bounded to 280s
-  (`CHUNK_TIMEOUT_MS`, safely under the platform's 300s) via the SDK's own per-request timeout —
-  so a slow chunk fails as a clean, recorded error rather than the whole process getting hard-
-  killed with no trace. When Claude's own server-tool loop hits an internal iteration cap
-  (`stop_reason: "pause_turn"`), that's treated as "not done yet" rather than a failure.
+- `lib/claude.ts`'s `dispatchClaudeChunk` makes one Claude API call, bounded to 240s
+  (`CHUNK_TIMEOUT_MS`) via the SDK's own per-request timeout, then collects any generated files
+  (download from Anthropic, upload to Supabase Storage) under its own 45s budget
+  (`FILE_COLLECTION_TIMEOUT_MS`) — both fail as a clean, recorded error rather than the whole
+  process getting hard-killed with no trace, and together still leave real headroom under the
+  platform's 300s ceiling for the JSON/SSE/DB overhead around them. When Claude's own server-tool
+  loop hits an internal iteration cap (`stop_reason: "pause_turn"`), that's treated as "not done
+  yet" rather than a failure.
 - `lib/runSkill.ts`'s `advance()` saves the conversation-so-far (`ConversationState`: messages,
   chunk count, files collected so far) on the execution row and returns `done: false` instead of
   finishing. The run/stream route sends a `"continue"` SSE event (instead of `"done"`) carrying
@@ -220,12 +223,27 @@ this app drives a multi-chunk run forward except the browser tab that started it
 cron or background worker calling `/continue` on your behalf, so closing that tab (or a hard
 platform kill mid-chunk) orphans the row with no error to record. `ExecutionList.tsx` flags this
 in the UI instead: any execution still `"running"` more than 5 minutes after it started (longer
-than a single chunk should plausibly take — `dispatchClaudeChunk` is bounded to ~280s) gets an
-amber "demorando" badge next to its status, in both the row and the details modal, ticking live
-every 30s so it doesn't need a page refresh to show up. It's a soft, time-based warning, not a
-certainty — another tab or device could genuinely still be driving it — worded that way in the
-tooltip. Pairs naturally with the retry button below: notice it's stuck, "Rodar de novo" right
-there.
+than a single chunk should plausibly take — `dispatchClaudeChunk` is bounded to 240s plus a 45s
+file-collection budget) gets an amber "demorando" badge next to its status, in both the row and
+the details modal, ticking live every 30s so it doesn't need a page refresh to show up. It's a
+soft, time-based warning, not a certainty — another tab or device could genuinely still be driving
+it — worded that way in the tooltip. Pairs naturally with the retry button below: notice it's
+stuck, "Rodar de novo" right there.
+
+**A run that actually hit the platform's hard 300s kill showed the user a raw Vercel error
+message instead of anything this app controls** ("Falha ao rodar (HTTP 200): Vercel Runtime
+Timeout Error: Task timed out after 300 seconds"), and the execution row was left stuck
+`"running"` with nothing recorded — the exact failure mode the two writeups above exist to
+prevent, from a cause neither one covered: `CHUNK_TIMEOUT_MS` only ever bounded the Claude API
+call itself. The file-collection step that runs *after* it (downloading each generated file from
+Anthropic, uploading it to Supabase Storage) had no timeout of its own, so a chunk whose model
+call took close to the old 280s budget, followed by a few file downloads/uploads, could push the
+*total* request past Vercel's 300s ceiling — at which point the platform kills the process outright,
+before `withFailureRecorded` or any of this file's own `catch` blocks get a chance to run. Fixed by
+shrinking `CHUNK_TIMEOUT_MS` to 240s and wrapping file collection in its own 45s
+`FILE_COLLECTION_TIMEOUT_MS`, so both halves of the work now fail through this app's own error
+handling — recorded, visible, retryable — with real headroom left under the platform's ceiling
+instead of racing it.
 
 ### Retrying a run
 
