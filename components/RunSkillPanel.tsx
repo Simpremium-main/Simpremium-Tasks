@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import DynamicForm from "./DynamicForm";
 import ExecutionList, { type ExecutionItem } from "./ExecutionList";
+import { CHAIN_INPUT_STORAGE_KEY } from "./ChainResultButton";
 import { buildPromptSnapshot, looksLikeSecretKey } from "@/lib/mask";
 import { estimateCostUsd, formatCostUsd } from "@/lib/cost";
 import type { InputField } from "@/lib/types";
@@ -40,13 +41,36 @@ export default function RunSkillPanel({
   const router = useRouter();
   const schema: InputField[] = skill.inputSchema ?? [];
 
-  const [values, setValues] = useState<Record<string, string>>({});
+  // Consumed at most once, on first render: ChainResultButton (on another
+  // execution's details modal) stashes a result here right before
+  // navigating here, so this skill's form opens pre-filled with it instead
+  // of requiring a copy-paste round trip. Picks the first textarea (or
+  // plain text) field — secret/number/url/file fields wouldn't make sense
+  // as a landing spot for arbitrary result text.
+  const [initialFromChain] = useState<{ key: string; text: string } | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const chained = sessionStorage.getItem(CHAIN_INPUT_STORAGE_KEY);
+      if (!chained) return null;
+      sessionStorage.removeItem(CHAIN_INPUT_STORAGE_KEY);
+      const target = schema.find((f) => f.type === "textarea") ?? schema.find((f) => f.type === "text");
+      return target ? { key: target.key, text: chained } : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [values, setValues] = useState<Record<string, string>>(() =>
+    initialFromChain ? { [initialFromChain.key]: initialFromChain.text } : {}
+  );
   const [showConfirm, setShowConfirm] = useState(false);
   const [running, setRunning] = useState(false);
   const [executions, setExecutions] = useState(initialExecutions);
   const [formError, setFormError] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
-  const [retryNote, setRetryNote] = useState<string | null>(null);
+  const [retryNote, setRetryNote] = useState<string | null>(() =>
+    initialFromChain ? "Preenchido com o resultado de outra execução — confira antes de rodar." : null
+  );
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [thinkingText, setThinkingText] = useState("");
   const [showThinking, setShowThinking] = useState(false);

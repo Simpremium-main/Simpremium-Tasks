@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import StatusBadge from "./StatusBadge";
+import ChainResultButton from "./ChainResultButton";
 import { downloadPdf, downloadText } from "@/lib/exportResult";
 import { estimateCostUsd, formatCostUsd, formatTokens, totalTokens } from "@/lib/cost";
 
@@ -442,16 +443,19 @@ function ExecutionDetailsModal({
 
         {execution.error && <DetailBlock label="Erro" text={execution.error} tone="red" />}
 
-        {onRetry && (
-          <button
-            type="button"
-            onClick={onRetry}
-            className="mt-1 inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-1.5 text-sm text-ink/80 hover:border-primary/30 hover:text-primary hover:bg-primary-soft transition-colors"
-          >
-            <RotateCcw size={13} />
-            Rodar de novo
-          </button>
-        )}
+        <div className="flex flex-wrap items-start gap-2">
+          {onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="mt-1 inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-1.5 text-sm text-ink/80 hover:border-primary/30 hover:text-primary hover:bg-primary-soft transition-colors"
+            >
+              <RotateCcw size={13} />
+              Rodar de novo
+            </button>
+          )}
+          {execution.result && <ChainResultButton resultText={execution.result} />}
+        </div>
       </div>
     </div>
   );

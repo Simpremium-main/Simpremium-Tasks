@@ -728,6 +728,31 @@ skills aren't just sorted first — they get their own clearly-labeled row. Pure
 dashboard-organization preference, not part of the skill's definition, so `pinned` isn't included
 in export/import — an imported skill always starts unpinned, matching its fresh `draft` status.
 
+### File input fields
+
+An input field can be typed `"file"` instead of text/textarea/secret/url/number
+(`SkillFieldsEditor.tsx`'s field-type picker). At run time (`DynamicForm.tsx`) it shows a file
+picker instead of a text box, reads the file as text client-side (`File.text()`, capped at 20,000
+characters — longer gets truncated with a visible marker, not silently cut), and feeds that
+decoded text into the exact same `values` map every other field type writes to. Deliberately not a
+separate storage kind: masking, retry prefill, and scheduling defaults all already treat it as
+ordinary text, because that's genuinely what it is the moment it's read — no other code path
+needed to change for this to work everywhere those already do. Scoped to text-extractable formats
+on purpose (`.txt`/`.csv`/`.json`/`.md`) — real PDF/image support would need uploading to
+Anthropic's Files API and multimodal `document`/`image` content blocks, which isn't built here, so
+the picker says so upfront instead of quietly failing on an unsupported file.
+
+### Chaining a result into another skill
+
+A small, deliberately low-key **Encadear em outra skill** button sits next to "Rodar de novo" on
+any execution's details modal (wherever it has a text result) — picks a target skill from a
+dropdown (any non-archived skill with `needsInput`) and opens that skill's page with the result
+already filled into its first textarea/text field. Not a real pipeline builder: no new API route,
+no persisted link between the two skills, no automatic re-run. The handoff is a single
+`sessionStorage` key (`ChainResultButton.tsx`'s `CHAIN_INPUT_STORAGE_KEY`) written right before
+navigating and consumed once, on `RunSkillPanel`'s first render, then immediately cleared — so it
+never leaks into an unrelated later run, round-trips through a URL, or needs its own persistence.
+
 ### Exporting and importing skills
 
 **Exportar** on the dashboard (`GET /api/skills/export`) downloads every skill as JSON — name,
