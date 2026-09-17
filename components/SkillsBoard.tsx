@@ -165,14 +165,14 @@ export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Buscar skills..."
-            className="w-full rounded-md border border-line bg-white pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-shadow"
+            className="w-full rounded-md border border-line bg-surface pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-shadow"
           />
         </div>
         {groups.length > 0 && (
           <select
             value={group}
             onChange={(e) => setGroup(e.target.value)}
-            className="rounded-md border border-line bg-white px-2.5 py-2 text-xs text-ink focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className="rounded-md border border-line bg-surface px-2.5 py-2 text-xs text-ink focus:outline-none focus:ring-2 focus:ring-primary/30"
           >
             <option value={ALL_GROUPS}>Todos os grupos</option>
             {groups.map((g) => (
@@ -182,7 +182,7 @@ export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
             ))}
           </select>
         )}
-        <div className="flex items-center gap-1 rounded-md border border-line bg-white p-1">
+        <div className="flex items-center gap-1 rounded-md border border-line bg-surface p-1">
           {(
             [
               ["all", "Todas"],
@@ -211,7 +211,7 @@ export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
             className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-2 text-xs font-medium transition-colors ${
               selectMode
                 ? "border-primary/30 bg-primary-soft text-primary"
-                : "border-line bg-white text-muted hover:text-ink"
+                : "border-line bg-surface text-muted hover:text-ink"
             }`}
           >
             <CheckSquare size={13} />
@@ -230,7 +230,7 @@ export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
               type="button"
               onClick={bulkArchive}
               disabled={selectedIds.size === 0 || bulkWorking}
-              className="inline-flex items-center gap-1.5 rounded-md border border-line bg-white px-3 py-1.5 text-xs font-medium text-ink/80 hover:border-primary/30 hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface px-3 py-1.5 text-xs font-medium text-ink/80 hover:border-primary/30 hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {bulkWorking ? <Loader2 size={13} className="animate-spin" /> : <Archive size={13} />}
               Arquivar
@@ -239,7 +239,7 @@ export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
               type="button"
               onClick={() => setConfirmBulkDelete(true)}
               disabled={selectedIds.size === 0 || bulkWorking}
-              className="inline-flex items-center gap-1.5 rounded-md border border-line bg-white px-3 py-1.5 text-xs font-medium text-ink/80 hover:border-red-300 hover:text-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface px-3 py-1.5 text-xs font-medium text-ink/80 hover:border-red-300 hover:text-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Trash2 size={13} />
               Excluir
@@ -299,7 +299,7 @@ export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
           onClick={() => !bulkWorking && setConfirmBulkDelete(false)}
         >
           <div
-            className="bg-white rounded-2xl border border-line max-w-md w-full shadow-2xl animate-scale-in overflow-hidden"
+            className="bg-surface rounded-2xl border border-line max-w-md w-full shadow-2xl animate-scale-in overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="relative bg-gradient-to-br from-red-500 to-red-600 px-5 pt-5 pb-6 text-white overflow-hidden">

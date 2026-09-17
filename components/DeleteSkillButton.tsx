@@ -53,7 +53,7 @@ export default function DeleteSkillButton({ skillId, skillName }: { skillId: str
             onClick={() => !deleting && setShowConfirm(false)}
           >
             <div
-              className="bg-white rounded-2xl border border-line max-w-md w-full shadow-2xl animate-scale-in overflow-hidden"
+              className="bg-surface rounded-2xl border border-line max-w-md w-full shadow-2xl animate-scale-in overflow-hidden"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="relative bg-gradient-to-br from-red-500 to-red-600 px-5 pt-5 pb-6 text-white overflow-hidden">

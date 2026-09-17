@@ -434,6 +434,34 @@ export async function listExecutions(
 }
 
 /**
+ * Every execution ever recorded, for GET /api/executions/export — unlike
+ * listExecutions' 200-row cap (a fast list view), this is meant to be a
+ * genuine full backup/analysis export, so it doesn't cap or filter.
+ * Skips `conversation_state` (internal mid-run plumbing, not useful outside
+ * the app and can be large) but otherwise mirrors listExecutions' shape.
+ */
+export async function listAllExecutionsForExport(): Promise<
+  (Execution & { skill: { id: string; name: string } })[]
+> {
+  const supabase = getSupabase();
+  const { data, error, status, statusText } = await supabase
+    .from("executions")
+    .select(
+      "id, skill_id, status, source, input_values, prompt_snapshot, result, error, files, usage, ran_by, started_at, finished_at, skill:skills(id, name)"
+    )
+    .order("started_at", { ascending: false });
+  if (error) throw describeError("listAllExecutionsForExport", error, status, statusText);
+
+  return (data ?? []).map((row) => {
+    const skill = row.skill as unknown as { id: string; name: string } | null;
+    return {
+      ...mapExecutionRow(row),
+      skill: { id: skill?.id ?? (row.skill_id as string), name: skill?.name ?? "Deleted skill" },
+    };
+  });
+}
+
+/**
  * True lifetime total across every execution ever recorded — unlike
  * listExecutions' 200-row cap (built for a fast, recent-first list view),
  * this exists so a "how much have I spent" total isn't quietly wrong once a
@@ -454,6 +482,24 @@ export async function getTotalUsage(): Promise<{ usage: TokenUsage; executionsWi
     usage = sumTokenUsage(usage, row.usage as TokenUsage);
   }
   return { usage, executionsWithUsage: (data ?? []).length };
+}
+
+/**
+ * Cheapest possible real round trip to Supabase — used by the /status page
+ * to show whether the database is actually reachable right now, not just
+ * whether its env vars are set. Every other page assumes this succeeds (and
+ * crashes if it doesn't); this is the one place that's supposed to survive
+ * it failing and report that fact instead.
+ */
+export async function checkSupabaseConnection(): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const supabase = getSupabase();
+    const { error, status, statusText } = await supabase.from("skills").select("id").limit(1);
+    if (error) return { ok: false, error: describeError("checkSupabaseConnection", error, status, statusText).message };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
+  }
 }
 
 export async function getExecution(id: string): Promise<Execution | null> {

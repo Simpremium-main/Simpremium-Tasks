@@ -1,4 +1,5 @@
 import Sidebar from "@/components/Sidebar";
+import CommandPalette from "@/components/CommandPalette";
 import { listSkills } from "@/lib/data";
 import { getCurrentUser } from "@/lib/auth";
 
@@ -34,6 +35,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-6xl mx-auto px-4 sm:px-8 pb-12">{children}</div>
       </main>
+      <CommandPalette
+        skills={sidebarSkills.map((s) => ({
+          id: s.id,
+          name: s.name,
+          group: s.group,
+          usesCowork: s.usesCowork,
+        }))}
+      />
     </div>
   );
 }

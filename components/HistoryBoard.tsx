@@ -46,10 +46,10 @@ export default function HistoryBoard({ executions }: { executions: ExecutionItem
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Buscar por skill ou conteúdo do resultado..."
-            className="w-full rounded-md border border-line bg-white pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-shadow"
+            className="w-full rounded-md border border-line bg-surface pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-shadow"
           />
         </div>
-        <div className="flex items-center gap-1 rounded-md border border-line bg-white p-1">
+        <div className="flex items-center gap-1 rounded-md border border-line bg-surface p-1">
           {(
             [
               ["all", "Todas"],

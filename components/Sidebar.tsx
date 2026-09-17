@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import {
+  Activity,
   Bot,
   CalendarClock,
   History,
@@ -22,6 +23,8 @@ import {
   Zap,
   LayoutGrid,
 } from "lucide-react";
+import ThemeToggle from "./ThemeToggle";
+import { OPEN_EVENT as OPEN_COMMAND_PALETTE_EVENT } from "./CommandPalette";
 
 export interface SidebarSkill {
   id: string;
@@ -179,6 +182,25 @@ export default function Sidebar({
         </button>
       </div>
 
+      <div className="px-2.5 pt-3 shrink-0">
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new Event(OPEN_COMMAND_PALETTE_EVENT))}
+          title="Busca rápida"
+          className={`flex items-center gap-2.5 w-full rounded-md border border-sidebar-border px-3 py-2 text-xs text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-text transition-colors ${
+            effectiveCollapsed ? "justify-center" : ""
+          }`}
+        >
+          <Search size={14} />
+          {!effectiveCollapsed && (
+            <>
+              <span className="flex-1 text-left">Buscar</span>
+              <kbd className="text-[10px] border border-sidebar-border rounded px-1 py-0.5">⌘K</kbd>
+            </>
+          )}
+        </button>
+      </div>
+
       <nav className="flex-1 overflow-y-auto sidebar-scroll px-2.5 py-4">
         <SectionLabel collapsed={effectiveCollapsed}>Principal</SectionLabel>
         <NavLink
@@ -200,6 +222,13 @@ export default function Sidebar({
           active={pathname === "/schedules"}
           icon={<CalendarClock size={16} />}
           label="Agendamentos"
+          collapsed={effectiveCollapsed}
+        />
+        <NavLink
+          href="/status"
+          active={pathname === "/status"}
+          icon={<Activity size={16} />}
+          label="Status"
           collapsed={effectiveCollapsed}
         />
         {isAdmin && (
@@ -298,6 +327,7 @@ export default function Sidebar({
             </button>
           )
         )}
+        <ThemeToggle collapsed={effectiveCollapsed} />
         <button
           type="button"
           onClick={handleLogout}
@@ -364,7 +394,7 @@ function NicknameModal({
       onClick={saving ? undefined : onClose}
     >
       <div
-        className="bg-white rounded-2xl border border-line max-w-sm w-full shadow-2xl animate-scale-in overflow-hidden"
+        className="bg-surface rounded-2xl border border-line max-w-sm w-full shadow-2xl animate-scale-in overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="relative bg-gradient-to-br from-primary to-primary-hover px-5 pt-5 pb-6 text-white overflow-hidden">

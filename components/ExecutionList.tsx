@@ -185,7 +185,7 @@ function ExecutionRow({
   const durationMs = executionDurationMs(execution.startedAt, execution.finishedAt);
   return (
     <li
-      className={`rounded-lg border bg-white transition-shadow hover:shadow-sm ${
+      className={`rounded-lg border bg-surface transition-shadow hover:shadow-sm ${
         highlighted
           ? "border-primary/40 animate-highlight"
           : failedScheduled
@@ -339,7 +339,7 @@ function ExecutionDetailsModal({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-xl border border-line max-w-2xl w-full max-h-[85vh] overflow-y-auto p-5 shadow-xl animate-scale-in"
+        className="bg-surface rounded-xl border border-line max-w-2xl w-full max-h-[85vh] overflow-y-auto p-5 shadow-xl animate-scale-in"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 mb-4">

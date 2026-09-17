@@ -93,7 +93,7 @@ export default function SkillCard({
           e.preventDefault();
           onToggleSelect?.();
         }}
-        className={`group block rounded-xl border bg-white p-4 transition-all duration-200 ${
+        className={`group block rounded-xl border bg-surface p-4 transition-all duration-200 ${
           selectable
             ? selected
               ? "border-primary/50 ring-1 ring-primary/30"

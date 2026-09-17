@@ -2,16 +2,134 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Light values (default) and dark overrides for every themed color token in
+ * tailwind.config.ts — "R G B" triples (no commas), the format Tailwind's
+ * rgb(var(--x) / <alpha-value>) needs to keep opacity modifiers working.
+ * Sidebar's own colors aren't here on purpose: that panel always looks
+ * dark, independent of the app's theme. */
+:root {
+  --color-canvas: 246 245 241;
+  --color-ink: 27 28 34;
+  --color-surface: 255 255 255;
+  --color-line: 230 227 218;
+  --color-muted: 138 138 148;
+  --color-primary: 51 88 224;
+  --color-primary-hover: 42 72 194;
+  --color-primary-soft: 232 236 253;
+  --color-cowork: 168 72 31;
+  --color-cowork-soft: 245 230 221;
+}
+
+.dark {
+  --color-canvas: 19 20 26;
+  --color-ink: 231 231 236;
+  --color-surface: 27 28 36;
+  --color-line: 43 44 56;
+  --color-muted: 148 151 166;
+  --color-primary: 92 124 240;
+  --color-primary-hover: 111 140 245;
+  --color-primary-soft: 31 42 77;
+  --color-cowork: 217 122 74;
+  --color-cowork-soft: 58 36 25;
+}
+
 html {
-  background-color: #f6f5f1;
+  background-color: rgb(var(--color-canvas));
 }
 
 body {
-  color: #1b1c22;
+  color: rgb(var(--color-ink));
+}
+
+/* Form fields across the app rely on the browser's own default input
+ * background (effectively white) rather than an explicit bg- class, so
+ * without this every text field would stay a stark white box in dark mode.
+ * Excludes checkbox/radio/file (styled with accent-primary, or hidden
+ * entirely — DynamicForm's file picker) since those aren't a filled field
+ * that needs a surface color. One accepted trade-off: a field that's only
+ * meant to show a filled background on focus (UserAdminPanel's inline
+ * nickname editor) shows that same fill all the time in dark mode instead —
+ * a minor cosmetic nuance, not worth a bigger rule just for that one field. */
+.dark input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.dark textarea,
+.dark select {
+  background-color: rgb(var(--color-surface));
+  color: rgb(var(--color-ink));
 }
 
 ::selection {
-  background-color: #e8ecfd;
+  background-color: rgb(var(--color-primary-soft));
+}
+
+/* Dark-mode readability for the raw status colors (red/amber/emerald/sky/
+ * slate) sprinkled across badges, banners and error text — added here
+ * instead of a `dark:` variant on every className, since a handful of
+ * override rules keyed on Tailwind's own generated class names covers
+ * every current and future usage of these specific shades in one place.
+ * Deliberately excludes the solid/vivid ones (bg-red-600 danger buttons,
+ * the delete-confirm gradient, Sidebar's own red — already dark-suited
+ * since that panel is always dark) — those are meant to stay as they are
+ * regardless of theme. */
+.dark .bg-red-50 {
+  background-color: rgb(127 29 29 / 0.25);
+}
+.dark .bg-red-100 {
+  background-color: rgb(127 29 29 / 0.35);
+}
+.dark .hover\:bg-red-50:hover {
+  background-color: rgb(127 29 29 / 0.25);
+}
+.dark .border-red-200 {
+  border-color: rgb(153 27 27 / 0.6);
+}
+.dark .hover\:border-red-300:hover {
+  border-color: rgb(153 27 27 / 0.6);
+}
+.dark .text-red-500,
+.dark .text-red-600,
+.dark .text-red-700,
+.dark .text-red-800 {
+  color: rgb(252 165 165);
+}
+.dark .hover\:text-red-600:hover,
+.dark .hover\:text-red-700:hover {
+  color: rgb(252 165 165);
+}
+
+.dark .bg-amber-50 {
+  background-color: rgb(120 53 15 / 0.25);
+}
+.dark .text-amber-500,
+.dark .text-amber-600,
+.dark .text-amber-700,
+.dark .text-amber-800 {
+  color: rgb(252 211 77);
+}
+
+.dark .bg-emerald-50 {
+  background-color: rgb(6 78 59 / 0.25);
+}
+.dark .border-emerald-200 {
+  border-color: rgb(6 95 70 / 0.6);
+}
+.dark .text-emerald-700,
+.dark .text-emerald-800 {
+  color: rgb(110 231 183);
+}
+
+.dark .bg-sky-50 {
+  background-color: rgb(12 74 110 / 0.25);
+}
+.dark .text-sky-700 {
+  color: rgb(125 211 252);
+}
+
+.dark .bg-slate-100 {
+  background-color: rgb(255 255 255 / 0.08);
+}
+.dark .text-slate-500,
+.dark .text-slate-600 {
+  color: rgb(196 197 209);
 }
 
 /* thin, dark scrollbar for the sidebar */

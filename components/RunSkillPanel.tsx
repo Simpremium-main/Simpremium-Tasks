@@ -232,7 +232,7 @@ export default function RunSkillPanel({
 
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border border-line bg-white p-5">
+      <div className="rounded-xl border border-line bg-surface p-5">
         <h2 className="font-semibold text-ink mb-3 flex items-center gap-2">
           <Play size={15} className="text-primary" />
           Rodar essa skill
@@ -342,7 +342,7 @@ function ConfirmRunModal({
       onClick={running ? undefined : onCancel}
     >
       <div
-        className="bg-white rounded-2xl border border-line max-w-lg w-full shadow-2xl animate-scale-in overflow-hidden"
+        className="bg-surface rounded-2xl border border-line max-w-lg w-full shadow-2xl animate-scale-in overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="relative bg-gradient-to-br from-primary to-primary-hover px-5 pt-5 pb-6 text-white overflow-hidden">
@@ -383,7 +383,7 @@ function ConfirmRunModal({
               <FileText size={12} className="text-muted" />
               Prompt
             </div>
-            <pre className="whitespace-pre-wrap break-words bg-white p-3 text-xs max-h-48 overflow-y-auto text-ink/70">
+            <pre className="whitespace-pre-wrap break-words bg-surface p-3 text-xs max-h-48 overflow-y-auto text-ink/70">
               {prompt}
             </pre>
           </div>

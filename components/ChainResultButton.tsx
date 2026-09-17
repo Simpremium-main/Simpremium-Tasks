@@ -88,7 +88,7 @@ export default function ChainResultButton({ resultText }: { resultText: string }
               <select
                 value={selectedId}
                 onChange={(e) => setSelectedId(e.target.value)}
-                className="rounded-md border border-line bg-white px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
+                className="rounded-md border border-line bg-surface px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
               >
                 {skills.map((s) => (
                   <option key={s.id} value={s.id}>

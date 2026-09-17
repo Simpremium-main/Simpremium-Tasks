@@ -74,7 +74,7 @@ export default function PromptHistoryPanel({
             <p className="text-xs text-muted">Nenhuma edição anterior registrada ainda.</p>
           )}
           {versions.map((v) => (
-            <div key={v.id} className="rounded border border-line bg-white p-2 text-xs">
+            <div key={v.id} className="rounded border border-line bg-surface p-2 text-xs">
               <div className="flex items-center gap-2 text-muted mb-1">
                 <span>{new Date(v.createdAt).toLocaleString("pt-BR")}</span>
                 {v.changedBy && (

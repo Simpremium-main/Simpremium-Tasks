@@ -41,7 +41,7 @@ export default function EditSkillForm({
   }
 
   return (
-    <div className="rounded-xl border border-line bg-white p-5 space-y-5 animate-fade-in">
+    <div className="rounded-xl border border-line bg-surface p-5 space-y-5 animate-fade-in">
       <SkillFieldsEditor value={value} onChange={(patch) => setValue((v) => ({ ...v, ...patch }))} />
 
       <PromptHistoryPanel

@@ -176,18 +176,18 @@ export default function SkillFieldsEditor({
                   value={field.key}
                   onChange={(e) => updateInputField(i, { key: e.target.value })}
                   placeholder="key"
-                  className="w-28 rounded border border-line bg-white px-2 py-1 text-xs font-mono"
+                  className="w-28 rounded border border-line bg-surface px-2 py-1 text-xs font-mono"
                 />
                 <input
                   value={field.label}
                   onChange={(e) => updateInputField(i, { label: e.target.value })}
                   placeholder="label"
-                  className="flex-1 min-w-[120px] rounded border border-line bg-white px-2 py-1 text-xs"
+                  className="flex-1 min-w-[120px] rounded border border-line bg-surface px-2 py-1 text-xs"
                 />
                 <select
                   value={field.type}
                   onChange={(e) => updateInputField(i, { type: e.target.value as InputFieldType })}
-                  className="rounded border border-line bg-white px-2 py-1 text-xs"
+                  className="rounded border border-line bg-surface px-2 py-1 text-xs"
                 >
                   {FIELD_TYPES.map((t) => (
                     <option key={t} value={t}>

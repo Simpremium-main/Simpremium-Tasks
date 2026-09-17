@@ -2,22 +2,34 @@ import type { Config } from "tailwindcss";
 
 const config: Config = {
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
+  // Toggled via a `dark` class on <html> (ThemeToggle.tsx), not the OS
+  // media query — someone's system preference and their preference for
+  // *this app* aren't always the same thing, and a manual toggle is the
+  // only way to let them differ.
+  darkMode: "class",
   theme: {
     extend: {
       colors: {
-        canvas: "#f6f5f1",
-        ink: "#1b1c22",
-        surface: "#ffffff",
-        line: "#e6e3da",
-        muted: "#8a8a94",
+        // rgb(var(--x) / <alpha-value>) instead of plain hex so Tailwind's
+        // opacity modifiers (bg-canvas/40, text-ink/70, ...) keep working —
+        // both already used throughout — while the underlying value still
+        // flips with the `dark` class (app/globals.css defines the actual
+        // light/dark triples). Sidebar's own colors are deliberately NOT
+        // themed this way: that panel is styled to always look dark,
+        // independent of the app's light/dark theme.
+        canvas: "rgb(var(--color-canvas) / <alpha-value>)",
+        ink: "rgb(var(--color-ink) / <alpha-value>)",
+        surface: "rgb(var(--color-surface) / <alpha-value>)",
+        line: "rgb(var(--color-line) / <alpha-value>)",
+        muted: "rgb(var(--color-muted) / <alpha-value>)",
         primary: {
-          DEFAULT: "#3358e0",
-          hover: "#2a48c2",
-          soft: "#e8ecfd",
+          DEFAULT: "rgb(var(--color-primary) / <alpha-value>)",
+          hover: "rgb(var(--color-primary-hover) / <alpha-value>)",
+          soft: "rgb(var(--color-primary-soft) / <alpha-value>)",
         },
         cowork: {
-          DEFAULT: "#a8481f",
-          soft: "#f5e6dd",
+          DEFAULT: "rgb(var(--color-cowork) / <alpha-value>)",
+          soft: "rgb(var(--color-cowork-soft) / <alpha-value>)",
         },
         sidebar: {
           DEFAULT: "#15161f",

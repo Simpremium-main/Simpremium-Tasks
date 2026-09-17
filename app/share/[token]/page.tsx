@@ -34,7 +34,7 @@ export default async function SharedSkillPage({ params }: { params: { token: str
           Link de visualização — somente leitura
         </div>
 
-        <div className="rounded-xl border border-line bg-white p-5 mb-5">
+        <div className="rounded-xl border border-line bg-surface p-5 mb-5">
           <div className="flex items-start justify-between gap-3 mb-2">
             <div className="flex items-center gap-2.5 min-w-0">
               <span

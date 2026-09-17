@@ -45,7 +45,7 @@ export default async function SchedulesPage() {
             return (
               <div
                 key={skill.id}
-                className={`rounded-xl border bg-white p-4 ${failed ? "border-red-200 bg-red-50/40" : "border-line"}`}
+                className={`rounded-xl border bg-surface p-4 ${failed ? "border-red-200 bg-red-50/40" : "border-line"}`}
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">

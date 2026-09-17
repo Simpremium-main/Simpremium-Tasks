@@ -640,6 +640,39 @@ a run needs more than one chunk — see "Long-running skills" above) instead of 
 row. This is an ongoing pass, not a one-shot redesign — more surfaces get the same treatment as
 feedback comes in, rather than a blind full pass across everything at once.
 
+### Dark mode
+
+Every themed color in `tailwind.config.ts` (`canvas`, `ink`, `surface`, `line`, `muted`, `primary`,
+`cowork` — not `sidebar.*`, that panel is styled to always look dark, independent of the app's
+theme) is defined as `rgb(var(--color-x) / <alpha-value>)` instead of a plain hex value, so the
+opacity modifiers already used everywhere (`bg-ink/40`, `text-ink/70`, ...) keep working while the
+underlying color still flips. `app/globals.css` holds both the light values (`:root`) and the dark
+ones (`.dark`); `ThemeToggle.tsx` (in the sidebar footer) toggles the `dark` class on `<html>` and
+remembers the choice in `localStorage`. `app/layout.tsx` has a small inline script that reads that
+same key *before* React hydrates, so the page never flashes the wrong theme for a frame — falls
+back to the OS's own `prefers-color-scheme` only when nothing's been chosen yet.
+
+Two things needed a broader, more mechanical fix than per-component `dark:` classes:
+
+- Every card/panel used the browser default white (`bg-white`, not a themed token) — bulk-replaced
+  with `bg-surface` app-wide (a `perl` pass excluding any `bg-white/NN` opacity variant, which are
+  all intentional decorative accents on an already-colored surface — the delete-confirm gradient
+  header, the always-dark sidebar — and correctly left alone).
+- Status colors (`bg-red-50`, `text-amber-700`, `bg-emerald-50`, `bg-sky-50`, `bg-slate-100`, and
+  their related shades) appear across ~25 files as plain Tailwind utilities, not this app's own
+  tokens. Rather than hand-editing every occurrence, `globals.css` overrides Tailwind's own
+  generated class selectors under `.dark` (e.g. `.dark .bg-red-50 { ... }`) — higher specificity
+  than the plain utility, so it wins without touching a single component file, and automatically
+  covers any future use of these same shades too. Deliberately excludes the vivid, theme-independent
+  ones (`bg-red-600` danger buttons, the gradient modal headers, Sidebar's own red) — those are
+  supposed to look the same regardless of theme. Native form fields (`input`/`textarea`/`select`,
+  which also default to a plain white background with no explicit class) get the same treatment.
+
+Verified against the login page (public, doesn't need a live Supabase session to render) in both
+color schemes via a Playwright screenshot — the rest of the app couldn't be checked the same way
+from this sandbox (see "Connecting Supabase" — the network policy here blocks the Supabase host),
+but every other screen is built from the exact same token vocabulary already confirmed working.
+
 ## Scheduling a skill to run itself
 
 The schedule form itself lives in one shared, portaled modal (`components/ScheduleModal.tsx`) for
@@ -808,6 +841,36 @@ as a fresh `draft`, whatever `status` it had in the file — same reasoning as
 carried over either, on purpose — an imported skill running unattended before anyone here has
 reviewed it would defeat that gate entirely; re-add the schedule from the skill's own page once
 you've confirmed it works.
+
+### Exporting the full execution history
+
+**Exportar**, on `/history`'s header, downloads a CSV (`GET /api/executions/export`,
+`lib/data.ts`'s `listAllExecutionsForExport`) — not the skill-definitions JSON above, the actual
+run history: one row per execution ever recorded, every skill, no cap (unlike the 200-row window
+`listExecutions` uses for the fast list view — this is a genuine full backup/analysis export). CSV
+rather than JSON on purpose: the point is opening it in Excel/Sheets for analysis or safekeeping,
+not re-importing it (there's no matching import route for this shape, unlike skill export/import).
+Columns: id, skill name, status, source, started/finished timestamps, duration in seconds, who ran
+it, token counts, estimated cost, generated-file count, result, error.
+
+### Quick search (⌘K)
+
+A small "Buscar" button in the sidebar footer (or ⌘K/Ctrl+K from anywhere) opens a "go to" palette
+(`CommandPalette.tsx`, mounted once in `(app)/layout.tsx`) — type to jump straight to a skill or a
+main page (Skills, Histórico, Agendamentos, Status, Nova skill) instead of navigating through the
+sidebar. Not a text search across execution content — `/history`'s own search box already covers
+that — just fast navigation, fed the same skill list the sidebar already has server-side (no extra
+fetch). Arrow keys move the selection, Enter opens it, Esc (or the backdrop) closes it.
+
+### System status page
+
+`/status` (`Activity` in the sidebar) is a plain checklist of what's actually configured — Supabase
+connectivity (a live, cheap round-trip via `lib/data.ts`'s `checkSupabaseConnection`, not just "is
+the env var set"), `ANTHROPIC_API_KEY`, `COWORK_DISPATCH_WEBHOOK_URL`, `CRON_SECRET`, and
+`SCHEDULE_FAILURE_WEBHOOK_URL` — instead of discovering each one is missing separately, scattered
+across different pages, the way `needsSetup` badges and amber warning banners already surface them
+individually. Shows presence/absence and a plain-language explanation of what's affected, never the
+actual secret value of anything.
 
 ## Running locally
 

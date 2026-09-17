@@ -94,7 +94,7 @@ export default function UserAdminPanel({
         </div>
       )}
 
-      <div className="rounded-xl border border-line bg-white overflow-hidden">
+      <div className="rounded-xl border border-line bg-surface overflow-hidden">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-line bg-canvas/60 text-left text-xs uppercase tracking-wide text-muted">
@@ -129,7 +129,7 @@ export default function UserAdminPanel({
                       onBlur={() => handleNicknameBlur(user)}
                       disabled={nicknameSaving === user.id}
                       placeholder="—"
-                      className="w-full max-w-[140px] rounded-md border border-transparent hover:border-line focus:border-primary/50 bg-transparent focus:bg-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors disabled:opacity-60"
+                      className="w-full max-w-[140px] rounded-md border border-transparent hover:border-line focus:border-primary/50 bg-transparent focus:bg-surface px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors disabled:opacity-60"
                     />
                   </td>
                   <td className="px-4 py-3">
@@ -446,7 +446,7 @@ function ModalShell({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-xl border border-line max-w-md w-full p-5 shadow-xl animate-scale-in"
+        className="bg-surface rounded-xl border border-line max-w-md w-full p-5 shadow-xl animate-scale-in"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start gap-2.5 mb-1">

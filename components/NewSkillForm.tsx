@@ -65,7 +65,7 @@ export default function NewSkillForm() {
 
   return (
     <div className="space-y-5">
-      <div className="rounded-xl border border-line bg-white p-5">
+      <div className="rounded-xl border border-line bg-surface p-5">
         <label className="block text-sm font-semibold text-ink mb-2" htmlFor="postContent">
           Cole o conteúdo do post
         </label>
@@ -93,7 +93,7 @@ export default function NewSkillForm() {
       </div>
 
       {proposal && (
-        <div className="rounded-xl border border-line bg-white p-5 space-y-5 animate-fade-in">
+        <div className="rounded-xl border border-line bg-surface p-5 space-y-5 animate-fade-in">
           <h2 className="font-semibold text-ink">Prévia — edite o que quiser antes de salvar</h2>
 
           {proposal.needsReview && (

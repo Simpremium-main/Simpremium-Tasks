@@ -96,7 +96,7 @@ export default function ShareSkillButton({
             onClick={() => setOpen(false)}
           >
             <div
-              className="bg-white rounded-xl border border-line max-w-md w-full p-5 shadow-xl animate-scale-in"
+              className="bg-surface rounded-xl border border-line max-w-md w-full p-5 shadow-xl animate-scale-in"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-start justify-between gap-3 mb-3">

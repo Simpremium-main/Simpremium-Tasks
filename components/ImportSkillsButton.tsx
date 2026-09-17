@@ -87,7 +87,7 @@ export default function ImportSkillsButton() {
             }}
           >
           <div
-            className="bg-white rounded-2xl border border-line max-w-md w-full shadow-2xl animate-scale-in overflow-hidden"
+            className="bg-surface rounded-2xl border border-line max-w-md w-full shadow-2xl animate-scale-in overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="relative bg-gradient-to-br from-primary to-primary-hover px-5 pt-5 pb-6 text-white overflow-hidden">

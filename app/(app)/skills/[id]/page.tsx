@@ -76,7 +76,7 @@ export default async function SkillDetailPage({ params }: { params: { id: string
       />
 
       <div className="space-y-5 animate-fade-in">
-        <div className="rounded-xl border border-line bg-white p-5">
+        <div className="rounded-xl border border-line bg-surface p-5">
           <div className="flex items-center gap-2 flex-wrap mb-2">
             {skill.group && (
               <span className="inline-flex items-center gap-1 text-xs rounded-full bg-slate-100 text-ink/70 px-2.5 py-0.5">
@@ -118,7 +118,7 @@ export default async function SkillDetailPage({ params }: { params: { id: string
           </div>
         )}
 
-        <details className="group rounded-xl border border-line bg-white p-5 text-sm">
+        <details className="group rounded-xl border border-line bg-surface p-5 text-sm">
           <summary className="cursor-pointer font-semibold text-ink flex items-center gap-2 list-none">
             <FileText size={15} className="text-primary" />
             Template do prompt
