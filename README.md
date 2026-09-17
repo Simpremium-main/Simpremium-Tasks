@@ -173,14 +173,21 @@ so a run gets the most this platform allows without extra config — bump it in
 setting raises that ceiling arbitrarily high, though, so a Claude-direct run is split into chunks
 instead of one long blocking call:
 
-- `lib/claude.ts`'s `dispatchClaudeChunk` makes one Claude API call, bounded to 240s
+- `lib/claude.ts`'s `dispatchClaudeChunk` makes one Claude API call, bounded to 190s
   (`CHUNK_TIMEOUT_MS`) via the SDK's own per-request timeout, then collects any generated files
-  (download from Anthropic, upload to Supabase Storage) under its own 45s budget
+  (download from Anthropic, upload to Supabase Storage) under its own 40s budget
   (`FILE_COLLECTION_TIMEOUT_MS`) — both fail as a clean, recorded error rather than the whole
-  process getting hard-killed with no trace, and together still leave real headroom under the
-  platform's 300s ceiling for the JSON/SSE/DB overhead around them. When Claude's own server-tool
-  loop hits an internal iteration cap (`stop_reason: "pause_turn"`), that's treated as "not done
-  yet" rather than a failure.
+  process getting hard-killed with no trace, leaving a real ~70s cushion under the platform's 300s
+  ceiling for the DB/auth/JSON/SSE overhead around them (getSkill, startExecution,
+  finishExecution, etc. all eat into the same 300s, not just the Claude call itself). A shorter
+  per-chunk budget means a genuinely heavy task needs more automatic `continue` round-trips to
+  finish (up to `MAX_CHUNKS`, invisible to the user — the run panel keeps calling `/continue`
+  on its own) — a deliberate trade: safety margin against the platform's hard kill matters more
+  than finishing in fewer round-trips. When Claude's own server-tool loop hits an internal
+  iteration cap (`stop_reason: "pause_turn"`), that's treated as "not done yet" rather than a
+  failure — but note that only covers a boundary *Claude itself* chooses to stop at; a turn that
+  chains many tool calls without ever reaching one can still hit our own timeout first (see the
+  "single tool call slower than one chunk's budget" limitation below, which this doesn't solve).
 - `lib/runSkill.ts`'s `advance()` saves the conversation-so-far (`ConversationState`: messages,
   chunk count, files collected so far) on the execution row and returns `done: false` instead of
   finishing. The run/stream route sends a `"continue"` SSE event (instead of `"done"`) carrying
@@ -223,7 +230,7 @@ this app drives a multi-chunk run forward except the browser tab that started it
 cron or background worker calling `/continue` on your behalf, so closing that tab (or a hard
 platform kill mid-chunk) orphans the row with no error to record. `ExecutionList.tsx` flags this
 in the UI instead: any execution still `"running"` more than 5 minutes after it started (longer
-than a single chunk should plausibly take — `dispatchClaudeChunk` is bounded to 240s plus a 45s
+than a single chunk should plausibly take — `dispatchClaudeChunk` is bounded to 190s plus a 40s
 file-collection budget) gets an amber "demorando" badge next to its status, in both the row and
 the details modal, ticking live every 30s so it doesn't need a page refresh to show up. It's a
 soft, time-based warning, not a certainty — another tab or device could genuinely still be driving
@@ -239,11 +246,18 @@ call itself. The file-collection step that runs *after* it (downloading each gen
 Anthropic, uploading it to Supabase Storage) had no timeout of its own, so a chunk whose model
 call took close to the old 280s budget, followed by a few file downloads/uploads, could push the
 *total* request past Vercel's 300s ceiling — at which point the platform kills the process outright,
-before `withFailureRecorded` or any of this file's own `catch` blocks get a chance to run. Fixed by
-shrinking `CHUNK_TIMEOUT_MS` to 240s and wrapping file collection in its own 45s
-`FILE_COLLECTION_TIMEOUT_MS`, so both halves of the work now fail through this app's own error
-handling — recorded, visible, retryable — with real headroom left under the platform's ceiling
-instead of racing it.
+before `withFailureRecorded` or any of this file's own `catch` blocks get a chance to run. First
+fix landed at 240s (model) + 45s (files), which turned out to still be too tight in practice — a
+heavy skill with many chained tool calls and no early `pause_turn` boundary hit the same platform
+kill again with only ~15s of margin. Tightened further to 190s (model) + 40s (files), a real ~70s
+cushion, so both halves of the work reliably fail through this app's own error handling —
+recorded, visible, retryable — well before the platform's ceiling instead of racing it. The
+trade-off: a heavy task now needs more automatic `/continue` round-trips to finish (still
+invisible to the user, still capped at `MAX_CHUNKS`) — worth it for the reliability. This doesn't
+make every task completable, though: a turn that chains many tool calls without Claude choosing to
+pause between them can still hit this timeout with no checkpoint to resume from (the "single tool
+call slower than one chunk's budget" limitation above) — the real fix for a task that heavy is
+scoping the skill smaller, same as documented there.
 
 ### Retrying a run
 

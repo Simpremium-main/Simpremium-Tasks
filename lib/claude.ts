@@ -20,21 +20,23 @@ const MODEL = "claude-sonnet-5";
 const CODE_EXECUTION_BETA = "code-execution-2025-08-25";
 
 // Vercel's own ceiling for a single function invocation is 300s (see
-// maxDuration on the run routes). The Claude call itself isn't the only
-// thing that takes time after it starts — collectGeneratedFiles below still
-// has to download every generated file from Anthropic and upload it to
-// Supabase Storage before this function can return anything. Budgeting
-// 240s for the model call and 45s for file collection leaves real headroom
-// under 300s for that plus JSON/SSE/DB overhead, so a genuinely slow chunk
-// fails cleanly through this file's own error handling (recorded, visible,
-// retryable) instead of Vercel hard-killing the process mid-flight — which
-// leaves no chance for anything here to run, including the DB write that's
-// supposed to guarantee every execution gets recorded (see
-// withFailureRecorded in lib/runSkill.ts and the security baseline in
-// CLAUDE.md: even a failed run must leave a trace, not sit "running"
-// forever with nothing watching it).
-const CHUNK_TIMEOUT_MS = 240_000;
-const FILE_COLLECTION_TIMEOUT_MS = 45_000;
+// maxDuration on the run routes). That 300s covers this function's ENTIRE
+// wall-clock time, not just the Claude call: DB reads/writes before and
+// after (getSkill, startExecution, finishExecution), auth lookup, and
+// collectGeneratedFiles' own downloads/uploads all eat into the same
+// budget. A first cut at 240s (model) + 45s left only ~15s for everything
+// else, which wasn't enough margin in practice — a heavy skill (many
+// chained tool calls with no pause_turn boundary in between) still lost the
+// race against Vercel's hard kill. Cut deeper here on purpose: 190s (model)
+// + 40s (files) leaves a real ~70s cushion, so a genuinely slow chunk fails
+// through this file's own error handling (recorded, visible, retryable)
+// well before Vercel can hard-kill the process mid-flight — which leaves no
+// chance for anything here to run, including the DB write that's supposed
+// to guarantee every execution gets recorded (see withFailureRecorded in
+// lib/runSkill.ts and the security baseline in CLAUDE.md: even a failed run
+// must leave a trace, not sit "running" forever with nothing watching it).
+const CHUNK_TIMEOUT_MS = 190_000;
+const FILE_COLLECTION_TIMEOUT_MS = 40_000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   return new Promise((resolve, reject) => {
