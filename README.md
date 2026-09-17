@@ -287,6 +287,18 @@ pulled from a live pricing API and won't track a rate change or promotional cred
 and heuristic-fallback executions have no Claude API call to report on, so `usage` stays `null` and
 no token/cost badge shows for those rows.
 
+### Execution duration
+
+Every execution row and details modal shows how long the run actually took
+(`lib/duration.ts`'s `executionDurationMs`/`formatDuration`) — no new column, it's just
+`finishedAt - startedAt`, both already stamped (`createExecution` on start, `updateExecution` once
+the status reaches a terminal one). For a multi-chunk run that's the *total* across every chunk,
+not just the last one, since `startedAt` is only ever set once at the very first chunk. Still
+`pending`/`running` executions show nothing yet — there's no end time to subtract from. The skill
+page's stats row (next to "Histórico de execuções") adds an average across that skill's finished
+executions, so a skill quietly getting slower over time (more chunks needed, heavier searches)
+shows up as a trend instead of only being noticeable one execution at a time.
+
 ### Prompt caching (cutting the API cost per skill run)
 
 Two Anthropic ephemeral cache breakpoints are set on every Claude-direct call

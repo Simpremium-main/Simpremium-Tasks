@@ -16,6 +16,7 @@ import {
   Paperclip,
   RotateCcw,
   Sparkles,
+  Timer,
   User,
   X,
 } from "lucide-react";
@@ -23,6 +24,7 @@ import StatusBadge from "./StatusBadge";
 import ChainResultButton from "./ChainResultButton";
 import { downloadPdf, downloadText } from "@/lib/exportResult";
 import { estimateCostUsd, formatCostUsd, formatTokens, totalTokens } from "@/lib/cost";
+import { executionDurationMs, formatDuration } from "@/lib/duration";
 
 export interface ExecutionFileItem {
   name: string;
@@ -180,6 +182,7 @@ function ExecutionRow({
   onRetry?: () => void;
 }) {
   const failedScheduled = isFailedScheduled(execution);
+  const durationMs = executionDurationMs(execution.startedAt, execution.finishedAt);
   return (
     <li
       className={`rounded-lg border bg-white transition-shadow hover:shadow-sm ${
@@ -238,6 +241,15 @@ function ExecutionRow({
               <Coins size={11} />
               {formatTokens(totalTokens(execution.usage))} tok · ~
               {formatCostUsd(estimateCostUsd(execution.usage))}
+            </span>
+          )}
+          {durationMs !== null && (
+            <span
+              className="hidden sm:inline-flex items-center gap-1 text-xs text-muted"
+              title="Tempo total da execução, do início ao fim (todos os passos, se precisou de mais de um)"
+            >
+              <Timer size={11} />
+              {formatDuration(durationMs)}
             </span>
           )}
           {showSkillName && execution.skill && (
@@ -319,6 +331,7 @@ function ExecutionDetailsModal({
   onRetry?: () => void;
 }) {
   const fileBase = `execucao-${execution.id.slice(0, 8)}`;
+  const durationMs = executionDurationMs(execution.startedAt, execution.finishedAt);
 
   return (
     <div
@@ -379,10 +392,18 @@ function ExecutionDetailsModal({
           </button>
         </div>
 
-        <div className="text-xs text-muted mb-4">
-          Iniciada em {new Date(execution.startedAt).toLocaleString("pt-BR")}
-          {execution.finishedAt &&
-            ` · finalizada em ${new Date(execution.finishedAt).toLocaleString("pt-BR")}`}
+        <div className="flex items-center gap-1.5 text-xs text-muted mb-4">
+          <span>
+            Iniciada em {new Date(execution.startedAt).toLocaleString("pt-BR")}
+            {execution.finishedAt &&
+              ` · finalizada em ${new Date(execution.finishedAt).toLocaleString("pt-BR")}`}
+          </span>
+          {durationMs !== null && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-canvas px-2 py-0.5">
+              <Timer size={11} />
+              {formatDuration(durationMs)}
+            </span>
+          )}
         </div>
 
         {execution.usage && (

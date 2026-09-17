@@ -12,6 +12,7 @@ import {
   Loader2,
   Play,
   Sparkles,
+  Timer,
   X,
 } from "lucide-react";
 import DynamicForm from "./DynamicForm";
@@ -19,6 +20,7 @@ import ExecutionList, { type ExecutionItem } from "./ExecutionList";
 import { CHAIN_INPUT_STORAGE_KEY } from "./ChainResultButton";
 import { buildPromptSnapshot, looksLikeSecretKey } from "@/lib/mask";
 import { estimateCostUsd, formatCostUsd } from "@/lib/cost";
+import { executionDurationMs, formatDuration } from "@/lib/duration";
 import type { InputField } from "@/lib/types";
 
 interface Skill {
@@ -215,10 +217,16 @@ export default function RunSkillPanel({
       (sum, e) => sum + (e.usage ? estimateCostUsd(e.usage) : 0),
       0
     );
+    const durations = finished
+      .map((e) => executionDurationMs(e.startedAt, e.finishedAt))
+      .filter((ms): ms is number => ms !== null);
+    const avgDurationMs =
+      durations.length > 0 ? durations.reduce((sum, ms) => sum + ms, 0) / durations.length : null;
     return {
       total: executions.length,
       successRate: finished.length > 0 ? Math.round((successCount / finished.length) * 100) : null,
       totalCost,
+      avgDurationMs,
     };
   }, [executions]);
 
@@ -274,6 +282,14 @@ export default function RunSkillPanel({
               {stats.totalCost > 0 && (
                 <span className="inline-flex items-center gap-1" title="Soma das estimativas de custo de todas as execuções">
                   <Coins size={11} />~{formatCostUsd(stats.totalCost)} ao todo
+                </span>
+              )}
+              {stats.avgDurationMs !== null && (
+                <span
+                  className="inline-flex items-center gap-1"
+                  title="Tempo médio das execuções já finalizadas — ajuda a notar se essa skill está ficando mais lenta"
+                >
+                  <Timer size={11} />~{formatDuration(stats.avgDurationMs)} em média
                 </span>
               )}
             </div>
