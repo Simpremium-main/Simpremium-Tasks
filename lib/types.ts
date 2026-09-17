@@ -146,3 +146,14 @@ export interface Execution {
   startedAt: Date;
   finishedAt: Date | null;
 }
+
+/** A snapshot of a skill's prompt template right before an edit overwrote
+ *  it — see lib/data.ts's updateSkill. Pure history: the skill's own
+ *  promptTemplate always holds the current version. */
+export interface PromptVersion {
+  id: string;
+  skillId: string;
+  promptTemplate: string;
+  changedBy: string | null;
+  createdAt: Date;
+}

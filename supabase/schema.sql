@@ -54,8 +54,24 @@ create table if not exists executions (
 create index if not exists executions_skill_id_idx on executions (skill_id);
 create index if not exists executions_started_at_idx on executions (started_at desc);
 
+-- One row per edit to a skill's prompt template — snapshots the OLD text
+-- right before an edit overwrites it (see lib/data.ts's updateSkill and
+-- app/api/skills/[id]/route.ts), so a change that turns out worse can be
+-- undone. The skill's own prompt_template column always holds the current
+-- version; this table is purely history, never read on the normal run path.
+create table if not exists skill_prompt_versions (
+  id              uuid primary key default gen_random_uuid(),
+  skill_id        uuid not null references skills(id) on delete cascade,
+  prompt_template text not null,
+  changed_by      text, -- display name of the logged-in user who made the edit that superseded this version
+  created_at      timestamptz not null default now()
+);
+
+create index if not exists skill_prompt_versions_skill_id_idx on skill_prompt_versions (skill_id);
+
 alter table skills enable row level security;
 alter table executions enable row level security;
+alter table skill_prompt_versions enable row level security;
 -- No policies added — see the note at the top of this file for why.
 
 -- Secrets are masked in lib/mask.ts before a row is ever written here — this

@@ -465,6 +465,36 @@ filter alongside the status filter and search. Both are editable in the new-skil
 saving; the AI-assisted parser proposes a group/tags guess when `ANTHROPIC_API_KEY` is set (the
 heuristic fallback leaves them blank for you to fill in — it doesn't guess).
 
+### Prompt version history
+
+Editing a skill's prompt template (`app/skills/[id]/edit`) snapshots the *old* text into a new
+`skill_prompt_versions` table right before the edit overwrites it (`lib/data.ts`'s `updateSkill`)
+— only when the prompt actually changed, so saving the rest of the form untouched or re-saving
+the same text doesn't pile up a no-op entry. The skill's own `prompt_template` column always holds
+the current version; this table is pure history, never read on the normal run path. **Ver
+histórico do prompt**, right below the fields editor (`components/PromptHistoryPanel.tsx`), is
+collapsed and unloaded by default — most edits never need it — and lists past versions (when,
+who) with a **Usar essa versão** button per entry that fills the textarea with that version's
+text. It never saves on its own: restoring an old version is just filling the form, same as typing
+it by hand, so the normal "Salvar alterações" button (and its usual validation) still applies.
+`changed_by` is attributed the same way `ran_by` is on executions — the logged-in person's display
+name at save time, a point-in-time snapshot, not a live reference.
+
+Needs one new table that a fresh `supabase/schema.sql` already includes — if you set this project
+up earlier, run in the SQL Editor:
+
+```sql
+create table if not exists skill_prompt_versions (
+  id              uuid primary key default gen_random_uuid(),
+  skill_id        uuid not null references skills(id) on delete cascade,
+  prompt_template text not null,
+  changed_by      text,
+  created_at      timestamptz not null default now()
+);
+create index if not exists skill_prompt_versions_skill_id_idx on skill_prompt_versions (skill_id);
+alter table skill_prompt_versions enable row level security;
+```
+
 ### Bulk actions on the skills list
 
 The dashboard's **Selecionar** toggle (`components/SkillsBoard.tsx`) switches the grid into

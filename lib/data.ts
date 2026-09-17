@@ -8,6 +8,7 @@ import type {
   ExecutionStatus,
   ExecutionSource,
   InputField,
+  PromptVersion,
   Skill,
   SkillSchedule,
   TokenUsage,
@@ -76,6 +77,16 @@ function mapExecutionRow(row: Record<string, unknown>): Execution {
     ranBy: (row.ran_by as string | null) ?? null,
     startedAt: new Date(row.started_at as string),
     finishedAt: row.finished_at ? new Date(row.finished_at as string) : null,
+  };
+}
+
+function mapPromptVersionRow(row: Record<string, unknown>): PromptVersion {
+  return {
+    id: row.id as string,
+    skillId: row.skill_id as string,
+    promptTemplate: row.prompt_template as string,
+    changedBy: (row.changed_by as string | null) ?? null,
+    createdAt: new Date(row.created_at as string),
   };
 }
 
@@ -257,8 +268,37 @@ export interface UpdateSkillInput {
   pinned?: boolean;
 }
 
-export async function updateSkill(id: string, patch: UpdateSkillInput): Promise<Skill | null> {
+/**
+ * `changedBy` is only used to attribute a prompt-template edit in
+ * skill_prompt_versions (display name of whoever made it) — irrelevant for
+ * any other field, so every other caller just omits it.
+ */
+export async function updateSkill(
+  id: string,
+  patch: UpdateSkillInput,
+  changedBy?: string | null
+): Promise<Skill | null> {
   const supabase = getSupabase();
+
+  // Snapshot the OLD prompt before it's overwritten, but only when it's
+  // actually changing — editing every other field on the skill (or saving
+  // the same prompt text unchanged) shouldn't pile up a no-op version.
+  if (patch.promptTemplate !== undefined) {
+    const { data: current } = await supabase
+      .from("skills")
+      .select("prompt_template")
+      .eq("id", id)
+      .maybeSingle();
+    if (current && current.prompt_template !== patch.promptTemplate) {
+      const { error: versionError } = await supabase.from("skill_prompt_versions").insert({
+        skill_id: id,
+        prompt_template: current.prompt_template as string,
+        changed_by: changedBy ?? null,
+      });
+      if (versionError) throw describeError("updateSkill (prompt version)", versionError);
+    }
+  }
+
   const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (patch.name !== undefined) row.name = patch.name;
   if (patch.description !== undefined) row.description = patch.description;
@@ -283,6 +323,21 @@ export async function updateSkill(id: string, patch: UpdateSkillInput): Promise<
     .maybeSingle();
   if (error) throw describeError("updateSkill", error, status, statusText);
   return data ? mapSkillRow(data) : null;
+}
+
+/** Every past prompt version for a skill, most recent edit first — pure
+ *  history, doesn't include the current live version (that's just the
+ *  skill's own promptTemplate). Empty for a skill whose prompt was never
+ *  edited after creation. */
+export async function listPromptVersions(skillId: string): Promise<PromptVersion[]> {
+  const supabase = getSupabase();
+  const { data, error, status, statusText } = await supabase
+    .from("skill_prompt_versions")
+    .select("*")
+    .eq("skill_id", skillId)
+    .order("created_at", { ascending: false });
+  if (error) throw describeError("listPromptVersions", error, status, statusText);
+  return (data ?? []).map(mapPromptVersionRow);
 }
 
 export async function deleteSkill(id: string): Promise<boolean> {

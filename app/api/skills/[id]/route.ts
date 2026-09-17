@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { deleteSkill, getSkillWithExecutions, updateSkill, type UpdateSkillInput } from "@/lib/data";
+import { getCurrentUser } from "@/lib/auth";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -77,7 +78,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 
   try {
-    const skill = await updateSkill(params.id, patch);
+    const user = await getCurrentUser();
+    const skill = await updateSkill(params.id, patch, user?.displayName ?? null);
     if (!skill) {
       return NextResponse.json({ error: "Skill not found" }, { status: 404 });
     }

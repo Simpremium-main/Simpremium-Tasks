@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { AlertTriangle, Loader2, Save } from "lucide-react";
 import SkillFieldsEditor from "./SkillFieldsEditor";
+import PromptHistoryPanel from "./PromptHistoryPanel";
 import type { EditableSkillFields } from "@/lib/types";
 
 export default function EditSkillForm({
@@ -42,6 +43,11 @@ export default function EditSkillForm({
   return (
     <div className="rounded-xl border border-line bg-white p-5 space-y-5 animate-fade-in">
       <SkillFieldsEditor value={value} onChange={(patch) => setValue((v) => ({ ...v, ...patch }))} />
+
+      <PromptHistoryPanel
+        skillId={skillId}
+        onRestore={(promptTemplate) => setValue((v) => ({ ...v, promptTemplate }))}
+      />
 
       <div>
         <div className="flex items-center gap-3 pt-1">
