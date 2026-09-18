@@ -35,10 +35,6 @@ function log(...args: unknown[]) {
   console.log("[transcribe]", ...args);
 }
 
-function truncate(text: string, max = 300): string {
-  return text.length > max ? `${text.slice(0, max)}…` : text;
-}
-
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(message)), ms);
@@ -131,160 +127,23 @@ async function fetchXMedia(tweetUrl: string): Promise<MediaRef> {
   return { url: best.url, filename: "video.mp4", contentType: "video/mp4" };
 }
 
-function getInstagramShortcode(postUrl: string): string {
-  const match = postUrl.match(/instagram\.com\/(?:p|reel|reels|tv)\/([^/?#]+)/);
-  if (!match) throw new Error("Não consegui identificar o post nesse link do Instagram.");
-  return match[1];
-}
-
-const IG_PAGE_HEADERS = {
-  accept: "*/*",
-  referer: "https://www.instagram.com/",
-  DNT: "1",
-  "Sec-Fetch-Dest": "document",
-  "Sec-Fetch-Mode": "navigate",
-  "Sec-Fetch-Site": "same-origin",
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/117.0",
-};
-
-/** Reads the post's own page and pulls the `og:video` meta tag — the most
- *  direct source, but Instagram often serves a login wall instead for this
- *  URL shape, so this frequently comes back empty and the caller falls
- *  back to the GraphQL approach below. */
-async function fetchInstagramVideoFromPage(shortcode: string): Promise<string | null> {
-  const res = await fetch(`https://www.instagram.com/p/${shortcode}/`, { headers: IG_PAGE_HEADERS });
-  log("instagram/page: status =", res.status, "content-type =", res.headers.get("content-type"));
-  if (!res.ok) return null;
-  const html = await res.text();
-  const match = html.match(/<meta property="og:video" content="([^"]+)"/);
-  if (!match) {
-    // The single most useful signal for telling "genuinely no video" apart
-    // from "Instagram served a login/challenge page instead" without
-    // logging the whole (large, and possibly containing session-ish
-    // tokens) HTML body.
-    const looksLikeLogin = /login|Entrar no Instagram|accounts\/login/i.test(html);
-    log(
-      "instagram/page: no og:video meta tag found, html length =",
-      html.length,
-      "looks like a login/challenge page =",
-      looksLikeLogin
-    );
-    return null;
-  }
-  log("instagram/page: og:video meta tag found");
-  return match[1].replace(/&amp;/g, "&");
-}
-
-// The fixed public app id / query doc id Instagram's own web client uses
-// for its "load post" GraphQL query — works for a public post with no
-// login/session, the same technique github.com/erickythierry/insta-download-api
-// (itself based on github.com/riad-azz/instagram-video-downloader) uses.
-// Entirely unofficial: Instagram can invalidate this doc id or start
-// requiring a real session without notice, same "functional, not
-// guaranteed reliable" caveat as the X syndication endpoint.
-const IG_GRAPHQL_APP_ID = "1217981644879628";
-const IG_GRAPHQL_DOC_ID = "10015901848480474";
-
-async function fetchInstagramVideoFromGraphQL(shortcode: string): Promise<string | null> {
-  const body = new URLSearchParams({
-    variables: JSON.stringify({
-      shortcode,
-      fetch_comment_count: "null",
-      fetch_related_profile_media_count: "null",
-      parent_comment_count: "null",
-      child_comment_count: "null",
-      fetch_like_count: "null",
-      fetch_tagged_user_count: "null",
-      fetch_preview_comment_count: "null",
-      has_threaded_comments: "false",
-      hoisted_comment_id: "null",
-      hoisted_reply_id: "null",
-    }),
-    doc_id: IG_GRAPHQL_DOC_ID,
-  });
-
-  const res = await fetch("https://www.instagram.com/api/graphql", {
-    method: "POST",
-    headers: {
-      Accept: "*/*",
-      "Content-Type": "application/x-www-form-urlencoded",
-      "X-FB-Friendly-Name": "PolarisPostActionLoadPostQueryQuery",
-      "X-IG-App-ID": IG_GRAPHQL_APP_ID,
-      "X-ASBD-ID": "129477",
-      "Sec-Fetch-Dest": "empty",
-      "Sec-Fetch-Mode": "cors",
-      "Sec-Fetch-Site": "same-origin",
-      "User-Agent":
-        "Mozilla/5.0 (Linux; Android 11; SAMSUNG SM-G973U) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/14.2 Chrome/87.0.4280.141 Mobile Safari/537.36",
-    },
-    body: body.toString(),
-  });
-  const contentType = res.headers.get("content-type") ?? "";
-  log("instagram/graphql: status =", res.status, "content-type =", contentType);
-  if (!res.ok) {
-    log("instagram/graphql: body snippet =", truncate(await res.text().catch(() => "<unreadable>")));
-    return null;
-  }
-
-  // Instagram doesn't always answer this with the expected JSON — a
-  // suspected-bot request can get a 200 with an HTML login/challenge page
-  // instead of a proper error status, which used to surface as a raw,
-  // confusing "Unexpected token '<'..." JSON.parse exception. Checking the
-  // content-type first, and falling back to null on a parse failure either
-  // way, turns that into the same clean "no video found" outcome as every
-  // other way this lookup can come up empty.
-  if (!contentType.includes("json") && !contentType.includes("javascript")) {
-    log("instagram/graphql: unexpected content-type, body snippet =", truncate(await res.text().catch(() => "<unreadable>")));
-    return null;
-  }
-
-  const rawText = await res.text();
-  let data: unknown;
-  try {
-    data = JSON.parse(rawText);
-  } catch (err) {
-    log(
-      "instagram/graphql: JSON.parse failed:",
-      err instanceof Error ? err.message : err,
-      "body snippet =",
-      truncate(rawText)
-    );
-    return null;
-  }
-
-  const media = (data as { data?: { xdt_shortcode_media?: { is_video?: boolean; video_url?: string } } })?.data
-    ?.xdt_shortcode_media;
-  log("instagram/graphql: media found =", Boolean(media), "is_video =", media?.is_video);
-  if (!media?.is_video || !media?.video_url) return null;
-  return media.video_url;
-}
-
-/**
- * A public post's direct video URL — no API key, adapted from
- * github.com/erickythierry/insta-download-api: tries the post's own page
- * for its `og:video` meta tag first, then falls back to the same
- * undocumented GraphQL endpoint Instagram's own web client uses. Either
- * step can fail without warning if Instagram changes something (login
- * wall, rotated doc id) — scoped as "functional, not guaranteed reliable"
- * like the rest of this file's platform-specific fetchers, not a
- * long-term-stable integration.
- */
-async function fetchInstagramMedia(postUrl: string): Promise<MediaRef> {
-  const shortcode = getInstagramShortcode(postUrl);
-  log("instagram: shortcode =", shortcode);
-
-  const pageUrl = await fetchInstagramVideoFromPage(shortcode);
-  const videoUrl = pageUrl ?? (await fetchInstagramVideoFromGraphQL(shortcode));
-  log("instagram: video found via", pageUrl ? "page" : videoUrl ? "graphql" : "neither");
-
-  if (!videoUrl) {
-    throw new Error(
-      "Não achei um vídeo público nesse post do Instagram — pode ser um carrossel de fotos, o post exigir login pra ver, ou o Instagram estar bloqueando o acesso automatizado no momento."
-    );
-  }
-
-  return { url: videoUrl, filename: "video.mp4", contentType: "video/mp4" };
-}
+// Automatic Instagram video lookup was tried two ways — scraping the
+// post's own page for its `og:video` meta tag, and Instagram's own
+// undocumented GraphQL endpoint (adapted from
+// github.com/erickythierry/insta-download-api) — and both were confirmed
+// dead from this app's actual hosting: real production logs showed
+// Instagram serving its standard login-wall HTML page (status 200) for
+// *both* methods, identically, on repeated tries. That's Instagram
+// blocking the request by the server's IP itself (Vercel's serverless
+// ranges are widely blocked as datacenter traffic), not a header/scraping
+// detail either approach got wrong — no amount of tweaking headers or
+// retrying fixes an IP-level block. Fixing this for real would mean
+// paying for a proxy-backed download API; at the user's direction, that's
+// deferred for now and Instagram is left unsupported (YouTube and X don't
+// depend on instagram.com and are unaffected) — see the message below and
+// README's "Transcribing a video link" section.
+const INSTAGRAM_UNSUPPORTED_MESSAGE =
+  "A transcrição automática de vídeos do Instagram não está disponível: o Instagram bloqueia o acesso automatizado a partir da infraestrutura onde esse app roda (confirmado em produção — a página do post e o endpoint alternativo testado voltam com a mesma tela de login do Instagram). Cole o texto da legenda/post ou uma transcrição manual do vídeo em vez do link.";
 
 /** Downloads the media at `media.url` and sends it straight to Whisper —
  *  no local audio extraction (no ffmpeg available here): Whisper accepts
@@ -355,9 +214,10 @@ const MISSING_KEY_MESSAGES: Record<string, (platformLabel: string) => string> = 
     `OPENAI_API_KEY não está configurada — necessária pra transcrever vídeos do ${platformLabel}.`,
 };
 
-/** Shared by X and Instagram: find the media's direct URL, download it,
- *  send it to Whisper — the only difference between the two platforms is
- *  how the media URL itself gets found. */
+/** Finds a platform's media direct URL, downloads it, sends it to Whisper
+ *  — currently only used for X, but kept generic (a `findMedia` callback)
+ *  in case another platform besides YouTube's own-caption path needs the
+ *  same download+transcribe shape later. */
 async function downloadAndTranscribe(findMedia: () => Promise<MediaRef>, platformLabel: string): Promise<TranscribeResult> {
   try {
     const media = await findMedia();
@@ -381,7 +241,8 @@ async function transcribeByPlatform(platform: Platform, url: string): Promise<Tr
   }
 
   if (platform === "instagram") {
-    return downloadAndTranscribe(() => fetchInstagramMedia(url), "Instagram");
+    log("instagram: skipping automatic lookup — confirmed unsupported from this infra, see comment above");
+    return { status: "error", error: INSTAGRAM_UNSUPPORTED_MESSAGE };
   }
 
   if (platform === "x") {

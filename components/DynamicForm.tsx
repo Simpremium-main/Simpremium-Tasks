@@ -114,15 +114,16 @@ export default function DynamicForm({
                   id={field.key}
                   type="url"
                   required={field.required}
-                  placeholder={field.placeholder || "https://youtube.com/..., instagram.com/..., x.com/..."}
+                  placeholder={field.placeholder || "https://youtube.com/..., x.com/..."}
                   value={values[field.key] ?? ""}
                   onChange={(e) => onChange(field.key, e.target.value)}
                   className="w-full rounded-md border border-line pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-shadow"
                 />
               </div>
               <p className="mt-1 text-xs text-muted">
-                Link de YouTube, Instagram ou X — o vídeo é transcrito antes de rodar a skill (YouTube usa
-                a legenda do próprio vídeo; Instagram e X passam pela transcrição via Whisper).
+                Link de YouTube ou X — o vídeo é transcrito antes de rodar a skill (YouTube usa a legenda do
+                próprio vídeo; X passa pela transcrição via Whisper). Links do Instagram ainda não são
+                suportados automaticamente — cole o texto da legenda/transcrição manual em vez do link.
               </p>
             </div>
           ) : (

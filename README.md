@@ -124,18 +124,19 @@ and the code just tried to `JSON.parse()` it. Fixed at the prompt level at first
 to always return the same JSON shape either way, and when it couldn't read the link, to say so in
 the draft's own `description` field and ask you to paste the post's actual text/caption instead.
 
-**A bare YouTube/Instagram/X link now skips that dead end entirely.** Before falling back to
-`web_fetch` (which can't get past those platforms' login walls anyway — that's exactly the case
-the paragraph above was written for), `parseSkillPost` routes the link through the same video
-transcription pipeline "video" input fields use at run time (`lib/transcribe.ts`,
-`transcribeVideoUrl` — see "Transcribing a video link" below for how each platform is handled).
-When it gets a real transcript, that becomes the "post content" handed to extraction, so a video
-post (someone demoing a skill on camera) drafts an actual skill instead of the placeholder. When
-transcription itself can't run — no `OPENAI_API_KEY` configured yet — or genuinely fails (no video
-found, no audio, etc.), the draft says so explicitly in `description`/`reviewNote`
-(distinguishing "pending setup" from "transcription failed") instead of guessing or pretending it
-read something it didn't — same "never invent, surface as pending" rule as everywhere else
-credentials are involved.
+**A bare YouTube/X link now skips that dead end entirely.** Before falling back to `web_fetch`
+(which can't get past those platforms' login walls anyway — that's exactly the case the paragraph
+above was written for), `parseSkillPost` routes the link through the same video transcription
+pipeline "video" input fields use at run time (`lib/transcribe.ts`, `transcribeVideoUrl` — see
+"Transcribing a video link" below for how each platform is handled). When it gets a real
+transcript, that becomes the "post content" handed to extraction, so a video post (someone
+demoing a skill on camera) drafts an actual skill instead of the placeholder. When transcription
+itself can't run — no `OPENAI_API_KEY` configured yet — or genuinely fails (no video found, no
+audio, etc.), the draft says so explicitly in `description`/`reviewNote` (distinguishing "pending
+setup" from "transcription failed") instead of guessing or pretending it read something it
+didn't. A bare **Instagram** link goes through the same routing but currently always comes back
+with the same clear "not supported automatically" message — see "Transcribing a video link" for
+why.
 
 **Pasting content that itself reads like an instruction** (e.g. a post whose text is "write a
 character sheet for X") surfaced the same failure a different way: Claude treated the pasted text
@@ -833,53 +834,63 @@ the picker says so upfront instead of quietly failing on an unsupported file.
 
 ### Transcribing a video link
 
-A third input type, `"video"`, lets a field take a YouTube/Instagram/X link instead of typed text
-— the person pastes the URL, and `lib/transcribe.ts`'s `transcribeVideoUrl` swaps it for that
-video's transcript before the prompt is built (`lib/runSkill.ts`'s `resolveInputValues`, run right
-after the execution row is created but before any dispatch — a transcription failure finishes the
-row immediately with a clear reason, the skill never reaches Claude/Cowork). The skill's
-`{{campo}}` placeholder ends up filled with transcript text, never the raw link.
+A third input type, `"video"`, lets a field take a YouTube or X link instead of typed text — the
+person pastes the URL, and `lib/transcribe.ts`'s `transcribeVideoUrl` swaps it for that video's
+transcript before the prompt is built (`lib/runSkill.ts`'s `resolveInputValues`, run right after
+the execution row is created but before any dispatch — a transcription failure finishes the row
+immediately with a clear reason, the skill never reaches Claude/Cowork). The skill's `{{campo}}`
+placeholder ends up filled with transcript text, never the raw link. Instagram links are still
+detected and routed through the same pipeline, but currently always come back with a clear
+"not supported automatically" error — see below for why.
 
 Per-platform, since there's no single mechanism that covers all three:
 
 - **YouTube** — free, no external service: fetches the video's own caption track (`youtube-transcript`
   npm package, an unofficial-but-widely-used wrapper around YouTube's public timedtext endpoint).
   Only works when the video actually has captions (most do, not all).
-- **X/Twitter** and **Instagram** — both find the post's direct video URL (no key needed for
-  that step), download it, then send it to OpenAI's Whisper (`OPENAI_API_KEY`, `$0.006`/min, 25MB
-  file cap). Missing that key surfaces as `needs_setup`, same pattern as a missing
-  `ANTHROPIC_API_KEY` or Cowork webhook — never a faked transcript. Finding the video URL is
-  platform-specific and, for both, unofficial/undocumented — explicitly "functional, not
-  guaranteed reliable" per how this was scoped, not a long-term-stable integration:
-  - **X** uses its own syndication endpoint (the same one its embed widgets use, no login
-    needed).
-  - **Instagram** tries the post's own page for its `og:video` meta tag first (often blocked by
-    a login wall), then falls back to the same undocumented GraphQL endpoint
-    (`instagram.com/api/graphql`, with the fixed public app id/doc id Instagram's own web client
-    uses) Instagram's web client itself relies on for a public post with no login. Adapted from
-    [erickythierry/insta-download-api](https://github.com/erickythierry/insta-download-api) (itself
-    based on [riad-azz/instagram-video-downloader](https://github.com/riad-azz/instagram-video-downloader))
-    at the user's direction, after a RapidAPI-based attempt turned out to have an unusably low
-    free-tier cap (3 requests/month). No API key needed for this step — only `OPENAI_API_KEY` for
-    the Whisper call after the video's found.
-
-  Either can stop working without notice if the platform changes something (a rotated GraphQL doc
-  id, a new login wall); when that happens, it surfaces as a normal recorded `error` on the
-  execution, same as any other run failure — not a silent gap.
+- **X/Twitter** — finds the post's direct video URL via X's own syndication endpoint (the same
+  one its embed widgets use, no login/key needed for that step), downloads it, then sends it to
+  OpenAI's Whisper (`OPENAI_API_KEY`, `$0.006`/min, 25MB file cap). Missing that key surfaces as
+  `needs_setup`, same pattern as a missing `ANTHROPIC_API_KEY` or Cowork webhook — never a faked
+  transcript. The syndication endpoint is unofficial/undocumented, scoped "functional, not
+  guaranteed reliable" — if it stops working, that's a normal recorded `error` on the execution,
+  same as any other run failure, not a silent gap.
+- **Instagram — not supported automatically.** Two approaches were tried and both confirmed dead
+  from this app's actual hosting, not just untested: scraping the post's own page for its
+  `og:video` meta tag, and Instagram's own undocumented GraphQL endpoint (adapted from
+  [erickythierry/insta-download-api](https://github.com/erickythierry/insta-download-api), itself
+  based on [riad-azz/instagram-video-downloader](https://github.com/riad-azz/instagram-video-downloader),
+  after an earlier RapidAPI-based attempt turned out to have an unusably low free-tier cap — 3
+  requests/month). Production logs (`[transcribe]` prefixed, see below) showed **both** methods
+  getting the exact same result on repeat tries: Instagram's standard login-wall HTML page, with
+  an HTTP 200 status. That's Instagram blocking the request by the hosting's IP itself (Vercel's
+  serverless ranges are widely blocked as datacenter traffic) — not a fixable header or scraping
+  detail, an IP-level block no amount of header-tweaking gets around. A real fix would mean paying
+  for a proxy-backed download API; at the user's direction that's deferred for now, so an
+  Instagram link always returns a clear message asking for the caption/transcript to be pasted in
+  manually instead — never a faked or partial result. `lib/transcribe.ts` keeps a comment with the
+  full diagnosis in case this gets revisited later.
 
 The whole attempt is capped at 60s (`TRANSCRIBE_TIMEOUT_MS`) so a slow download can't quietly eat
 into the run's own time budget — see "Long-running skills" above for why that budget already has
 little room to spare.
 
-**Couldn't be verified from this sandbox**: the same network policy that blocks the Supabase host
-here (see "Connecting Supabase") also blocks `youtube.com`, `api.openai.com`,
-`cdn.syndication.twimg.com`, and `instagram.com` outright (confirmed via the proxy's own status
-endpoint, not assumed). The `youtube-transcript` package's API was checked directly against its
-shipped type declarations to make sure the integration matches its real signature, and the
-Instagram GraphQL request shape was copied verbatim from the referenced GitHub repo's source
-(fetched and read directly, not guessed) rather than reconstructed from memory. Everything
-type-checks and builds clean, but none of the live network calls have been exercised end-to-end
-from here — worth a real test with a real link (and a real `OPENAI_API_KEY`) after deploying.
+**Diagnostic logging**: every step of this pipeline (HTTP status, content-type, og:video-tag-found
+vs. not, Whisper download size, overall duration) logs through a `[transcribe]`-prefixed
+`console.log` — visible in Vercel's function logs — precisely because these failures are otherwise
+indistinguishable from the outside (a platform blocking the request looks identical to a post with
+no video). Never logs full media URLs (can carry signed/expiring tokens) or request bodies/keys.
+This is what actually diagnosed the Instagram IP block above — guessing from the user-facing error
+message alone wasn't enough.
+
+**Couldn't be verified from this sandbox** (YouTube/X only — Instagram's block above *was*
+confirmed, from the real deployment): the same network policy that blocks the Supabase host here
+(see "Connecting Supabase") also blocks `youtube.com`, `api.openai.com`, and
+`cdn.syndication.twimg.com` outright (confirmed via the proxy's own status endpoint, not assumed).
+The `youtube-transcript` package's API was checked directly against its shipped type declarations
+to make sure the integration matches its real signature. Everything type-checks and builds clean,
+but YouTube/X's live network calls haven't been exercised end-to-end from this sandbox — worth a
+real test with a real link (and a real `OPENAI_API_KEY`) after deploying.
 
 ### Chaining a result into another skill
 

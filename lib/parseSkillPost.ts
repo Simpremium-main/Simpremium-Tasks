@@ -87,9 +87,11 @@ const EXTRACTION_JSON_SCHEMA = {
  * walls anyway. The transcript (when we get one) becomes the "post
  * content" fed into extraction below, so a video post drafts a real skill
  * instead of the generic "couldn't access this link" placeholder. When
- * transcription itself can't run (missing OPENAI_API_KEY/RAPIDAPI_KEY) or
- * fails, that's surfaced as a pending/needs-review draft with the actual
- * reason — never a faked result, per the onboarding flow's own rule.
+ * transcription itself can't run (missing OPENAI_API_KEY) or fails —
+ * always the case for Instagram right now, see lib/transcribe.ts's own
+ * comment on why — that's surfaced as a pending/needs-review draft with
+ * the actual reason, never a faked result, per the onboarding flow's own
+ * rule.
  */
 export async function parseSkillPost(postContent: string): Promise<SkillDraftProposal> {
   const trimmed = postContent.trim();
