@@ -10,13 +10,25 @@ import { NextResponse, type NextRequest } from "next/server";
 // back to /login just like no cookie at all.
 const PUBLIC_PATHS = ["/login", "/api/auth/login"];
 
+// Routes that authenticate themselves with their own bearer token
+// (CRON_SECRET, COWORK_AGENT_TOKEN — see their own route handlers) instead
+// of a logged-in browser session, because their caller isn't a browser at
+// all: Vercel Cron, or the Mac mini agent. Without this exclusion, this
+// middleware's own session check ran *first* and 307-redirected every such
+// request to /login before the route handler (and its real token check)
+// ever ran — silently breaking both scheduled-skill cron runs and Cowork
+// agent dispatch. Every other /api/* route stays behind the normal session
+// gate below; only these two prefixes skip it.
+const TOKEN_AUTHENTICATED_API_PREFIXES = ["/api/cron/", "/api/cowork-agent/"];
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (
     PUBLIC_PATHS.some((p) => pathname === p) ||
     pathname.startsWith("/_next") ||
-    pathname.startsWith("/share/")
+    pathname.startsWith("/share/") ||
+    TOKEN_AUTHENTICATED_API_PREFIXES.some((prefix) => pathname.startsWith(prefix))
   ) {
     return NextResponse.next();
   }
