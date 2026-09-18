@@ -818,6 +818,42 @@ on purpose (`.txt`/`.csv`/`.json`/`.md`) — real PDF/image support would need u
 Anthropic's Files API and multimodal `document`/`image` content blocks, which isn't built here, so
 the picker says so upfront instead of quietly failing on an unsupported file.
 
+### Transcribing a video link
+
+A third input type, `"video"`, lets a field take a YouTube/Instagram/X link instead of typed text
+— the person pastes the URL, and `lib/transcribe.ts`'s `transcribeVideoUrl` swaps it for that
+video's transcript before the prompt is built (`lib/runSkill.ts`'s `resolveInputValues`, run right
+after the execution row is created but before any dispatch — a transcription failure finishes the
+row immediately with a clear reason, the skill never reaches Claude/Cowork). The skill's
+`{{campo}}` placeholder ends up filled with transcript text, never the raw link.
+
+Per-platform, since there's no single mechanism that covers all three:
+
+- **YouTube** — free, no external service: fetches the video's own caption track (`youtube-transcript`
+  npm package, an unofficial-but-widely-used wrapper around YouTube's public timedtext endpoint).
+  Only works when the video actually has captions (most do, not all).
+- **X/Twitter** — downloads the video via X's own syndication endpoint (the same one X's embed
+  widgets use, so no login needed, but unofficial and undocumented — could stop working without
+  notice) and sends it to OpenAI's Whisper (`OPENAI_API_KEY`, `$0.006`/min, 25MB file cap). Missing
+  the key surfaces as `needs_setup`, same pattern as a missing `ANTHROPIC_API_KEY` or Cowork
+  webhook — never a faked transcript.
+- **Instagram** — not implemented. Every approach found relies on scraping techniques Instagram
+  actively fights and that break without warning; rather than ship something unverified that could
+  silently produce wrong results, this stays a documented gap (`needs_setup`, with that reasoning
+  in the error message) until a real, stable method turns up.
+
+The whole attempt is capped at 60s (`TRANSCRIBE_TIMEOUT_MS`) so a slow download can't quietly eat
+into the run's own time budget — see "Long-running skills" above for why that budget already has
+little room to spare.
+
+**Couldn't be verified from this sandbox**: the same network policy that blocks the Supabase host
+here (see "Connecting Supabase") also blocks `youtube.com`, `api.openai.com`, and
+`cdn.syndication.twimg.com` outright (confirmed via the proxy's own status endpoint, not assumed).
+The `youtube-transcript` package's API was checked directly against its shipped type declarations
+to make sure the integration matches its real signature, and everything type-checks and builds
+clean, but the actual live network calls haven't been exercised end-to-end from here — worth a
+real test with a real link (and a real `OPENAI_API_KEY`) after deploying.
+
 ### Chaining a result into another skill
 
 A small, deliberately low-key **Encadear em outra skill** button sits next to "Rodar de novo" on

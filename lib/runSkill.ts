@@ -4,6 +4,7 @@ import { dispatchToCowork } from "./cowork";
 import { dispatchClaudeChunk, dispatchToClaude } from "./claude";
 import type { ClaudeChunkResult } from "./claude";
 import { sumTokenUsage } from "./cost";
+import { transcribeVideoUrl } from "./transcribe";
 import type {
   ConversationState,
   DispatchResult,
@@ -61,13 +62,19 @@ export async function runSkillStreaming(
   const execution = await startExecution(skill, inputValues, ranBy);
 
   return withFailureRecorded(skill, execution.id, async () => {
+    const resolved = await resolveInputValues(skill, inputValues);
+    if ("error" in resolved) {
+      return { execution: await finishExecution(skill, execution.id, resolved.error), done: true };
+    }
+    const values = resolved.values;
+
     if (skill.usesCowork) {
-      const { rawPrompt } = buildPrompts(skill, inputValues);
+      const { rawPrompt } = buildPrompts(skill, values);
       const dispatch = await dispatchToCowork(rawPrompt);
       return { execution: await finishExecution(skill, execution.id, dispatch), done: true };
     }
 
-    const { rawPrompt } = buildPrompts(skill, inputValues);
+    const { rawPrompt } = buildPrompts(skill, values);
     const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: rawPrompt }];
     return advance(skill, execution.id, messages, 0, [], { inputTokens: 0, outputTokens: 0 }, onDelta);
   });
@@ -113,7 +120,13 @@ export async function runSkill(
   sourceOverride?: Execution["source"]
 ): Promise<Execution> {
   const execution = await startExecution(skill, inputValues, ranBy, sourceOverride);
-  const { rawPrompt } = buildPrompts(skill, inputValues);
+
+  const resolved = await resolveInputValues(skill, inputValues);
+  if ("error" in resolved) {
+    return finishExecution(skill, execution.id, resolved.error);
+  }
+
+  const { rawPrompt } = buildPrompts(skill, resolved.values);
   const dispatch = skill.usesCowork
     ? await dispatchToCowork(rawPrompt)
     : await dispatchToClaude(rawPrompt);
@@ -188,6 +201,42 @@ async function advance(
     usage,
   };
   return { execution: await finishExecution(skill, executionId, dispatch), done: true };
+}
+
+/**
+ * Resolves every "video"-typed input field's raw URL into its transcript
+ * before the prompt gets built — the skill's `{{campo}}` placeholder ends
+ * up filled with transcript text, never the link itself. Runs after
+ * startExecution (so the "running" row already exists — the security
+ * baseline that even a failed attempt gets recorded holds here too) but
+ * before any dispatch, so a transcription failure finishes the row
+ * immediately with a clear reason instead of ever reaching Claude/Cowork.
+ * A no-op (returns inputValues unchanged) for skills with no video field.
+ */
+async function resolveInputValues(
+  skill: Skill,
+  inputValues: Record<string, string>
+): Promise<{ values: Record<string, string> } | { error: DispatchResult }> {
+  const videoFields = (skill.inputSchema ?? []).filter((f) => f.type === "video");
+  if (videoFields.length === 0) return { values: inputValues };
+
+  const resolved = { ...inputValues };
+  for (const field of videoFields) {
+    const url = inputValues[field.key]?.trim();
+    if (!url) continue; // optional field left blank, or already validated as required upstream
+
+    const result = await transcribeVideoUrl(url);
+    if (result.status !== "success" || !result.transcript) {
+      return {
+        error: {
+          status: result.status === "needs_setup" ? "needs_setup" : "error",
+          error: result.error ?? "Falha ao transcrever o vídeo.",
+        },
+      };
+    }
+    resolved[field.key] = result.transcript;
+  }
+  return { values: resolved };
 }
 
 function buildPrompts(skill: Skill, inputValues: Record<string, string>) {

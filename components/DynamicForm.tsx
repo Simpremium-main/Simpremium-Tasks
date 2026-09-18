@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, FileText, KeyRound, Upload } from "lucide-react";
+import { AlertTriangle, FileText, KeyRound, Upload, Video } from "lucide-react";
 import type { InputField } from "@/lib/types";
 
 // Cap the decoded text so one uploaded file can't blow up the prompt (and
@@ -104,6 +104,26 @@ export default function DynamicForm({
               <p className="mt-1 text-xs text-muted">
                 Só arquivos de texto (.txt, .csv, .json, .md) — o conteúdo vira parte do prompt, PDF e
                 imagem ainda não são suportados.
+              </p>
+            </div>
+          ) : field.type === "video" ? (
+            <div>
+              <div className="relative">
+                <Video size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                <input
+                  id={field.key}
+                  type="url"
+                  required={field.required}
+                  placeholder={field.placeholder || "https://youtube.com/..., instagram.com/..., x.com/..."}
+                  value={values[field.key] ?? ""}
+                  onChange={(e) => onChange(field.key, e.target.value)}
+                  className="w-full rounded-md border border-line pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-shadow"
+                />
+              </div>
+              <p className="mt-1 text-xs text-muted">
+                Link de YouTube, Instagram ou X — o vídeo é transcrito antes de rodar a skill (YouTube usa
+                a legenda do próprio vídeo; Instagram e X passam pela transcrição via Whisper). Instagram
+                ainda não está disponível.
               </p>
             </div>
           ) : (

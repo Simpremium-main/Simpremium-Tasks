@@ -4,7 +4,13 @@
 // It's not a separate storage kind: everywhere downstream (masking, retry
 // prefill, scheduling defaults, history) treats it as ordinary text, since
 // that's literally what it becomes the moment it's read.
-export type InputFieldType = "text" | "textarea" | "secret" | "url" | "number" | "file";
+//
+// "video" is the same idea but resolved server-side instead of in the
+// browser: the person pastes a YouTube/Instagram/X link, and lib/transcribe.ts
+// swaps it for that video's transcript right before the prompt is built (see
+// lib/runSkill.ts's resolveInputValues) — the skill's prompt template never
+// sees the raw URL, just the transcript text.
+export type InputFieldType = "text" | "textarea" | "secret" | "url" | "number" | "file" | "video";
 
 export interface InputField {
   key: string;

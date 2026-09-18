@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Bot, Folder, PenLine, Plus, Tag, Trash2, X } from "lucide-react";
 import type { EditableSkillFields, InputField, InputFieldType } from "@/lib/types";
 
-const FIELD_TYPES: InputFieldType[] = ["text", "textarea", "secret", "url", "number", "file"];
+const FIELD_TYPES: InputFieldType[] = ["text", "textarea", "secret", "url", "number", "file", "video"];
 
 /**
  * The editable-fields form shared by NewSkillForm (reviewing a freshly
