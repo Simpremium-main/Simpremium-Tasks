@@ -44,7 +44,15 @@ export default async function DashboardPage() {
 
   const claudeReady = isClaudeConfigured();
   const coworkReady = isCoworkAgentConfigured();
-  const coworkAgentLastSeen = coworkReady ? await getCoworkAgentLastSeen() : null;
+  // Best-effort: this pill is a nice-to-have, not core to the skills list
+  // rendering below it — e.g. the cowork_agent_status table not existing
+  // yet (migration not run) shouldn't take down the whole dashboard.
+  const coworkAgentLastSeen = coworkReady
+    ? await getCoworkAgentLastSeen().catch((err) => {
+        console.error("getCoworkAgentLastSeen failed:", err);
+        return null;
+      })
+    : null;
   const archivedCount = skills.filter((s) => s.status === "archived").length;
   const boardSkills = skills.map((s) => ({
     id: s.id,
