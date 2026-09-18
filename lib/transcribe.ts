@@ -160,6 +160,11 @@ async function fetchInstagramMedia(postUrl: string): Promise<MediaRef> {
     },
     body: form,
   });
+  if (res.status === 429) {
+    throw new Error(
+      "A API do Instagram (RapidAPI) está com limite de requisições atingido no momento — espere um pouco e tente de novo, ou confira o plano/limite da sua chave no RapidAPI."
+    );
+  }
   if (!res.ok) throw new Error(`Falha ao buscar o vídeo no Instagram (HTTP ${res.status}).`);
   const data = (await res.json()) as RapidApiInstagramResponse;
 
