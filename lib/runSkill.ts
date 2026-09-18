@@ -1,6 +1,6 @@
-import { createExecution, updateExecution, updateSkill } from "./data";
+import { createExecution, setCoworkPayload, updateExecution, updateSkill } from "./data";
 import { buildPromptSnapshot, buildRawPrompt, maskInputValues } from "./mask";
-import { dispatchToCowork } from "./cowork";
+import { isCoworkAgentConfigured } from "./cowork";
 import { dispatchClaudeChunk, dispatchToClaude } from "./claude";
 import type { ClaudeChunkResult } from "./claude";
 import { sumTokenUsage } from "./cost";
@@ -50,8 +50,9 @@ export interface RunStepResult {
  * `done: false` — the run/stream route sends a "continue" event instead of
  * "done", and the run panel calls POST /api/executions/[id]/continue
  * automatically to keep going, as many times as it takes (up to
- * MAX_CHUNKS). Cowork dispatch is a single blocking webhook call with
- * nothing to chunk, so it always finishes in one step.
+ * MAX_CHUNKS). Cowork dispatch doesn't chunk at all — it queues the job
+ * (see queueForCowork below) and returns immediately, "running" until the
+ * Mac mini agent reports a real result back asynchronously.
  */
 export async function runSkillStreaming(
   skill: Skill,
@@ -70,8 +71,14 @@ export async function runSkillStreaming(
 
     if (skill.usesCowork) {
       const { rawPrompt } = buildPrompts(skill, values);
-      const dispatch = await dispatchToCowork(rawPrompt);
-      return { execution: await finishExecution(skill, execution.id, dispatch), done: true };
+      const needsSetup = await queueForCowork(execution.id, rawPrompt);
+      if (needsSetup) {
+        return { execution: await finishExecution(skill, execution.id, needsSetup), done: true };
+      }
+      // Queued, not finished — the row stays "running" for the Mac mini
+      // agent to pick up asynchronously (see lib/cowork.ts). This HTTP
+      // request has nothing left to wait for.
+      return { execution, done: true };
     }
 
     const { rawPrompt } = buildPrompts(skill, values);
@@ -80,13 +87,36 @@ export async function runSkillStreaming(
   });
 }
 
+const COWORK_NEEDS_SETUP_MESSAGE =
+  "Nenhum agente Cowork está configurado ainda — defina COWORK_AGENT_TOKEN nas variáveis de " +
+  "ambiente e rode o agente no seu Mac mini (veja mac-agent/README.md) pra essa skill rodar de " +
+  "verdade, em vez de ficar pendente.";
+
+/**
+ * Queues a Cowork skill's run instead of dispatching it directly (see
+ * lib/cowork.ts for the whole async design): stores the real, unmasked
+ * prompt on the execution row for the Mac mini agent to pick up later, and
+ * leaves the row "running". Returns a DispatchResult only when there's
+ * genuinely nothing to queue into — no agent configured at all — so the
+ * caller can finish the row as "needs_setup" instead of leaving it running
+ * forever with nothing coming to collect it; returns null on the normal
+ * "queued successfully" path.
+ */
+async function queueForCowork(executionId: string, rawPrompt: string): Promise<DispatchResult | null> {
+  if (!isCoworkAgentConfigured()) {
+    return { status: "needs_setup", error: COWORK_NEEDS_SETUP_MESSAGE };
+  }
+  await setCoworkPayload(executionId, rawPrompt);
+  return null;
+}
+
 /**
  * Guarantees a dispatch attempt always ends with the execution row finalized
  * — status "error" if anything throws here — rather than left at "running"
  * forever. dispatchClaudeChunk already catches its own failures (a bad API
  * call, a file-upload error) and returns a normal error result; this is the
  * backstop for whatever gets past that (e.g. the DB write in finishExecution
- * itself failing) or throws from dispatchToCowork. Without it, the caller
+ * itself failing, or setCoworkPayload throwing). Without it, the caller
  * (the stream route) only tells the client something went wrong — it never
  * touches the DB row that startExecution() already wrote as "running".
  */
@@ -127,10 +157,13 @@ export async function runSkill(
   }
 
   const { rawPrompt } = buildPrompts(skill, resolved.values);
-  const dispatch = skill.usesCowork
-    ? await dispatchToCowork(rawPrompt)
-    : await dispatchToClaude(rawPrompt);
 
+  if (skill.usesCowork) {
+    const needsSetup = await queueForCowork(execution.id, rawPrompt);
+    return needsSetup ? finishExecution(skill, execution.id, needsSetup) : execution;
+  }
+
+  const dispatch = await dispatchToClaude(rawPrompt);
   return finishExecution(skill, execution.id, dispatch);
 }
 
@@ -268,7 +301,12 @@ async function startExecution(
   });
 }
 
-async function finishExecution(skill: Skill, executionId: string, dispatch: DispatchResult) {
+/** Exported for POST /api/cowork-agent/report-result — the Mac mini
+ *  agent's reported outcome is finalized through this exact same path
+ *  every other dispatch (Claude-direct, scheduled) uses, so a Cowork
+ *  result gets the same confirmedOnce/draft→active promotion behavior as
+ *  any other successful first run. */
+export async function finishExecution(skill: Skill, executionId: string, dispatch: DispatchResult) {
   const execution = await updateExecution(executionId, {
     status: dispatch.status,
     result: dispatch.result ?? null,

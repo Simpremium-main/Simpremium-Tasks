@@ -77,16 +77,26 @@ const SOURCE_LABELS: Record<string, string> = {
   scheduled: "Agendado",
 };
 
-// Nothing in this app drives a run forward except the browser tab that
-// started it (no server-side/cron continuation) — so a "running" row is
-// only ever still legitimately in flight while that tab stays open. Once a
-// row has sat at "running" for longer than a single chunk could plausibly
-// take (dispatchClaudeChunk is bounded to ~280s), it's almost certainly
-// orphaned: the tab was closed, or the process was hard-killed by the
-// platform before withFailureRecorded's own cleanup could run. This is a
-// soft, time-based warning, not a certainty — flagged instead of asserted,
-// since another open tab or device could still genuinely be driving it.
+// Nothing in this app drives a Claude-direct run forward except the browser
+// tab that started it (no server-side/cron continuation) — so a "running"
+// row is only ever still legitimately in flight while that tab stays open.
+// Once a row has sat at "running" for longer than a single chunk could
+// plausibly take (dispatchClaudeChunk is bounded to ~280s), it's almost
+// certainly orphaned: the tab was closed, or the process was hard-killed by
+// the platform before withFailureRecorded's own cleanup could run. This is
+// a soft, time-based warning, not a certainty — flagged instead of
+// asserted, since another open tab or device could still genuinely be
+// driving it.
 const STUCK_AFTER_MS = 5 * 60 * 1000;
+
+// A queued Cowork job is different: nothing about it depends on a browser
+// tab staying open (the Mac mini agent drives it server-side, polling
+// independently — see lib/cowork.ts), and it can legitimately take several
+// minutes for the agent to pick it up, drive Cowork, and wait for a result
+// file. The agent's own default timeout before it gives up and reports an
+// error is 20 minutes (mac-agent/.env.example's RESULT_TIMEOUT_MS), so
+// flagging "stuck" well before that would just be wrong most of the time.
+const COWORK_STUCK_AFTER_MS = 25 * 60 * 1000;
 
 function useTicker(intervalMs: number): number {
   const [now, setNow] = useState(() => Date.now());
@@ -98,7 +108,9 @@ function useTicker(intervalMs: number): number {
 }
 
 function isLikelyStuck(execution: ExecutionItem, now: number): boolean {
-  return execution.status === "running" && now - new Date(execution.startedAt).getTime() > STUCK_AFTER_MS;
+  if (execution.status !== "running") return false;
+  const threshold = execution.source === "cowork" ? COWORK_STUCK_AFTER_MS : STUCK_AFTER_MS;
+  return now - new Date(execution.startedAt).getTime() > threshold;
 }
 
 // A scheduled run that failed is easy to miss compared to a manual one — you

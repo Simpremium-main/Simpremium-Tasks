@@ -92,10 +92,15 @@ masking. Persistence is real Supabase now (`lib/data.ts` / `lib/supabaseClient.t
 sandbox whose network policy blocks the Supabase host, so the wiring couldn't be exercised
 end-to-end in a browser from here; the exact failure (403 from the sandbox's own proxy, not from
 Supabase) was confirmed directly against the real project. Worth a smoke test after deploy — see
-README's "Connecting Supabase" section. Cowork dispatch is a pluggable adapter
-(`lib/cowork.ts`) currently flagged `needs_setup` since no Cowork dispatch mechanism was
-discoverable in the build environment — wire up `COWORK_DISPATCH_WEBHOOK_URL` once one is
-available. Visual style: a `Pedido-Central-main` screenshot was shared and applied (dark
+README's "Connecting Supabase" section. Cowork dispatch confirmed there's no official
+API/webhook for Cowork at all (open GitHub issue anthropics/claude-code#94918) — at the user's
+direction, built a polling agent (`mac-agent/` at the repo root, not part of the Next.js app)
+that runs on their own Mac mini, drives Cowork through Claude Desktop's UI via AppleScript, and
+reports results back through two new routes (`app/api/cowork-agent/*`), gated on
+`COWORK_AGENT_TOKEN`. The agent's polling/reporting half was tested end-to-end against a mock
+server; the AppleScript UI-automation half (`mac-agent/drive-cowork.applescript`) is an honest
+best guess, unverified against a real Mac — see README's "Claude Cowork integration" section and
+`mac-agent/README.md`. Visual style: a `Pedido-Central-main` screenshot was shared and applied (dark
 collapsible sidebar listing skills grouped by category, sticky page headers, pill badges,
 `lucide-react` icons, animations) — see README's "Visual style" section.
 

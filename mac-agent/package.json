@@ -1,0 +1,13 @@
+{
+  "name": "cowork-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Polls the Skills Hub dashboard for queued Cowork jobs and drives Claude Desktop's Cowork feature locally via AppleScript. Runs on the Mac mini, not as part of the Next.js app. See README.md.",
+  "main": "agent.js",
+  "scripts": {
+    "start": "node agent.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

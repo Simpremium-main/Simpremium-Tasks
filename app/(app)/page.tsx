@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Download, LayoutGrid, Plus, Sparkles } from "lucide-react";
 import { listSkills } from "@/lib/data";
 import { isClaudeConfigured } from "@/lib/claude";
+import { isCoworkAgentConfigured } from "@/lib/cowork";
 import { hasUnschedulableSecret } from "@/lib/schedule";
 import SkillsBoard from "@/components/SkillsBoard";
 import PageHeader from "@/components/PageHeader";
@@ -41,7 +42,7 @@ export default async function DashboardPage() {
   }
 
   const claudeReady = isClaudeConfigured();
-  const coworkReady = Boolean(process.env.COWORK_DISPATCH_WEBHOOK_URL);
+  const coworkReady = isCoworkAgentConfigured();
   const archivedCount = skills.filter((s) => s.status === "archived").length;
   const boardSkills = skills.map((s) => ({
     id: s.id,

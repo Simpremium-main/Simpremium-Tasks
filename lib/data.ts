@@ -533,6 +533,78 @@ export async function createExecution(input: CreateExecutionInput): Promise<Exec
   return mapExecutionRow(data);
 }
 
+/**
+ * Stores the real, unmasked prompt for a queued Cowork job — see
+ * lib/cowork.ts for the whole async-dispatch design. This is the one place
+ * in the app that persists a full unmasked prompt (everywhere else, the
+ * real prompt only ever exists in memory for the one dispatch call), and
+ * only transiently: claimNextCoworkJob clears it the instant the agent
+ * picks the job up. Deliberately not part of UpdateExecutionInput/the
+ * Execution type — mapExecutionRow never reads this column, so it cannot
+ * leak into any UI path or JSON response other than the Cowork agent's own
+ * next-job endpoint.
+ */
+export async function setCoworkPayload(executionId: string, payload: string): Promise<void> {
+  const supabase = getSupabase();
+  const { error, status, statusText } = await supabase
+    .from("executions")
+    .update({ cowork_payload: payload })
+    .eq("id", executionId);
+  if (error) throw describeError("setCoworkPayload", error, status, statusText);
+}
+
+export interface CoworkJob {
+  executionId: string;
+  skillName: string;
+  prompt: string;
+}
+
+/**
+ * Hands the oldest queued Cowork job to whichever agent asks for it via
+ * GET /api/cowork-agent/next-job, and clears its stored payload in the
+ * same call — so the raw prompt never sits in the database longer than it
+ * has to, and (single-agent assumption: one Mac mini polling at a time,
+ * not a real `SELECT ... FOR UPDATE SKIP LOCKED`) a job can't be handed
+ * out twice. Matches on `cowork_payload is not null` rather than
+ * `source = 'cowork'`, since a *scheduled* run of a Cowork skill still has
+ * source "scheduled" (see lib/runSkill.ts's startExecution) — the payload
+ * itself is the only reliable "this is a queued Cowork job" signal.
+ */
+export async function claimNextCoworkJob(): Promise<CoworkJob | null> {
+  const supabase = getSupabase();
+  const {
+    data,
+    error,
+    status,
+    statusText,
+  } = await supabase
+    .from("executions")
+    .select("id, cowork_payload, skills(name)")
+    .eq("status", "running")
+    .not("cowork_payload", "is", null)
+    .order("started_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw describeError("claimNextCoworkJob", error, status, statusText);
+  if (!data) return null;
+
+  const executionId = data.id as string;
+  const prompt = data.cowork_payload as string;
+  const skillRelation = data.skills as { name?: string } | { name?: string }[] | null;
+  const skillName = (Array.isArray(skillRelation) ? skillRelation[0]?.name : skillRelation?.name) ?? "Skill";
+
+  const {
+    error: clearError,
+    status: clearStatus,
+    statusText: clearStatusText,
+  } = await supabase.from("executions").update({ cowork_payload: null }).eq("id", executionId);
+  if (clearError) {
+    throw describeError("claimNextCoworkJob (clear payload)", clearError, clearStatus, clearStatusText);
+  }
+
+  return { executionId, skillName, prompt };
+}
+
 export interface UpdateExecutionInput {
   status?: ExecutionStatus;
   result?: string | null;

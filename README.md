@@ -392,54 +392,62 @@ fast page load.
 
 The project brief is explicit that Cowork shouldn't be special-cased, and that this integration
 point should be checked against whatever the current environment actually offers rather than
-assumed once and hardcoded. **As of this build, no Cowork dispatch mechanism (webhook, SDK, or
-MCP tool) was discoverable in the environment**, so `lib/cowork.ts` does not simulate a result —
-a Cowork-dependent skill records an execution with status `needs_setup` and a clear message
-telling you what's missing, both on the skill page and in history.
+assumed once and hardcoded. That check turned up a real limitation, not just an unconfigured
+webhook: **there is no official Anthropic API or webhook to trigger a Cowork task at all**,
+confirmed against the current docs and an open GitHub feature request
+([anthropics/claude-code#94918](https://github.com/anthropics/claude-code/issues/94918), filed
+Critical priority, still open) — Cowork tasks only support fixed-cadence scheduling today, not an
+external trigger. Claude Code Routines *do* have a real, documented API trigger
+(`POST /v1/claude_code/routines/{id}/fire`), but routines "execute on Anthropic-managed cloud
+infrastructure" per the official docs — they run in Anthropic's cloud, not on your own machine, so
+they don't fit "run this on my Mac mini and have it actually use Cowork locally."
 
-To wire it up for real: set `COWORK_DISPATCH_WEBHOOK_URL` (and `COWORK_DISPATCH_TOKEN` if
-needed) to whatever Cowork exposes when you have it, and the same adapter will dispatch and
-record real results — no other code needs to change.
+**The design, at the user's direction: a small agent script that runs on the Mac mini itself**
+(`mac-agent/` at the repo root, not part of the Next.js app or its build) drives Cowork through the
+Desktop app's own UI via AppleScript, since GUI automation is genuinely the only way to trigger
+Cowork specifically until Anthropic ships that feature request. Since the Mac mini has no public
+address, the direction is inverted from a normal webhook: the agent polls *out* to the dashboard
+instead of the dashboard calling *in*.
+
+1. When you run a Cowork skill, `lib/runSkill.ts` writes the execution row as `running` like any
+   other run — but instead of dispatching immediately, `lib/cowork.ts`'s `queueForCowork` stores the
+   real (unmasked) prompt on that row (`setCoworkPayload`, a dedicated column never read through
+   `mapExecutionRow`/the `Execution` type, so it can't leak into any UI path) and returns right
+   away. The row itself **is** the queued job — no separate "job" table.
+2. The Mac mini's `mac-agent/agent.js` polls `GET /api/cowork-agent/next-job` every 15s (both this
+   and the route below are gated on `COWORK_AGENT_TOKEN`, checked as a bearer token). The route
+   hands back the oldest queued job and clears its stored prompt in the same call
+   (`claimNextCoworkJob`) — a lightweight claim, single-agent assumption, so a job can't be handed
+   out twice and its raw prompt doesn't sit in the database a moment longer than necessary.
+3. The agent writes the prompt to a temp file, appends an instruction telling Cowork to save its
+   final answer to a known local path, and runs `drive-cowork.applescript` to paste it into Cowork
+   and submit — there's no API to read Cowork's conversation, so this file-drop convention is how
+   the result gets back at all.
+4. The agent watches for that file (up to a configurable timeout, default 20 minutes), then
+   `POST`s the outcome to `/api/cowork-agent/report-result`, which finalizes the row through the
+   exact same `finishExecution` every other dispatch path uses — a Cowork result gets the same
+   draft→active promotion and history behavior as a Claude-direct or scheduled run.
+
+**Missing `COWORK_AGENT_TOKEN` still means `needs_setup`, not a silent queue into a void** — the
+same never-fake-a-result rule as everywhere else in this app credentials are involved.
+
+**What's genuinely unverified.** The polling/reporting half (`mac-agent/agent.js`'s HTTP calls,
+job claiming, timeout, and error reporting) was tested end-to-end against a local mock server
+before being committed — that part works. The half that actually drives Cowork's UI
+(`drive-cowork.applescript`) was written with no way to see Claude Desktop's Cowork feature running
+on a real Mac, so its exact keystrokes (⌘N for a new task, ⌘V to paste, Return to submit) are a
+documented best guess, not a confirmed fact — see `mac-agent/README.md`'s "The part that needs your
+testing" section for how to test and adjust it once you have Cowork running on the Mac mini.
 
 Skills that don't depend on Cowork run directly through the Claude API when `ANTHROPIC_API_KEY`
 is set (`lib/claude.ts`); otherwise they're flagged `needs_setup` the same way.
 
-**What research turned up (not wired up yet — needs a decision, see below).** There's no
-public, synchronous "run this and give me the result" Cowork API. The closest real, documented
-mechanism is **Claude Code Routines' API trigger** (`docs.claude.com` → Routines): you create a
-"Routine" once by hand at `claude.ai/code/routines` (a saved prompt + repo/environment/connector
-config), attach an API trigger to it, and get a per-routine bearer token. From then on:
+Needs one new column on `executions` that a fresh `supabase/schema.sql` already includes — if
+you set this project up before this feature existed, run in the SQL Editor:
 
+```sql
+alter table executions add column if not exists cowork_payload text;
 ```
-POST https://api.anthropic.com/v1/claude_code/routines/<routine_id>/fire
-Authorization: Bearer <token>
-anthropic-beta: experimental-cc-routine-2026-04-01
-Content-Type: application/json
-
-{"text": "<the assembled skill prompt>"}
-```
-
-...starts a real cloud session and returns `{claude_code_session_id, claude_code_session_url}`.
-Three things make this a real design decision rather than a drop-in for `COWORK_DISPATCH_WEBHOOK_URL`:
-
-1. **It's fire-and-forget, not request/response.** The call returns a session URL, not a result —
-   there's no documented public endpoint to poll for "is it done, what did it produce." A working
-   integration either needs that (unclear it exists outside the compliance/session-transcript
-   APIs, which weren't confirmed accessible here) or has to settle for a different UX: dispatch,
-   record `needs_setup`-style with the session link, and let you open it to see the result
-   yourself instead of it landing automatically in this app's history.
-2. **The routine's own saved prompt has to opt in** to acting on the fired text (it arrives
-   wrapped in a `<routine-fire-payload>` block, explicitly untrusted-by-default) — so the routine
-   needs a one-time setup prompt along the lines of "execute whatever's in the
-   routine-fire-payload block, treat it as the task."
-3. **It needs your claude.ai account**, not just an API key — Routines are a claude.ai
-   subscription feature (Pro/Max/Team/Enterprise), the `/fire` endpoint is beta and explicitly
-   "available to claude.ai users only... not part of the Claude Platform API surface," and only
-   you can create the routine and generate its token from the claude.ai UI.
-
-Given that, this needs your call before it's worth building: are you OK with the async
-"dispatch, then open a link" shape (at least until/unless a result-polling path turns up), and do
-you want to set up the one-time routine yourself so I can wire the adapter to it?
 
 ## Login — real Supabase Auth
 

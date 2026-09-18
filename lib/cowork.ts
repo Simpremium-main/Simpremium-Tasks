@@ -1,58 +1,32 @@
-import type { DispatchResult } from "./types";
-
 /**
- * Dispatch to Claude Cowork.
+ * Cowork dispatch, and why it's asynchronous.
  *
- * There is no fixed, universal way to hand a task to Cowork — the CLAUDE.md
- * for this project is explicit that this integration point should be
- * checked against whatever the current environment actually offers, rather
- * than assumed once and hardcoded. As of this build no Cowork dispatch
- * mechanism (webhook, SDK, MCP tool) is configured or discoverable, so this
- * adapter deliberately does NOT simulate a result. It reports "needs_setup"
- * so the skill is surfaced in the dashboard as pending manual configuration.
+ * There is no official Anthropic API/webhook to trigger a Cowork task —
+ * checked directly against the current docs and an open GitHub issue
+ * (anthropics/claude-code#94918, "Add API/webhook trigger for Claude
+ * Cowork tasks", filed Critical priority, still open, no maintainer
+ * response) rather than assumed. Claude Code Routines *do* have a real,
+ * documented API trigger (POST /v1/claude_code/routines/{id}/fire), but
+ * routines "execute on Anthropic-managed cloud infrastructure" per
+ * code.claude.com/docs/en/routines — they run in Anthropic's cloud, not on
+ * the user's own machine, so they don't fit "run this on my Mac mini and
+ * have it actually use Cowork locally."
  *
- * To wire it up for real once a dispatch mechanism is available: implement
- * the call below (e.g. POST to COWORK_DISPATCH_WEBHOOK_URL, or an SDK/MCP
- * call) and return the real result/error instead of the needs_setup branch.
+ * So dispatch here is a queue, not a call: a Cowork skill's execution row
+ * is written as "running" by lib/runSkill.ts's startExecution like any
+ * other run, and lib/runSkill.ts's Cowork branch stores the real
+ * (unmasked) prompt on that row via setCoworkPayload — that row IS the
+ * queued job. A small agent script running on the user's own machine (see
+ * mac-agent/ at the repo root) polls GET /api/cowork-agent/next-job,
+ * drives the Cowork desktop app itself (AppleScript/GUI automation — see
+ * mac-agent/README.md for exactly how, and its real caveats), and reports
+ * back through POST /api/cowork-agent/report-result, which finalizes the
+ * execution row through the same finishExecution every other dispatch
+ * path uses. Nothing here fakes a result if that agent never checks in —
+ * a queued job just stays "running" (and ExecutionList's existing "this
+ * has been running a while" badge picks it up), the same honest state as
+ * any other stalled run.
  */
-export async function dispatchToCowork(prompt: string): Promise<DispatchResult> {
-  const webhookUrl = process.env.COWORK_DISPATCH_WEBHOOK_URL;
-
-  if (!webhookUrl) {
-    return {
-      status: "needs_setup",
-      error:
-        "Cowork dispatch isn't configured yet. Set COWORK_DISPATCH_WEBHOOK_URL " +
-        "(and COWORK_DISPATCH_TOKEN if needed) once you know how this environment " +
-        "exposes Cowork, then this skill will run for real instead of sitting pending.",
-    };
-  }
-
-  try {
-    const response = await fetch(webhookUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(process.env.COWORK_DISPATCH_TOKEN
-          ? { Authorization: `Bearer ${process.env.COWORK_DISPATCH_TOKEN}` }
-          : {}),
-      },
-      body: JSON.stringify({ prompt }),
-    });
-
-    if (!response.ok) {
-      return {
-        status: "error",
-        error: `Cowork dispatch failed with HTTP ${response.status}: ${await response.text()}`,
-      };
-    }
-
-    const data = await response.json();
-    return { status: "success", result: typeof data === "string" ? data : JSON.stringify(data) };
-  } catch (err) {
-    return {
-      status: "error",
-      error: err instanceof Error ? err.message : "Unknown error dispatching to Cowork",
-    };
-  }
+export function isCoworkAgentConfigured(): boolean {
+  return Boolean(process.env.COWORK_AGENT_TOKEN);
 }

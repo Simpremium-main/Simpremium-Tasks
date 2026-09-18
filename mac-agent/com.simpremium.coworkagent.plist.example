@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Keeps agent.js running in the background and restarts it automatically
+  if it ever crashes or the Mac mini reboots. Optional — running
+  `node agent.js` in a Terminal tab you leave open works too, this is just
+  more durable for a machine meant to sit and run unattended.
+
+  Setup:
+    1. Copy this file to ~/Library/LaunchAgents/com.simpremium.coworkagent.plist
+    2. Replace NODE_PATH below with the output of `which node`
+    3. Replace AGENT_JS_PATH with the absolute path to this repo's
+       mac-agent/agent.js (e.g. /Users/you/skills-hub/mac-agent/agent.js)
+    4. Load it: launchctl load ~/Library/LaunchAgents/com.simpremium.coworkagent.plist
+    5. Check it's running: launchctl list | grep coworkagent
+    6. Logs land at /tmp/cowork-agent.log and /tmp/cowork-agent.err.log
+
+  To stop it: launchctl unload ~/Library/LaunchAgents/com.simpremium.coworkagent.plist
+
+  Note: a launchd agent runs without a Terminal window, but AppleScript
+  GUI automation still needs Accessibility permission granted to `node`
+  (or to `osascript`, since that's what actually executes the script) —
+  see README.md's "Grant Accessibility permission" step. Without it,
+  every job will fail at the driveCowork step with a permission error.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.simpremium.coworkagent</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>NODE_PATH</string>
+    <string>AGENT_JS_PATH</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/tmp/cowork-agent.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/cowork-agent.err.log</string>
+</dict>
+</plist>

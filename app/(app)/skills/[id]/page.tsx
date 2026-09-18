@@ -11,6 +11,7 @@ import ArchiveSkillButton from "@/components/ArchiveSkillButton";
 import ScheduleButton from "@/components/ScheduleButton";
 import ShareSkillButton from "@/components/ShareSkillButton";
 import { isClaudeConfigured } from "@/lib/claude";
+import { isCoworkAgentConfigured } from "@/lib/cowork";
 import { hasUnschedulableSecret } from "@/lib/schedule";
 
 export const dynamic = "force-dynamic";
@@ -20,9 +21,7 @@ export default async function SkillDetailPage({ params }: { params: { id: string
 
   if (!skill) notFound();
 
-  const dispatchReady = skill.usesCowork
-    ? Boolean(process.env.COWORK_DISPATCH_WEBHOOK_URL)
-    : isClaudeConfigured();
+  const dispatchReady = skill.usesCowork ? isCoworkAgentConfigured() : isClaudeConfigured();
 
   const executions = skill.executions.map((e) => ({
     ...e,
@@ -108,9 +107,9 @@ export default async function SkillDetailPage({ params }: { params: { id: string
             <AlertTriangle size={16} className="shrink-0 mt-0.5" />
             <p>
               {skill.usesCowork
-                ? "Essa skill precisa de configuração manual: nenhum dispatch pro Cowork está " +
-                  "configurado ainda (COWORK_DISPATCH_WEBHOOK_URL). Se você rodar, ela vai " +
-                  "registrar a tentativa marcada como \"needs setup\"."
+                ? "Essa skill precisa de configuração manual: nenhum agente Cowork está " +
+                  "configurado ainda (COWORK_AGENT_TOKEN — veja mac-agent/README.md). Se você " +
+                  "rodar, ela vai registrar a tentativa marcada como \"needs setup\"."
                 : "Essa skill precisa de configuração manual: ANTHROPIC_API_KEY não está " +
                   "configurada ainda. Se você rodar, ela vai registrar a tentativa marcada " +
                   "como \"needs setup\"."}

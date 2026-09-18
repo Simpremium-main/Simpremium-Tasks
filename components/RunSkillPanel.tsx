@@ -197,7 +197,15 @@ export default function RunSkillPanel({
 
       setExecutions((prev) => [execution, ...prev]);
       setShowConfirm(false);
-      setRetryNote(null);
+      // A Cowork run comes back "running" here, not finished — the request
+      // only queued it (setting up the job for the Mac mini agent to pick
+      // up), it never waits for a real Cowork result. Say so instead of
+      // letting the closed modal imply the run already finished.
+      setRetryNote(
+        skill.usesCowork && execution.status === "running"
+          ? "Despachado pro agente do Mac mini — acompanhe o andamento no histórico abaixo (pode levar alguns minutos, dependendo da tarefa)."
+          : null
+      );
       setHighlightId(execution.id);
       setTimeout(() => setHighlightId(null), 1800);
       router.refresh();
