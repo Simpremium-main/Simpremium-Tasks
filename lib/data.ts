@@ -622,6 +622,13 @@ export async function claimNextCoworkJob(): Promise<CoworkJob | null> {
     );
   }
 
+  // Deliberately NOT embedding skills(name) here via a join (e.g.
+  // .select("id, skill_id, cowork_payload, skills(name)")) — confirmed by
+  // the diagnostic query above that a row matching these exact filters can
+  // exist while the embedded-join version of this same query still comes
+  // back empty (no error, just zero rows), which silently ate every queued
+  // Cowork job. Two plain queries instead: fetch the execution, then the
+  // skill name separately.
   const {
     data,
     error,
@@ -629,7 +636,7 @@ export async function claimNextCoworkJob(): Promise<CoworkJob | null> {
     statusText,
   } = await supabase
     .from("executions")
-    .select("id, cowork_payload, skills(name)")
+    .select("id, skill_id, cowork_payload")
     .eq("status", "running")
     .not("cowork_payload", "is", null)
     .order("started_at", { ascending: true })
@@ -644,8 +651,16 @@ export async function claimNextCoworkJob(): Promise<CoworkJob | null> {
 
   const executionId = data.id as string;
   const prompt = data.cowork_payload as string;
-  const skillRelation = data.skills as { name?: string } | { name?: string }[] | null;
-  const skillName = (Array.isArray(skillRelation) ? skillRelation[0]?.name : skillRelation?.name) ?? "Skill";
+
+  const { data: skillRow, error: skillError } = await supabase
+    .from("skills")
+    .select("name")
+    .eq("id", data.skill_id)
+    .maybeSingle();
+  if (skillError) {
+    console.log(`[cowork-agent-server] falha ao buscar o nome da skill ${data.skill_id}:`, skillError.message);
+  }
+  const skillName = skillRow?.name ?? "Skill";
 
   const {
     error: clearError,
