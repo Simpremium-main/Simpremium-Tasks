@@ -8,6 +8,12 @@ export interface TranscribeResult {
 
 type Platform = "youtube" | "instagram" | "x" | "unknown";
 
+interface MediaRef {
+  url: string;
+  filename: string;
+  contentType: string;
+}
+
 // Bounds the whole download+transcribe attempt so a slow/hanging network
 // call can't quietly eat the run's overall time budget (see lib/claude.ts's
 // own CHUNK_TIMEOUT_MS/FILE_COLLECTION_TIMEOUT_MS for the same reasoning —
@@ -87,7 +93,7 @@ async function fetchYouTubeTranscript(url: string): Promise<TranscribeResult> {
  * working without notice if X changes it. Picks the highest-bitrate mp4
  * variant available.
  */
-async function fetchXVideoUrl(tweetUrl: string): Promise<string> {
+async function fetchXMedia(tweetUrl: string): Promise<MediaRef> {
   const match = tweetUrl.match(/status\/(\d+)/);
   if (!match) throw new Error("Não consegui identificar o ID do post nesse link do X.");
   const tweetId = match[1];
@@ -102,52 +108,90 @@ async function fetchXVideoUrl(tweetUrl: string): Promise<string> {
   if (mp4Variants.length === 0) throw new Error("Esse post do X não parece ter um vídeo.");
 
   const best = mp4Variants.reduce((a, b) => ((b.bitrate ?? 0) > (a.bitrate ?? 0) ? b : a));
-  return best.url;
+  return { url: best.url, filename: "video.mp4", contentType: "video/mp4" };
 }
+
+interface RapidApiFormat {
+  url: string;
+  quality?: string;
+  acodec?: string;
+  vcodec?: string;
+  ext?: string;
+}
+
+interface RapidApiInstagramResponse {
+  message?: string;
+  formats?: RapidApiFormat[];
+}
+
+const RAPIDAPI_HOST = "instagram-downloader51.p.rapidapi.com";
+
+const EXT_TO_CONTENT_TYPE: Record<string, string> = {
+  mp4: "video/mp4",
+  m4a: "audio/mp4",
+  mp3: "audio/mpeg",
+  webm: "video/webm",
+};
 
 /**
- * A public post's direct video URL, scraped off Instagram's own embed page
- * (`/embed/captioned/`) — that page is meant to be viewable without login
- * (it's what an embedded post on another site renders), so it reliably
- * carries an `og:video` meta tag pointing at the real mp4, the same thing
- * link-preview crawlers read. Falls back to scanning the page's own
- * embedded JSON for a `video_url` field if the meta tag isn't there. Like
- * the X syndication endpoint, this is unofficial and undocumented — no
- * stability guarantee, just the most direct approach found that doesn't
- * need a login session.
+ * A public post's direct media URL via the "Instagram Downloader" RapidAPI
+ * (instagram-downloader51, by PrineshPatel/Evoort Solutions) — verified
+ * against a real response during development rather than guessed. Prefers
+ * the smallest usable option (the `audio_only` format when present, since
+ * Whisper only needs the audio track) and falls back to any video format,
+ * then to the first format returned. Needs `RAPIDAPI_KEY`; like the X
+ * syndication endpoint this is a third-party integration with no long-term
+ * stability guarantee — scoped as "functional, not guaranteed reliable".
  */
-async function fetchInstagramVideoUrl(postUrl: string): Promise<string> {
-  const match = postUrl.match(/instagram\.com\/(?:p|reel|reels|tv)\/([^/?#]+)/);
-  if (!match) throw new Error("Não consegui identificar o post nesse link do Instagram.");
-  const shortcode = match[1];
+async function fetchInstagramMedia(postUrl: string): Promise<MediaRef> {
+  const apiKey = process.env.RAPIDAPI_KEY;
+  if (!apiKey) {
+    throw new Error("RAPIDAPI_KEY_MISSING");
+  }
 
-  const res = await fetch(`https://www.instagram.com/p/${shortcode}/embed/captioned/`, {
-    headers: { "User-Agent": "Mozilla/5.0 (compatible; SkillsHubBot/1.0)" },
+  const form = new FormData();
+  form.append("url", postUrl);
+
+  const res = await fetch(`https://${RAPIDAPI_HOST}/download.php`, {
+    method: "POST",
+    headers: {
+      "X-RapidAPI-Key": apiKey,
+      "X-RapidAPI-Host": RAPIDAPI_HOST,
+    },
+    body: form,
   });
-  if (!res.ok) throw new Error(`Falha ao abrir o post no Instagram (HTTP ${res.status}).`);
-  const html = await res.text();
+  if (!res.ok) throw new Error(`Falha ao buscar o vídeo no Instagram (HTTP ${res.status}).`);
+  const data = (await res.json()) as RapidApiInstagramResponse;
 
-  const ogMatch = html.match(/<meta property="og:video" content="([^"]+)"/);
-  if (ogMatch) return ogMatch[1].replace(/&amp;/g, "&");
+  if (data.message !== "success" || !data.formats?.length) {
+    throw new Error(
+      "Não achei um vídeo nesse post do Instagram — pode ser um carrossel de fotos, ou o post exigir login pra ver."
+    );
+  }
 
-  const jsonMatch = html.match(/"video_url":"([^"]+)"/);
-  if (jsonMatch) return jsonMatch[1].replace(/\\u0026/g, "&").replace(/\\\//g, "/");
+  const audioOnly = data.formats.find((f) => f.quality === "audio_only" && f.url);
+  const anyVideo = data.formats.find((f) => f.vcodec && f.vcodec !== "none" && f.url);
+  const chosen = audioOnly ?? anyVideo ?? data.formats[0];
+  if (!chosen?.url) throw new Error("O Instagram não retornou um link de mídia utilizável pra esse post.");
 
-  throw new Error(
-    "Não achei um vídeo nesse post do Instagram — pode ser um carrossel de fotos, ou o post exigir login pra ver."
-  );
+  const ext = chosen.ext || "mp4";
+  return {
+    url: chosen.url,
+    filename: `video.${ext}`,
+    contentType: EXT_TO_CONTENT_TYPE[ext] ?? "video/mp4",
+  };
 }
 
-/** Downloads the media at `mediaUrl` and sends it straight to Whisper —
+/** Downloads the media at `media.url` and sends it straight to Whisper —
  *  no local audio extraction (no ffmpeg available here): Whisper accepts
- *  video containers like mp4 directly and pulls the audio track itself. */
-async function transcribeMediaUrlWithWhisper(mediaUrl: string): Promise<string> {
+ *  containers like mp4/m4a directly and pulls the audio track itself. */
+async function transcribeMediaWithWhisper(media: MediaRef): Promise<string> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY_MISSING");
   }
 
-  const mediaRes = await fetch(mediaUrl);
+  const mediaRes = await fetch(media.url);
   if (!mediaRes.ok) throw new Error(`Falha ao baixar o vídeo (HTTP ${mediaRes.status}).`);
   const bytes = await mediaRes.arrayBuffer();
   if (bytes.byteLength > WHISPER_MAX_BYTES) {
@@ -157,7 +201,7 @@ async function transcribeMediaUrlWithWhisper(mediaUrl: string): Promise<string> 
   }
 
   const form = new FormData();
-  form.append("file", new Blob([bytes], { type: "video/mp4" }), "video.mp4");
+  form.append("file", new Blob([bytes], { type: media.contentType }), media.filename);
   form.append("model", "whisper-1");
 
   const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
@@ -194,23 +238,25 @@ export async function transcribeVideoUrl(url: string): Promise<TranscribeResult>
   }
 }
 
-/** Shared by X and Instagram: find the video's direct URL, download it,
+const MISSING_KEY_MESSAGES: Record<string, (platformLabel: string) => string> = {
+  OPENAI_API_KEY_MISSING: (platformLabel) =>
+    `OPENAI_API_KEY não está configurada — necessária pra transcrever vídeos do ${platformLabel}.`,
+  RAPIDAPI_KEY_MISSING: () =>
+    "RAPIDAPI_KEY não está configurada — necessária pra buscar vídeos do Instagram (via RapidAPI).",
+};
+
+/** Shared by X and Instagram: find the media's direct URL, download it,
  *  send it to Whisper — the only difference between the two platforms is
- *  how the video URL itself gets found. */
-async function downloadAndTranscribe(
-  findVideoUrl: () => Promise<string>,
-  platformLabel: string
-): Promise<TranscribeResult> {
+ *  how the media URL itself gets found. */
+async function downloadAndTranscribe(findMedia: () => Promise<MediaRef>, platformLabel: string): Promise<TranscribeResult> {
   try {
-    const videoUrl = await findVideoUrl();
-    const transcript = await transcribeMediaUrlWithWhisper(videoUrl);
+    const media = await findMedia();
+    const transcript = await transcribeMediaWithWhisper(media);
     return { status: "success", transcript };
   } catch (err) {
-    if (err instanceof Error && err.message === "OPENAI_API_KEY_MISSING") {
-      return {
-        status: "needs_setup",
-        error: `OPENAI_API_KEY não está configurada — necessária pra transcrever vídeos do ${platformLabel}.`,
-      };
+    const key = err instanceof Error ? err.message : "";
+    if (key in MISSING_KEY_MESSAGES) {
+      return { status: "needs_setup", error: MISSING_KEY_MESSAGES[key](platformLabel) };
     }
     return {
       status: "error",
@@ -225,11 +271,11 @@ async function transcribeByPlatform(platform: Platform, url: string): Promise<Tr
   }
 
   if (platform === "instagram") {
-    return downloadAndTranscribe(() => fetchInstagramVideoUrl(url), "Instagram");
+    return downloadAndTranscribe(() => fetchInstagramMedia(url), "Instagram");
   }
 
   if (platform === "x") {
-    return downloadAndTranscribe(() => fetchXVideoUrl(url), "X");
+    return downloadAndTranscribe(() => fetchXMedia(url), "X");
   }
 
   return {
