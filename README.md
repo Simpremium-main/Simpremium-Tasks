@@ -138,6 +138,17 @@ didn't. A bare **Instagram** link goes through the same routing but currently al
 with the same clear "not supported automatically" message — see "Transcribing a video link" for
 why.
 
+**"DM me for the prompt."** A video/post transcript is often fully readable but still doesn't
+contain the actual prompt — a creator demoing a result and telling viewers to message them for
+it. That's a different situation from an inaccessible link (there's real content to work from,
+just not the literal instruction), so the parser doesn't fall back to the placeholder for it: the
+`web_search` tool (`web_search_20260209`, alongside the existing `web_fetch`) is available during
+extraction, and the system prompt tells Claude to research the technique/workflow being
+demonstrated and *draft* a `promptTemplate` that would plausibly produce a similar result, instead
+of stopping at "the prompt wasn't given." The draft's `description` says explicitly (in Portuguese)
+that this is a reconstruction from a description, not the creator's original — worth testing
+before trusting, but a real usable first draft rather than an empty one.
+
 **Pasting content that itself reads like an instruction** (e.g. a post whose text is "write a
 character sheet for X") surfaced the same failure a different way: Claude treated the pasted text
 as something to *carry out* rather than a skill to describe, and replied with the result of doing
