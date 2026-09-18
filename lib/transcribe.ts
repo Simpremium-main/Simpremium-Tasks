@@ -111,80 +111,110 @@ async function fetchXMedia(tweetUrl: string): Promise<MediaRef> {
   return { url: best.url, filename: "video.mp4", contentType: "video/mp4" };
 }
 
-interface RapidApiFormat {
-  url: string;
-  quality?: string;
-  acodec?: string;
-  vcodec?: string;
-  ext?: string;
+function getInstagramShortcode(postUrl: string): string {
+  const match = postUrl.match(/instagram\.com\/(?:p|reel|reels|tv)\/([^/?#]+)/);
+  if (!match) throw new Error("Não consegui identificar o post nesse link do Instagram.");
+  return match[1];
 }
 
-interface RapidApiInstagramResponse {
-  message?: string;
-  formats?: RapidApiFormat[];
-}
-
-const RAPIDAPI_HOST = "instagram-downloader51.p.rapidapi.com";
-
-const EXT_TO_CONTENT_TYPE: Record<string, string> = {
-  mp4: "video/mp4",
-  m4a: "audio/mp4",
-  mp3: "audio/mpeg",
-  webm: "video/webm",
+const IG_PAGE_HEADERS = {
+  accept: "*/*",
+  referer: "https://www.instagram.com/",
+  DNT: "1",
+  "Sec-Fetch-Dest": "document",
+  "Sec-Fetch-Mode": "navigate",
+  "Sec-Fetch-Site": "same-origin",
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/117.0",
 };
 
-/**
- * A public post's direct media URL via the "Instagram Downloader" RapidAPI
- * (instagram-downloader51, by PrineshPatel/Evoort Solutions) — verified
- * against a real response during development rather than guessed. Prefers
- * the smallest usable option (the `audio_only` format when present, since
- * Whisper only needs the audio track) and falls back to any video format,
- * then to the first format returned. Needs `RAPIDAPI_KEY`; like the X
- * syndication endpoint this is a third-party integration with no long-term
- * stability guarantee — scoped as "functional, not guaranteed reliable".
- */
-async function fetchInstagramMedia(postUrl: string): Promise<MediaRef> {
-  const apiKey = process.env.RAPIDAPI_KEY;
-  if (!apiKey) {
-    throw new Error("RAPIDAPI_KEY_MISSING");
-  }
+/** Reads the post's own page and pulls the `og:video` meta tag — the most
+ *  direct source, but Instagram often serves a login wall instead for this
+ *  URL shape, so this frequently comes back empty and the caller falls
+ *  back to the GraphQL approach below. */
+async function fetchInstagramVideoFromPage(shortcode: string): Promise<string | null> {
+  const res = await fetch(`https://www.instagram.com/p/${shortcode}/`, { headers: IG_PAGE_HEADERS });
+  if (!res.ok) return null;
+  const html = await res.text();
+  const match = html.match(/<meta property="og:video" content="([^"]+)"/);
+  if (!match) return null;
+  return match[1].replace(/&amp;/g, "&");
+}
 
-  const form = new FormData();
-  form.append("url", postUrl);
+// The fixed public app id / query doc id Instagram's own web client uses
+// for its "load post" GraphQL query — works for a public post with no
+// login/session, the same technique github.com/erickythierry/insta-download-api
+// (itself based on github.com/riad-azz/instagram-video-downloader) uses.
+// Entirely unofficial: Instagram can invalidate this doc id or start
+// requiring a real session without notice, same "functional, not
+// guaranteed reliable" caveat as the X syndication endpoint.
+const IG_GRAPHQL_APP_ID = "1217981644879628";
+const IG_GRAPHQL_DOC_ID = "10015901848480474";
 
-  const res = await fetch(`https://${RAPIDAPI_HOST}/download.php`, {
+async function fetchInstagramVideoFromGraphQL(shortcode: string): Promise<string | null> {
+  const body = new URLSearchParams({
+    variables: JSON.stringify({
+      shortcode,
+      fetch_comment_count: "null",
+      fetch_related_profile_media_count: "null",
+      parent_comment_count: "null",
+      child_comment_count: "null",
+      fetch_like_count: "null",
+      fetch_tagged_user_count: "null",
+      fetch_preview_comment_count: "null",
+      has_threaded_comments: "false",
+      hoisted_comment_id: "null",
+      hoisted_reply_id: "null",
+    }),
+    doc_id: IG_GRAPHQL_DOC_ID,
+  });
+
+  const res = await fetch("https://www.instagram.com/api/graphql", {
     method: "POST",
     headers: {
-      "X-RapidAPI-Key": apiKey,
-      "X-RapidAPI-Host": RAPIDAPI_HOST,
+      Accept: "*/*",
+      "Content-Type": "application/x-www-form-urlencoded",
+      "X-FB-Friendly-Name": "PolarisPostActionLoadPostQueryQuery",
+      "X-IG-App-ID": IG_GRAPHQL_APP_ID,
+      "X-ASBD-ID": "129477",
+      "Sec-Fetch-Dest": "empty",
+      "Sec-Fetch-Mode": "cors",
+      "Sec-Fetch-Site": "same-origin",
+      "User-Agent":
+        "Mozilla/5.0 (Linux; Android 11; SAMSUNG SM-G973U) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/14.2 Chrome/87.0.4280.141 Mobile Safari/537.36",
     },
-    body: form,
+    body: body.toString(),
   });
-  if (res.status === 429) {
+  if (!res.ok) return null;
+
+  const data = await res.json();
+  const media = data?.data?.xdt_shortcode_media;
+  if (!media?.is_video || !media?.video_url) return null;
+  return media.video_url as string;
+}
+
+/**
+ * A public post's direct video URL — no API key, adapted from
+ * github.com/erickythierry/insta-download-api: tries the post's own page
+ * for its `og:video` meta tag first, then falls back to the same
+ * undocumented GraphQL endpoint Instagram's own web client uses. Either
+ * step can fail without warning if Instagram changes something (login
+ * wall, rotated doc id) — scoped as "functional, not guaranteed reliable"
+ * like the rest of this file's platform-specific fetchers, not a
+ * long-term-stable integration.
+ */
+async function fetchInstagramMedia(postUrl: string): Promise<MediaRef> {
+  const shortcode = getInstagramShortcode(postUrl);
+
+  const pageUrl = await fetchInstagramVideoFromPage(shortcode);
+  const videoUrl = pageUrl ?? (await fetchInstagramVideoFromGraphQL(shortcode));
+
+  if (!videoUrl) {
     throw new Error(
-      "A API do Instagram (RapidAPI) recusou por limite de uso — pode ser o limite mensal de requisições do plano atual da chave (não necessariamente algo que se resolve esperando). Confira o plano/quota em rapidapi.com."
+      "Não achei um vídeo público nesse post do Instagram — pode ser um carrossel de fotos, o post exigir login pra ver, ou o Instagram estar bloqueando o acesso automatizado no momento."
     );
   }
-  if (!res.ok) throw new Error(`Falha ao buscar o vídeo no Instagram (HTTP ${res.status}).`);
-  const data = (await res.json()) as RapidApiInstagramResponse;
 
-  if (data.message !== "success" || !data.formats?.length) {
-    throw new Error(
-      "Não achei um vídeo nesse post do Instagram — pode ser um carrossel de fotos, ou o post exigir login pra ver."
-    );
-  }
-
-  const audioOnly = data.formats.find((f) => f.quality === "audio_only" && f.url);
-  const anyVideo = data.formats.find((f) => f.vcodec && f.vcodec !== "none" && f.url);
-  const chosen = audioOnly ?? anyVideo ?? data.formats[0];
-  if (!chosen?.url) throw new Error("O Instagram não retornou um link de mídia utilizável pra esse post.");
-
-  const ext = chosen.ext || "mp4";
-  return {
-    url: chosen.url,
-    filename: `video.${ext}`,
-    contentType: EXT_TO_CONTENT_TYPE[ext] ?? "video/mp4",
-  };
+  return { url: videoUrl, filename: "video.mp4", contentType: "video/mp4" };
 }
 
 /** Downloads the media at `media.url` and sends it straight to Whisper —
@@ -246,8 +276,6 @@ export async function transcribeVideoUrl(url: string): Promise<TranscribeResult>
 const MISSING_KEY_MESSAGES: Record<string, (platformLabel: string) => string> = {
   OPENAI_API_KEY_MISSING: (platformLabel) =>
     `OPENAI_API_KEY não está configurada — necessária pra transcrever vídeos do ${platformLabel}.`,
-  RAPIDAPI_KEY_MISSING: () =>
-    "RAPIDAPI_KEY não está configurada — necessária pra buscar vídeos do Instagram (via RapidAPI).",
 };
 
 /** Shared by X and Instagram: find the media's direct URL, download it,

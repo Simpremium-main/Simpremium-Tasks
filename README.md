@@ -131,8 +131,8 @@ transcription pipeline "video" input fields use at run time (`lib/transcribe.ts`
 `transcribeVideoUrl` — see "Transcribing a video link" below for how each platform is handled).
 When it gets a real transcript, that becomes the "post content" handed to extraction, so a video
 post (someone demoing a skill on camera) drafts an actual skill instead of the placeholder. When
-transcription itself can't run — no `OPENAI_API_KEY`/`RAPIDAPI_KEY` configured yet — or genuinely
-fails (no video found, no audio, etc.), the draft says so explicitly in `description`/`reviewNote`
+transcription itself can't run — no `OPENAI_API_KEY` configured yet — or genuinely fails (no video
+found, no audio, etc.), the draft says so explicitly in `description`/`reviewNote`
 (distinguishing "pending setup" from "transcription failed") instead of guessing or pretending it
 read something it didn't — same "never invent, surface as pending" rule as everywhere else
 credentials are involved.
@@ -845,21 +845,27 @@ Per-platform, since there's no single mechanism that covers all three:
 - **YouTube** — free, no external service: fetches the video's own caption track (`youtube-transcript`
   npm package, an unofficial-but-widely-used wrapper around YouTube's public timedtext endpoint).
   Only works when the video actually has captions (most do, not all).
-- **X/Twitter** and **Instagram** — both find the post's direct media URL, download it, then send
-  it to OpenAI's Whisper (`OPENAI_API_KEY`, `$0.006`/min, 25MB file cap). Missing either key
-  surfaces as `needs_setup`, same pattern as a missing `ANTHROPIC_API_KEY` or Cowork webhook —
-  never a faked transcript. Finding the media URL is platform-specific:
+- **X/Twitter** and **Instagram** — both find the post's direct video URL (no key needed for
+  that step), download it, then send it to OpenAI's Whisper (`OPENAI_API_KEY`, `$0.006`/min, 25MB
+  file cap). Missing that key surfaces as `needs_setup`, same pattern as a missing
+  `ANTHROPIC_API_KEY` or Cowork webhook — never a faked transcript. Finding the video URL is
+  platform-specific and, for both, unofficial/undocumented — explicitly "functional, not
+  guaranteed reliable" per how this was scoped, not a long-term-stable integration:
   - **X** uses its own syndication endpoint (the same one its embed widgets use, no login
-    needed) — unofficial and undocumented, could stop working without notice.
-  - **Instagram** goes through the "Instagram Downloader" RapidAPI
-    (`instagram-downloader51.p.rapidapi.com`, `RAPIDAPI_KEY`) — a first attempt scraped
-    Instagram's own `/embed/captioned/` page directly, but Instagram blocks that in practice
-    (automated access / login wall), so this switched to a third-party API instead. Prefers the
-    response's `audio_only` format when present (smaller, still enough for Whisper), falling back
-    to any video format. Like X, this is a third-party dependency scoped as "functional, not
-    guaranteed reliable" rather than a long-term-stable integration — if RapidAPI changes its
-    response shape or the specific API gets pulled, this surfaces as a normal recorded `error` on
-    the execution, same as any other run failure, not a silent gap.
+    needed).
+  - **Instagram** tries the post's own page for its `og:video` meta tag first (often blocked by
+    a login wall), then falls back to the same undocumented GraphQL endpoint
+    (`instagram.com/api/graphql`, with the fixed public app id/doc id Instagram's own web client
+    uses) Instagram's web client itself relies on for a public post with no login. Adapted from
+    [erickythierry/insta-download-api](https://github.com/erickythierry/insta-download-api) (itself
+    based on [riad-azz/instagram-video-downloader](https://github.com/riad-azz/instagram-video-downloader))
+    at the user's direction, after a RapidAPI-based attempt turned out to have an unusably low
+    free-tier cap (3 requests/month). No API key needed for this step — only `OPENAI_API_KEY` for
+    the Whisper call after the video's found.
+
+  Either can stop working without notice if the platform changes something (a rotated GraphQL doc
+  id, a new login wall); when that happens, it surfaces as a normal recorded `error` on the
+  execution, same as any other run failure — not a silent gap.
 
 The whole attempt is capped at 60s (`TRANSCRIBE_TIMEOUT_MS`) so a slow download can't quietly eat
 into the run's own time budget — see "Long-running skills" above for why that budget already has
@@ -867,16 +873,13 @@ little room to spare.
 
 **Couldn't be verified from this sandbox**: the same network policy that blocks the Supabase host
 here (see "Connecting Supabase") also blocks `youtube.com`, `api.openai.com`,
-`cdn.syndication.twimg.com`, and `rapidapi.com`/`instagram-downloader51.p.rapidapi.com` outright
-(confirmed via the proxy's own status endpoint, not assumed). The `youtube-transcript` package's
-API was checked directly against its shipped type declarations to make sure the integration
-matches its real signature. The Instagram/RapidAPI integration is on firmer footing than the
-others even without a live test here: its request shape and response parsing (`message`,
-`formats[].quality`/`vcodec`/`ext`) were built against a real, successful response from that exact
-endpoint, run and pasted back manually rather than guessed from docs alone. Everything type-checks
-and builds clean, but none of the live network calls have been exercised end-to-end from here —
-worth a real test with a real link (and real `OPENAI_API_KEY`/`RAPIDAPI_KEY` values) after
-deploying.
+`cdn.syndication.twimg.com`, and `instagram.com` outright (confirmed via the proxy's own status
+endpoint, not assumed). The `youtube-transcript` package's API was checked directly against its
+shipped type declarations to make sure the integration matches its real signature, and the
+Instagram GraphQL request shape was copied verbatim from the referenced GitHub repo's source
+(fetched and read directly, not guessed) rather than reconstructed from memory. Everything
+type-checks and builds clean, but none of the live network calls have been exercised end-to-end
+from here — worth a real test with a real link (and a real `OPENAI_API_KEY`) after deploying.
 
 ### Chaining a result into another skill
 

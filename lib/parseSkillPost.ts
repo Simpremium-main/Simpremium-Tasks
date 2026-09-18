@@ -174,7 +174,7 @@ function videoLinkFailureDraft(url: string, result: TranscribeResult): SkillDraf
     tags: [],
     needsReview: true,
     reviewNote: pendingSetup
-      ? "Pendente de configuração — adicione as chaves necessárias (OPENAI_API_KEY e, pra Instagram, RAPIDAPI_KEY também) nas variáveis de ambiente pra habilitar a transcrição automática de vídeos, depois cole o link de novo."
+      ? "Pendente de configuração — adicione OPENAI_API_KEY nas variáveis de ambiente pra habilitar a transcrição automática de vídeos, depois cole o link de novo."
       : "A transcrição automática desse vídeo falhou — revise manualmente, ou cole o texto do post/transcrição em vez do link.",
   };
 }
