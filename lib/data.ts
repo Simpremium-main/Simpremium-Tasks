@@ -556,11 +556,20 @@ export async function createExecution(input: CreateExecutionInput): Promise<Exec
  */
 export async function setCoworkPayload(executionId: string, payload: string): Promise<void> {
   const supabase = getSupabase();
-  const { error, status, statusText } = await supabase
+  console.log(`[cowork-agent-server] setCoworkPayload: writing payload (${payload.length} chars) to execution ${executionId}`);
+  const { data, error, status, statusText } = await supabase
     .from("executions")
     .update({ cowork_payload: payload })
-    .eq("id", executionId);
+    .eq("id", executionId)
+    .select("id, status, cowork_payload");
   if (error) throw describeError("setCoworkPayload", error, status, statusText);
+  const updatedRow = data?.[0];
+  console.log(
+    `[cowork-agent-server] setCoworkPayload: update affected ${data?.length ?? 0} row(s)` +
+      (updatedRow
+        ? `; row ${updatedRow.id} now has status="${updatedRow.status}", hasPayload=${updatedRow.cowork_payload !== null}`
+        : " — no row matched this executionId, which means the job was never actually queued")
+  );
 }
 
 export interface CoworkJob {
@@ -582,6 +591,37 @@ export interface CoworkJob {
  */
 export async function claimNextCoworkJob(): Promise<CoworkJob | null> {
   const supabase = getSupabase();
+  console.log("[cowork-agent-server] claimNextCoworkJob: starting search for a queued job");
+
+  // Diagnostic: "no job found" looks identical from the agent's side
+  // whether there's genuinely nothing queued, or there's a running Cowork
+  // execution whose cowork_payload somehow never got set (or got cleared
+  // early) — this is what actually tells those two apart, by reading the
+  // Vercel function logs for this route.
+  const { data: runningRows, error: runningError } = await supabase
+    .from("executions")
+    .select("id, source, cowork_payload, started_at")
+    .eq("status", "running");
+  if (runningError) {
+    console.log("[cowork-agent-server] busca de execuções 'running' falhou:", runningError.message);
+  } else if (!runningRows || runningRows.length === 0) {
+    console.log("[cowork-agent-server] busca feita, mas 0 execuções com status \"running\" encontradas");
+  } else {
+    const withPayload = runningRows.filter((r) => r.cowork_payload !== null && r.cowork_payload !== undefined);
+    console.log(
+      `[cowork-agent-server] busca feita: ${runningRows.length} execução(ões) "running", ${withPayload.length} com cowork_payload preenchido`
+    );
+    console.log(
+      "[cowork-agent-server] detalhe das execuções 'running':",
+      runningRows.map((r) => ({
+        id: r.id,
+        source: r.source,
+        startedAt: r.started_at,
+        hasPayload: r.cowork_payload !== null && r.cowork_payload !== undefined,
+      }))
+    );
+  }
+
   const {
     data,
     error,
@@ -596,7 +636,11 @@ export async function claimNextCoworkJob(): Promise<CoworkJob | null> {
     .limit(1)
     .maybeSingle();
   if (error) throw describeError("claimNextCoworkJob", error, status, statusText);
-  if (!data) return null;
+  if (!data) {
+    console.log("[cowork-agent-server] resultado: nenhum job do Cowork pra entregar ao agente agora");
+    return null;
+  }
+  console.log(`[cowork-agent-server] resultado: entregando execução ${data.id} ao agente`);
 
   const executionId = data.id as string;
   const prompt = data.cowork_payload as string;
@@ -611,6 +655,7 @@ export async function claimNextCoworkJob(): Promise<CoworkJob | null> {
   if (clearError) {
     throw describeError("claimNextCoworkJob (clear payload)", clearError, clearStatus, clearStatusText);
   }
+  console.log(`[cowork-agent-server] payload da execução ${executionId} limpo após entrega ao agente`);
 
   return { executionId, skillName, prompt };
 }

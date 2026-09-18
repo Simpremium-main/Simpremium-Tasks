@@ -28,5 +28,7 @@
  * any other stalled run.
  */
 export function isCoworkAgentConfigured(): boolean {
-  return Boolean(process.env.COWORK_AGENT_TOKEN);
+  const configured = Boolean(process.env.COWORK_AGENT_TOKEN);
+  console.log(`[cowork-agent-server] isCoworkAgentConfigured: ${configured}`);
+  return configured;
 }

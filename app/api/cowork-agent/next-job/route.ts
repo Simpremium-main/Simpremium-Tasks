@@ -21,8 +21,10 @@ function isAuthorized(req: NextRequest): boolean {
  */
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
+    console.log("[cowork-agent-server] unauthorized poll (token missing or mismatched)");
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  console.log("[cowork-agent-server] authorized poll received");
 
   // Every authenticated poll — job or not — means the agent is alive right
   // now, which is what the dashboard's "agente visto há Xs" indicator
@@ -32,6 +34,11 @@ export async function GET(req: NextRequest) {
 
   try {
     const job = await claimNextCoworkJob();
+    console.log(
+      job
+        ? `[cowork-agent-server] next-job: respondendo ao agente com a execução ${job.executionId} ("${job.skillName}")`
+        : "[cowork-agent-server] next-job: respondendo ao agente com job=null (nada pra fazer agora)"
+    );
     return NextResponse.json({ job });
   } catch (err) {
     console.error("GET /api/cowork-agent/next-job failed:", err);

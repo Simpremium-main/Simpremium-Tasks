@@ -103,10 +103,13 @@ const COWORK_NEEDS_SETUP_MESSAGE =
  * "queued successfully" path.
  */
 async function queueForCowork(executionId: string, rawPrompt: string): Promise<DispatchResult | null> {
+  console.log(`[cowork-agent-server] queueForCowork called for execution ${executionId} (prompt length ${rawPrompt.length})`);
   if (!isCoworkAgentConfigured()) {
+    console.log(`[cowork-agent-server] queueForCowork: no agent configured, marking execution ${executionId} as needs_setup instead of queuing`);
     return { status: "needs_setup", error: COWORK_NEEDS_SETUP_MESSAGE };
   }
   await setCoworkPayload(executionId, rawPrompt);
+  console.log(`[cowork-agent-server] queueForCowork: payload stored, execution ${executionId} left "running" for the agent to claim`);
   return null;
 }
 
