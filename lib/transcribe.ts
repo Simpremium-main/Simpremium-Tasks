@@ -6,7 +6,7 @@ export interface TranscribeResult {
   error?: string;
 }
 
-type Platform = "youtube" | "instagram" | "x" | "unknown";
+export type Platform = "youtube" | "instagram" | "x" | "unknown";
 
 interface MediaRef {
   url: string;
@@ -40,7 +40,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
   });
 }
 
-function detectPlatform(url: string): Platform {
+export function detectPlatform(url: string): Platform {
   let host: string;
   try {
     host = new URL(url).hostname.replace(/^www\./, "").replace(/^m\./, "");

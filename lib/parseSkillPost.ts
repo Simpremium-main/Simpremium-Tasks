@@ -1,5 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { isClaudeConfigured } from "./claude";
+import { detectPlatform, transcribeVideoUrl } from "./transcribe";
+import type { TranscribeResult } from "./transcribe";
 import type { InputField, SkillDraftProposal } from "./types";
 
 const EXTRACTION_SYSTEM_PROMPT = `You turn a social media post about a Claude skill/MCP into a structured skill definition for a dashboard.
@@ -77,16 +79,53 @@ const EXTRACTION_JSON_SCHEMA = {
  * before saving. Uses Claude to extract structure when an API key is
  * configured; otherwise falls back to a conservative heuristic so the flow
  * still works, but flags the result as needing manual review.
+ *
+ * A bare YouTube/Instagram/X link (nothing else pasted alongside it) gets
+ * routed through lib/transcribe.ts's own video pipeline first — the same
+ * one "video" input fields use at run time — instead of relying on
+ * Claude's web_fetch tool, which can't get past those platforms' login
+ * walls anyway. The transcript (when we get one) becomes the "post
+ * content" fed into extraction below, so a video post drafts a real skill
+ * instead of the generic "couldn't access this link" placeholder. When
+ * transcription itself can't run (missing OPENAI_API_KEY/RAPIDAPI_KEY) or
+ * fails, that's surfaced as a pending/needs-review draft with the actual
+ * reason — never a faked result, per the onboarding flow's own rule.
  */
 export async function parseSkillPost(postContent: string): Promise<SkillDraftProposal> {
+  const trimmed = postContent.trim();
+
+  if (isBareVideoLink(trimmed)) {
+    const result = await transcribeVideoUrl(trimmed);
+    if (result.status === "success" && result.transcript) {
+      const proposal = await parseContent(
+        `Transcrição automática do vídeo em ${trimmed}:\n\n${result.transcript}`
+      );
+      return {
+        ...proposal,
+        needsReview: true,
+        reviewNote: [
+          proposal.reviewNote,
+          "Rascunho gerado a partir da transcrição automática do vídeo — confira se bate com o que ele mostra.",
+        ]
+          .filter(Boolean)
+          .join(" "),
+      };
+    }
+    return videoLinkFailureDraft(trimmed, result);
+  }
+
+  return parseContent(postContent);
+}
+
+async function parseContent(content: string): Promise<SkillDraftProposal> {
   if (isClaudeConfigured()) {
     try {
-      return await parseWithClaude(postContent);
+      return await parseWithClaude(content);
     } catch (err) {
       // Fall through to the heuristic parser rather than failing the whole
       // onboarding flow — the user still gets an editable draft to work from.
       return {
-        ...heuristicParse(postContent),
+        ...heuristicParse(content),
         reviewNote:
           "AI-assisted parsing failed (" +
           (err instanceof Error ? err.message : "unknown error") +
@@ -95,7 +134,49 @@ export async function parseSkillPost(postContent: string): Promise<SkillDraftPro
     }
   }
 
-  return heuristicParse(postContent);
+  return heuristicParse(content);
+}
+
+function isBareVideoLink(trimmed: string): boolean {
+  if (!trimmed || /\s/.test(trimmed)) return false;
+  if (!/^https?:\/\//i.test(trimmed)) return false;
+  return detectPlatform(trimmed) !== "unknown";
+}
+
+const PLATFORM_LABELS: Record<string, string> = {
+  youtube: "YouTube",
+  instagram: "Instagram",
+  x: "X",
+};
+
+/**
+ * A bare video link whose transcript we couldn't get — surfaced as a
+ * pending draft with the real reason (missing config vs. a transcription
+ * error) instead of guessing or simulating a result, per the "never invent
+ * a credential/endpoint — surface as pending" rule.
+ */
+function videoLinkFailureDraft(url: string, result: TranscribeResult): SkillDraftProposal {
+  const platformLabel = PLATFORM_LABELS[detectPlatform(url)] ?? "desse link";
+  const pendingSetup = result.status === "needs_setup";
+
+  return {
+    name: "Nova skill (revisar)",
+    description: pendingSetup
+      ? `Link de vídeo do ${platformLabel} detectado, mas a transcrição automática ainda não está configurada: ${result.error}`
+      : `Não foi possível transcrever automaticamente o vídeo desse link do ${platformLabel}: ${
+          result.error ?? "erro desconhecido"
+        }. Cole o texto da legenda/post ou uma transcrição manual pra gerar um rascunho real.`,
+    promptTemplate: url,
+    needsInput: false,
+    usesCowork: false,
+    inputSchema: [],
+    group: null,
+    tags: [],
+    needsReview: true,
+    reviewNote: pendingSetup
+      ? "Pendente de configuração — adicione as chaves necessárias (OPENAI_API_KEY e, pra Instagram, RAPIDAPI_KEY também) nas variáveis de ambiente pra habilitar a transcrição automática de vídeos, depois cole o link de novo."
+      : "A transcrição automática desse vídeo falhou — revise manualmente, ou cole o texto do post/transcrição em vez do link.",
+  };
 }
 
 async function parseWithClaude(postContent: string): Promise<SkillDraftProposal> {

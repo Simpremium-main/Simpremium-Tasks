@@ -124,6 +124,19 @@ and the code just tried to `JSON.parse()` it. Fixed at the prompt level at first
 to always return the same JSON shape either way, and when it couldn't read the link, to say so in
 the draft's own `description` field and ask you to paste the post's actual text/caption instead.
 
+**A bare YouTube/Instagram/X link now skips that dead end entirely.** Before falling back to
+`web_fetch` (which can't get past those platforms' login walls anyway — that's exactly the case
+the paragraph above was written for), `parseSkillPost` routes the link through the same video
+transcription pipeline "video" input fields use at run time (`lib/transcribe.ts`,
+`transcribeVideoUrl` — see "Transcribing a video link" below for how each platform is handled).
+When it gets a real transcript, that becomes the "post content" handed to extraction, so a video
+post (someone demoing a skill on camera) drafts an actual skill instead of the placeholder. When
+transcription itself can't run — no `OPENAI_API_KEY`/`RAPIDAPI_KEY` configured yet — or genuinely
+fails (no video found, no audio, etc.), the draft says so explicitly in `description`/`reviewNote`
+(distinguishing "pending setup" from "transcription failed") instead of guessing or pretending it
+read something it didn't — same "never invent, surface as pending" rule as everywhere else
+credentials are involved.
+
 **Pasting content that itself reads like an instruction** (e.g. a post whose text is "write a
 character sheet for X") surfaced the same failure a different way: Claude treated the pasted text
 as something to *carry out* rather than a skill to describe, and replied with the result of doing
