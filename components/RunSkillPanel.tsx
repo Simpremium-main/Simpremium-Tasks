@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
@@ -79,6 +79,33 @@ export default function RunSkillPanel({
   const [chunkNumber, setChunkNumber] = useState(1);
 
   const missingRequired = schema.filter((f) => f.required && !values[f.key]?.trim());
+
+  // `executions` starts as a copy of the server-rendered `initialExecutions`
+  // prop, then only ever grows locally (a freshly finished run gets prepended
+  // in confirmAndRun below) — React doesn't re-run useState's initializer on
+  // a prop change, so without this it would go stale forever after the first
+  // render. That stale-forever gap is exactly what made a Cowork run's real
+  // completion (reported minutes later, out of band, by the Mac mini agent —
+  // see report-result/route.ts) invisible here: the row would sit at
+  // "running" in this component's local state even after the server had
+  // long since recorded a final status, until a full page reload remounted
+  // the component from scratch.
+  useEffect(() => {
+    setExecutions(initialExecutions);
+  }, [initialExecutions]);
+
+  // Cowork's result comes back asynchronously (the Mac mini agent polls,
+  // drives Cowork, then reports back — see lib/cowork.ts) — nothing in this
+  // tab's own request/response cycle tells it when that happens. So while
+  // any Cowork execution is still "running", poll the server component for
+  // a fresh status instead of leaving the person staring at a stale
+  // "running" row until they think to reload.
+  useEffect(() => {
+    const hasPendingCowork = executions.some((e) => e.source === "cowork" && e.status === "running");
+    if (!hasPendingCowork) return;
+    const interval = setInterval(() => router.refresh(), 15000);
+    return () => clearInterval(interval);
+  }, [executions, router]);
 
   // Prefills the form from a past execution's inputs so re-running it doesn't
   // mean retyping everything — but secret fields (token/senha/etc.) are never
