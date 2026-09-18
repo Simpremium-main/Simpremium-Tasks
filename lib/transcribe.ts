@@ -24,6 +24,21 @@ const TRANSCRIBE_TIMEOUT_MS = 60_000;
 // error from the API.
 const WHISPER_MAX_BYTES = 25 * 1024 * 1024;
 
+// Every step of the video lookup/transcription pipeline can fail in ways
+// that are indistinguishable from the outside (a platform blocking the
+// request looks the same as a post with no video) — these show up in
+// Vercel's function logs so a real failure can actually be diagnosed
+// (which step, what HTTP status, what the response looked like) instead of
+// only ever seeing the same generic user-facing message. Never logs full
+// media URLs (can carry signed/expiring tokens) or request bodies/keys.
+function log(...args: unknown[]) {
+  console.log("[transcribe]", ...args);
+}
+
+function truncate(text: string, max = 300): string {
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(message)), ms);
@@ -66,6 +81,7 @@ async function fetchYouTubeTranscript(url: string): Promise<TranscribeResult> {
     // imports this file but never touches a YouTube link.
     const { YoutubeTranscript } = await import("youtube-transcript");
     const items = await YoutubeTranscript.fetchTranscript(url);
+    log("youtube: caption fetch ok, segments =", items.length);
     if (!items.length) {
       return { status: "error", error: "Esse vídeo do YouTube não tem legenda disponível pra extrair." };
     }
@@ -76,6 +92,7 @@ async function fetchYouTubeTranscript(url: string): Promise<TranscribeResult> {
       .trim();
     return { status: "success", transcript };
   } catch (err) {
+    log("youtube: caption fetch failed:", err instanceof Error ? err.message : err);
     return {
       status: "error",
       error:
@@ -97,14 +114,17 @@ async function fetchXMedia(tweetUrl: string): Promise<MediaRef> {
   const match = tweetUrl.match(/status\/(\d+)/);
   if (!match) throw new Error("Não consegui identificar o ID do post nesse link do X.");
   const tweetId = match[1];
+  log("x: tweetId =", tweetId);
 
   const res = await fetch(`https://cdn.syndication.twimg.com/tweet-result?id=${tweetId}&token=a`);
+  log("x: syndication fetch status =", res.status);
   if (!res.ok) throw new Error(`Falha ao buscar dados do post no X (HTTP ${res.status}).`);
   const data = await res.json();
 
   const variants: { bitrate?: number; content_type: string; url: string }[] =
     data?.mediaDetails?.[0]?.video_info?.variants ?? data?.video?.variants ?? [];
   const mp4Variants = variants.filter((v) => v.content_type === "video/mp4");
+  log("x: variants total =", variants.length, "mp4 variants =", mp4Variants.length);
   if (mp4Variants.length === 0) throw new Error("Esse post do X não parece ter um vídeo.");
 
   const best = mp4Variants.reduce((a, b) => ((b.bitrate ?? 0) > (a.bitrate ?? 0) ? b : a));
@@ -133,10 +153,25 @@ const IG_PAGE_HEADERS = {
  *  back to the GraphQL approach below. */
 async function fetchInstagramVideoFromPage(shortcode: string): Promise<string | null> {
   const res = await fetch(`https://www.instagram.com/p/${shortcode}/`, { headers: IG_PAGE_HEADERS });
+  log("instagram/page: status =", res.status, "content-type =", res.headers.get("content-type"));
   if (!res.ok) return null;
   const html = await res.text();
   const match = html.match(/<meta property="og:video" content="([^"]+)"/);
-  if (!match) return null;
+  if (!match) {
+    // The single most useful signal for telling "genuinely no video" apart
+    // from "Instagram served a login/challenge page instead" without
+    // logging the whole (large, and possibly containing session-ish
+    // tokens) HTML body.
+    const looksLikeLogin = /login|Entrar no Instagram|accounts\/login/i.test(html);
+    log(
+      "instagram/page: no og:video meta tag found, html length =",
+      html.length,
+      "looks like a login/challenge page =",
+      looksLikeLogin
+    );
+    return null;
+  }
+  log("instagram/page: og:video meta tag found");
   return match[1].replace(/&amp;/g, "&");
 }
 
@@ -184,7 +219,12 @@ async function fetchInstagramVideoFromGraphQL(shortcode: string): Promise<string
     },
     body: body.toString(),
   });
-  if (!res.ok) return null;
+  const contentType = res.headers.get("content-type") ?? "";
+  log("instagram/graphql: status =", res.status, "content-type =", contentType);
+  if (!res.ok) {
+    log("instagram/graphql: body snippet =", truncate(await res.text().catch(() => "<unreadable>")));
+    return null;
+  }
 
   // Instagram doesn't always answer this with the expected JSON — a
   // suspected-bot request can get a 200 with an HTML login/challenge page
@@ -193,18 +233,28 @@ async function fetchInstagramVideoFromGraphQL(shortcode: string): Promise<string
   // content-type first, and falling back to null on a parse failure either
   // way, turns that into the same clean "no video found" outcome as every
   // other way this lookup can come up empty.
-  const contentType = res.headers.get("content-type") ?? "";
-  if (!contentType.includes("json") && !contentType.includes("javascript")) return null;
+  if (!contentType.includes("json") && !contentType.includes("javascript")) {
+    log("instagram/graphql: unexpected content-type, body snippet =", truncate(await res.text().catch(() => "<unreadable>")));
+    return null;
+  }
 
+  const rawText = await res.text();
   let data: unknown;
   try {
-    data = await res.json();
-  } catch {
+    data = JSON.parse(rawText);
+  } catch (err) {
+    log(
+      "instagram/graphql: JSON.parse failed:",
+      err instanceof Error ? err.message : err,
+      "body snippet =",
+      truncate(rawText)
+    );
     return null;
   }
 
   const media = (data as { data?: { xdt_shortcode_media?: { is_video?: boolean; video_url?: string } } })?.data
     ?.xdt_shortcode_media;
+  log("instagram/graphql: media found =", Boolean(media), "is_video =", media?.is_video);
   if (!media?.is_video || !media?.video_url) return null;
   return media.video_url;
 }
@@ -221,9 +271,11 @@ async function fetchInstagramVideoFromGraphQL(shortcode: string): Promise<string
  */
 async function fetchInstagramMedia(postUrl: string): Promise<MediaRef> {
   const shortcode = getInstagramShortcode(postUrl);
+  log("instagram: shortcode =", shortcode);
 
   const pageUrl = await fetchInstagramVideoFromPage(shortcode);
   const videoUrl = pageUrl ?? (await fetchInstagramVideoFromGraphQL(shortcode));
+  log("instagram: video found via", pageUrl ? "page" : videoUrl ? "graphql" : "neither");
 
   if (!videoUrl) {
     throw new Error(
@@ -244,8 +296,10 @@ async function transcribeMediaWithWhisper(media: MediaRef): Promise<string> {
   }
 
   const mediaRes = await fetch(media.url);
+  log("whisper: media download status =", mediaRes.status);
   if (!mediaRes.ok) throw new Error(`Falha ao baixar o vídeo (HTTP ${mediaRes.status}).`);
   const bytes = await mediaRes.arrayBuffer();
+  log("whisper: media size =", (bytes.byteLength / (1024 * 1024)).toFixed(2), "MB");
   if (bytes.byteLength > WHISPER_MAX_BYTES) {
     throw new Error(
       `O vídeo tem ${(bytes.byteLength / (1024 * 1024)).toFixed(1)}MB — acima do limite de 25MB que a transcrição aceita.`
@@ -261,6 +315,7 @@ async function transcribeMediaWithWhisper(media: MediaRef): Promise<string> {
     headers: { Authorization: `Bearer ${apiKey}` },
     body: form,
   });
+  log("whisper: transcription request status =", res.status);
   if (!res.ok) {
     throw new Error(`A transcrição falhou (HTTP ${res.status}): ${await res.text()}`);
   }
@@ -278,14 +333,19 @@ async function transcribeMediaWithWhisper(media: MediaRef): Promise<string> {
  */
 export async function transcribeVideoUrl(url: string): Promise<TranscribeResult> {
   const platform = detectPlatform(url);
+  const startedAt = Date.now();
+  log("start:", platform, url);
 
   try {
-    return await withTimeout(
+    const result = await withTimeout(
       transcribeByPlatform(platform, url),
       TRANSCRIBE_TIMEOUT_MS,
       "A transcrição demorou demais e foi cancelada."
     );
+    log("done:", platform, result.status, `${Date.now() - startedAt}ms`);
+    return result;
   } catch (err) {
+    log("done:", platform, "error", `${Date.now() - startedAt}ms`, "-", err instanceof Error ? err.message : err);
     return { status: "error", error: err instanceof Error ? err.message : "Falha ao transcrever o vídeo." };
   }
 }

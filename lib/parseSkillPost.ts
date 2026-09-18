@@ -95,7 +95,9 @@ export async function parseSkillPost(postContent: string): Promise<SkillDraftPro
   const trimmed = postContent.trim();
 
   if (isBareVideoLink(trimmed)) {
+    console.log("[parseSkillPost] bare video link detected, routing through transcribeVideoUrl:", trimmed);
     const result = await transcribeVideoUrl(trimmed);
+    console.log("[parseSkillPost] transcribeVideoUrl result:", result.status, result.error ?? "");
     if (result.status === "success" && result.transcript) {
       const proposal = await parseContent(
         `Transcrição automática do vídeo em ${trimmed}:\n\n${result.transcript}`
