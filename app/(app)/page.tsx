@@ -71,6 +71,7 @@ export default async function DashboardPage() {
     scheduleLastRunAt: s.scheduleLastRunAt?.toISOString() ?? null,
     hasUnschedulableSecret: hasUnschedulableSecret(s.inputSchema ?? []),
     pinned: s.pinned,
+    position: s.position,
   }));
 
   return (

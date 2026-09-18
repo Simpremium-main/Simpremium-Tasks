@@ -910,6 +910,41 @@ skills aren't just sorted first — they get their own clearly-labeled row. Pure
 dashboard-organization preference, not part of the skill's definition, so `pinned` isn't included
 in export/import — an imported skill always starts unpinned, matching its fresh `draft` status.
 
+### Drag-and-drop reordering
+
+Every card on the dashboard (`components/SkillsBoard.tsx`) is draggable — grab one and drop it
+where you want it, within the **Fixadas** section or the rest of the grid (dragging is scoped to
+one section at a time, so it never changes pin status; that's still only the pin button's job).
+
+Persisted through a new `Skill.position` (a float, `lib/types.ts`) rather than a simple integer
+rank: dropping a card sets its position to the midpoint of its new neighbors' positions (one below
+the first / one above the last at either end), so reordering one card is a single-row `PATCH
+/api/skills/[id]` with `{ position }` — never a full renumber of everything else on the board, and
+never a race between two people dragging different cards at once. `lib/data.ts`'s `listSkills`
+orders by `position` ascending; a new skill's position (`createSkill`) is `-Date.now()`, always
+lower than anything already on the board, so it lands at the top by default — matching the old
+`created_at desc` ordering this column replaced.
+
+The grid updates instantly (optimistic — `SkillsBoard.tsx` holds its own local copy of `skills`
+seeded from the server prop) and rolls back with a visible error if the `PATCH` fails, same
+pattern as everywhere else in this app that updates optimistically. Purely a personal
+dashboard-organization preference, like `pinned` — not part of the skill's definition, left out of
+export/import.
+
+Needs one new column that a fresh `supabase/schema.sql` already includes — if you set this project
+up before this feature existed, run in the SQL Editor:
+
+```sql
+alter table skills add column if not exists position double precision not null default 0;
+update skills set position = sub.rn
+from (select id, row_number() over (order by created_at desc) as rn from skills) sub
+where skills.id = sub.id;
+create index if not exists skills_position_idx on skills (position);
+```
+
+(The backfill sets an initial order matching the dashboard's old newest-first sort, so existing
+skills don't visibly jump around the first time you load the page after migrating.)
+
 ### File input fields
 
 An input field can be typed `"file"` instead of text/textarea/secret/url/number

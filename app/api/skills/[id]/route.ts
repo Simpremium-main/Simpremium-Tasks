@@ -37,6 +37,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (field in body) (patch as Record<string, unknown>)[field] = body[field];
   }
 
+  // Drag-and-drop reorder (components/SkillsBoard.tsx) — a fractional
+  // value between two neighbors, not a whitelisted-and-passed-through
+  // field like the others above, since it needs its own finite-number
+  // check rather than accepting whatever the request body happens to send.
+  if ("position" in body) {
+    if (typeof body.position !== "number" || !Number.isFinite(body.position)) {
+      return NextResponse.json({ error: "position must be a finite number" }, { status: 400 });
+    }
+    patch.position = body.position;
+  }
+
   if (Array.isArray(body.inputSchema)) {
     patch.inputSchema = body.inputSchema.length ? body.inputSchema : null;
   }

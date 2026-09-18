@@ -58,6 +58,7 @@ function mapSkillRow(row: Record<string, unknown>): Skill {
     scheduleLastRunAt: row.schedule_last_run_at ? new Date(row.schedule_last_run_at as string) : null,
     pinned: Boolean(row.pinned),
     shareToken: (row.share_token as string | null) ?? null,
+    position: Number(row.position ?? 0),
     createdAt: new Date(row.created_at as string),
     updatedAt: new Date(row.updated_at as string),
   };
@@ -109,7 +110,7 @@ export async function listSkills(): Promise<
     error,
     status,
     statusText,
-  } = await supabase.from("skills").select("*").order("created_at", { ascending: false });
+  } = await supabase.from("skills").select("*").order("position", { ascending: true });
   if (error) throw describeError("listSkills", error, status, statusText);
 
   const {
@@ -299,6 +300,13 @@ export async function createSkill(input: CreateSkillInput): Promise<Skill> {
       confirmed_once: false,
       group: input.group,
       tags: input.tags,
+      // A new skill should land at the top of the dashboard by default
+      // (matching the old created_at-desc ordering this position column
+      // replaced) without needing to look up the current minimum first —
+      // -Date.now() is always more negative than any position a
+      // pre-existing skill (or the schema's own backfill, small positive
+      // integers) could have.
+      position: -Date.now(),
     })
     .select()
     .single();
@@ -321,6 +329,7 @@ export interface UpdateSkillInput {
   scheduleInputValues?: Record<string, string> | null;
   scheduleLastRunAt?: Date;
   pinned?: boolean;
+  position?: number;
 }
 
 /**
@@ -369,6 +378,7 @@ export async function updateSkill(
   if (patch.scheduleInputValues !== undefined) row.schedule_input_values = patch.scheduleInputValues;
   if (patch.scheduleLastRunAt !== undefined) row.schedule_last_run_at = patch.scheduleLastRunAt.toISOString();
   if (patch.pinned !== undefined) row.pinned = patch.pinned;
+  if (patch.position !== undefined) row.position = patch.position;
 
   const { data, error, status, statusText } = await supabase
     .from("skills")

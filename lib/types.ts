@@ -142,6 +142,14 @@ export interface Skill {
    *  (name, description, execution history — no prompt template, no run
    *  button, no login required). Null means sharing is off. */
   shareToken: string | null;
+  /** Drag-and-drop order on the dashboard (components/SkillsBoard.tsx),
+   *  ascending — lower sorts first. A fractional/"lexoRank"-style value:
+   *  dropping a card between two neighbors sets its position to the
+   *  midpoint of theirs, so reordering one card is a single-row update
+   *  instead of renumbering the whole list. Personal preference like
+   *  pinned, not part of the skill's definition — left out of
+   *  export/import. */
+  position: number;
   createdAt: Date;
   updatedAt: Date;
 }

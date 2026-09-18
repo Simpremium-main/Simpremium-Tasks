@@ -31,9 +31,12 @@ create table if not exists skills (
   schedule_last_run_at timestamptz,
   pinned          boolean not null default false, -- personal dashboard preference, not part of the skill's definition (not carried by export/import)
   share_token     text unique, -- null means not shared; set means /share/<token> shows a read-only public view of this skill
+  position        double precision not null default 0, -- drag-and-drop order on the dashboard, ascending — see lib/data.ts's createSkill/updateSkill. Personal ordering, like pinned: not part of the skill's definition, not carried by export/import
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );
+
+create index if not exists skills_position_idx on skills (position);
 
 create table if not exists executions (
   id              uuid primary key default gen_random_uuid(),

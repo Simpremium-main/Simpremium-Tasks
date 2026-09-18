@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import type { DragEvent } from "react";
 import { AlertTriangle, Archive, CheckSquare, Loader2, Pin, Search, Trash2, X } from "lucide-react";
 import SkillCard from "./SkillCard";
 import type { InputField, SkillSchedule } from "@/lib/types";
@@ -22,12 +23,18 @@ export interface BoardSkill {
   scheduleLastRunAt: string | null;
   hasUnschedulableSecret: boolean;
   pinned: boolean;
+  position: number;
 }
 
 type Filter = "all" | "active" | "draft" | "needs_setup" | "archived";
 const ALL_GROUPS = "__all__";
 
-export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
+export default function SkillsBoard({ skills: initialSkills }: { skills: BoardSkill[] }) {
+  // Local, mutable copy so a drag-and-drop reorder (below) can update the
+  // grid instantly instead of waiting on a full page refresh — server data
+  // (already sorted by position, see lib/data.ts's listSkills) is the
+  // starting point, then this drifts from it as the person drags cards.
+  const [skills, setSkills] = useState(initialSkills);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [group, setGroup] = useState(ALL_GROUPS);
@@ -36,6 +43,87 @@ export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
   const [bulkWorking, setBulkWorking] = useState(false);
   const [bulkError, setBulkError] = useState<string | null>(null);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [reorderError, setReorderError] = useState<string | null>(null);
+
+  function handleDragStart(id: string) {
+    if (selectMode) return;
+    setDraggedId(id);
+  }
+
+  function handleDragOver(e: DragEvent, id: string) {
+    if (!draggedId || draggedId === id) return;
+    e.preventDefault(); // required for onDrop to fire at all
+    setDragOverId(id);
+  }
+
+  function handleDragEnd() {
+    setDraggedId(null);
+    setDragOverId(null);
+  }
+
+  /**
+   * Drops `draggedId` right where `targetId` currently sits within
+   * `sectionList` (the pinned or the unpinned grid — dragging is scoped to
+   * one section at a time, so pin status only ever changes through the pin
+   * button, never by dragging across the divider). Computes a single new
+   * `position` as the midpoint of the card's new neighbors (falling back
+   * to "one below the first" / "one above the last" at either end) and
+   * persists just that one row — see lib/types.ts's `Skill.position` for
+   * why a full renumber isn't needed. Optimistic: the grid reorders
+   * immediately, and rolls back if the PATCH fails.
+   */
+  async function handleDrop(e: DragEvent, targetId: string, sectionList: BoardSkill[]) {
+    e.preventDefault();
+    setDragOverId(null);
+    const sourceId = draggedId;
+    setDraggedId(null);
+    if (!sourceId || sourceId === targetId) return;
+
+    const sourceIndex = sectionList.findIndex((s) => s.id === sourceId);
+    const targetIndex = sectionList.findIndex((s) => s.id === targetId);
+    if (sourceIndex === -1 || targetIndex === -1) return;
+
+    const reordered = [...sectionList];
+    const [moved] = reordered.splice(sourceIndex, 1);
+    reordered.splice(targetIndex, 0, moved);
+
+    const newIndex = reordered.findIndex((s) => s.id === sourceId);
+    const before = reordered[newIndex - 1]?.position;
+    const after = reordered[newIndex + 1]?.position;
+    const newPosition =
+      before !== undefined && after !== undefined
+        ? (before + after) / 2
+        : before !== undefined
+          ? before - 1
+          : after !== undefined
+            ? after + 1
+            : 0;
+
+    const previousSkills = skills;
+    setReorderError(null);
+    setSkills((prev) =>
+      [...prev.map((s) => (s.id === sourceId ? { ...s, position: newPosition } : s))].sort(
+        (a, b) => a.position - b.position
+      )
+    );
+
+    try {
+      const res = await fetch(`/api/skills/${sourceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ position: newPosition }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Falha ao reordenar");
+      }
+    } catch (err) {
+      setSkills(previousSkills);
+      setReorderError(err instanceof Error ? err.message : "Falha ao reordenar");
+    }
+  }
 
   function toggleSelectMode() {
     setSelectMode((prev) => !prev);
@@ -129,30 +217,45 @@ export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
   const pinnedSkills = useMemo(() => filtered.filter((s) => s.pinned), [filtered]);
   const restSkills = useMemo(() => filtered.filter((s) => !s.pinned), [filtered]);
 
-  function renderCard(skill: BoardSkill) {
+  function renderCard(skill: BoardSkill, sectionList: BoardSkill[]) {
+    const isDragOver = dragOverId === skill.id && draggedId !== null && draggedId !== skill.id;
+    const isDragging = draggedId === skill.id;
     return (
-      <SkillCard
+      <div
         key={skill.id}
-        id={skill.id}
-        name={skill.name}
-        description={skill.description}
-        status={skill.status}
-        needsInput={skill.needsInput}
-        usesCowork={skill.usesCowork}
-        executionCount={skill.executionCount}
-        needsSetup={skill.needsSetup}
-        group={skill.group}
-        tags={skill.tags}
-        inputSchema={skill.inputSchema}
-        schedule={skill.schedule}
-        scheduleInputValues={skill.scheduleInputValues}
-        scheduleLastRunAt={skill.scheduleLastRunAt}
-        hasUnschedulableSecret={skill.hasUnschedulableSecret}
-        pinned={skill.pinned}
-        selectable={selectMode}
-        selected={selectedIds.has(skill.id)}
-        onToggleSelect={() => toggleSelected(skill.id)}
-      />
+        draggable={!selectMode}
+        onDragStart={() => handleDragStart(skill.id)}
+        onDragOver={(e) => handleDragOver(e, skill.id)}
+        onDragLeave={() => setDragOverId((prev) => (prev === skill.id ? null : prev))}
+        onDrop={(e) => handleDrop(e, skill.id, sectionList)}
+        onDragEnd={handleDragEnd}
+        title={!selectMode ? "Arrastar pra reordenar" : undefined}
+        className={`relative rounded-xl transition-[opacity,box-shadow] ${
+          isDragOver ? "ring-2 ring-primary ring-offset-2 ring-offset-canvas" : ""
+        } ${isDragging ? "opacity-40" : ""} ${!selectMode ? "cursor-grab active:cursor-grabbing" : ""}`}
+      >
+        <SkillCard
+          id={skill.id}
+          name={skill.name}
+          description={skill.description}
+          status={skill.status}
+          needsInput={skill.needsInput}
+          usesCowork={skill.usesCowork}
+          executionCount={skill.executionCount}
+          needsSetup={skill.needsSetup}
+          group={skill.group}
+          tags={skill.tags}
+          inputSchema={skill.inputSchema}
+          schedule={skill.schedule}
+          scheduleInputValues={skill.scheduleInputValues}
+          scheduleLastRunAt={skill.scheduleLastRunAt}
+          hasUnschedulableSecret={skill.hasUnschedulableSecret}
+          pinned={skill.pinned}
+          selectable={selectMode}
+          selected={selectedIds.has(skill.id)}
+          onToggleSelect={() => toggleSelected(skill.id)}
+        />
+      </div>
     );
   }
 
@@ -279,7 +382,9 @@ export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
                 <Pin size={11} className="fill-current text-primary" />
                 Fixadas
               </div>
-              <div className="grid gap-3 sm:grid-cols-2 animate-stagger">{pinnedSkills.map(renderCard)}</div>
+              <div className="grid gap-3 sm:grid-cols-2 animate-stagger">
+                {pinnedSkills.map((s) => renderCard(s, pinnedSkills))}
+              </div>
             </div>
           )}
           {restSkills.length > 0 && (
@@ -287,10 +392,18 @@ export default function SkillsBoard({ skills }: { skills: BoardSkill[] }) {
               {pinnedSkills.length > 0 && (
                 <div className="mb-2 text-xs font-medium text-muted uppercase tracking-wide">Todas</div>
               )}
-              <div className="grid gap-3 sm:grid-cols-2 animate-stagger">{restSkills.map(renderCard)}</div>
+              <div className="grid gap-3 sm:grid-cols-2 animate-stagger">
+                {restSkills.map((s) => renderCard(s, restSkills))}
+              </div>
             </div>
           )}
         </>
+      )}
+      {reorderError && (
+        <p className="mt-3 flex items-center gap-1.5 text-xs text-red-600">
+          <AlertTriangle size={12} />
+          Não reordenou: {reorderError}
+        </p>
       )}
 
       {confirmBulkDelete && (
