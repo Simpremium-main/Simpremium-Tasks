@@ -202,9 +202,10 @@ function ExecutionRow({
 }) {
   const failedScheduled = isFailedScheduled(execution);
   const durationMs = executionDurationMs(execution.startedAt, execution.finishedAt);
+  const previewText = execution.result || execution.error;
   return (
     <li
-      className={`rounded-lg border bg-surface transition-shadow hover:shadow-sm ${
+      className={`group/row relative rounded-lg border bg-surface transition-shadow hover:shadow-sm ${
         highlighted
           ? "border-primary/40 animate-highlight"
           : failedScheduled
@@ -312,6 +313,16 @@ function ExecutionRow({
           <span className="hidden sm:inline">Ver detalhes</span>
         </button>
       </div>
+      {previewText && (
+        <div className="pointer-events-none absolute left-3 right-3 top-full z-20 mt-1.5 hidden group-hover/row:block animate-fade-in">
+          <div className="relative rounded-lg border border-line bg-surface p-3 text-xs text-ink/70 shadow-lg">
+            <p className="line-clamp-4 whitespace-pre-wrap break-words">{previewText}</p>
+            <p className="mt-1.5 text-[10px] uppercase tracking-wide text-muted">
+              {execution.result ? "prévia do resultado" : "prévia do erro"} — clique pra ver tudo
+            </p>
+          </div>
+        </div>
+      )}
     </li>
   );
 }

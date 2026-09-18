@@ -299,6 +299,16 @@ page's stats row (next to "Histórico de execuções") adds an average across th
 executions, so a skill quietly getting slower over time (more chunks needed, heavier searches)
 shows up as a trend instead of only being noticeable one execution at a time.
 
+### Hover preview on an execution row
+
+Hovering a row in any execution list (CSS-only — `group/row` + `group-hover/row:block` in
+`ExecutionList.tsx`, no JS state, no flicker on re-hover) shows a floating card with the first few
+lines of that run's result (or its error, when there's no result), line-clamped to 4 lines — a way
+to skim "was this the run I'm thinking of" without opening the full details modal for every row.
+Only renders when there's actually a result or error to show; a still-`pending`/`running` row (or
+one with neither) shows nothing. Purely visual, `pointer-events-none` — it floats over whatever's
+below it in the list and never intercepts a click.
+
 ### Favoriting an execution
 
 A star toggle on every execution row and in the details modal (`ExecutionList.tsx`'s
