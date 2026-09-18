@@ -149,6 +149,49 @@ of stopping at "the prompt wasn't given." The draft's `description` says explici
 that this is a reconstruction from a description, not the creator's original — worth testing
 before trusting, but a real usable first draft rather than an empty one.
 
+### Adding images, videos, and files when creating a skill
+
+Beyond pasting text, `/skills/new` has an **Anexar imagem, vídeo ou arquivo…** picker
+(`components/NewSkillForm.tsx`) for uploading files directly — a screenshot of someone else's
+prompt, a short demo clip, a PDF guide. Multiple files at once, each shown with a remove button and
+(for images) a real icon vs. the generic file icon. When any attachment is present, the form POSTs
+`multipart/form-data` instead of JSON; `app/api/skills/parse/route.ts` branches on `Content-Type`
+to read either shape.
+
+`lib/parseSkillPost.ts`'s `processAttachments` sorts each file by type (MIME type first, file
+extension as a fallback — browsers often report an empty MIME type for `.md`/`.csv` and similar) and
+handles each differently, never silently dropping one:
+
+- **Images** (png/jpg/gif/webp, ≤10MB) become a real Claude vision content block — Claude looks at
+  the picture itself during extraction, not just a filename.
+- **PDFs** (≤20MB) become a document content block the same way (base64, no beta needed — see
+  Anthropic's docs on PDF input).
+- **Video/audio files** get transcribed with the same Whisper call the "video" input field and
+  bare-video-link onboarding path use (`lib/transcribe.ts`'s `transcribeUploadedMedia`, sharing the
+  actual HTTP call with `transcribeMediaWithWhisper` — the only difference is skipping the
+  "download from a URL" step since the bytes are already here). This is also a real workaround for
+  **Instagram**, whose automatic link-based transcription doesn't work (see "Transcribing a video
+  link" above for why): download the video yourself and upload the file instead of pasting the
+  link, and it transcribes fine.
+- **Plain text files** (.txt/.csv/.json/.md) get decoded and folded into the post text, truncated
+  at 20,000 characters — the same limit and reasoning as `DynamicForm.tsx`'s "file" input field.
+- **Anything else** (docx/pptx/xlsx, oversized files) leaves a visible `[Anexo "x" ignorado: ...]`
+  note in the text Claude sees, rather than silently vanishing — the resulting draft's
+  `description`/`reviewNote` usually reflects that something was skipped, so it doesn't look like a
+  complete read when it wasn't.
+
+Without `ANTHROPIC_API_KEY`, the heuristic fallback parser only ever sees plain text — it can't look
+at an image or PDF — so `reviewNote` says explicitly that attachments beyond transcripts/text files
+weren't read, rather than quietly ignoring them.
+
+**A real platform limit, not a design choice**: Route Handlers don't impose their own body-size
+cap, but Vercel's default limit on a Serverless/Edge Function's request body is a few MB — well
+under Whisper's own 25MB ceiling or the 20MB PDF cap above. The form shows a soft warning past 4MB
+of combined attachments, and a large upload will most likely fail with a `413` before this code
+even runs. Keep attachments modest (a screenshot, a short clip) — this wasn't built with
+direct-to-storage upload (which would sidestep the limit) since that's a meaningfully bigger piece
+of infrastructure for what's meant to help with quick reference material, not large files.
+
 **Pasting content that itself reads like an instruction** (e.g. a post whose text is "write a
 character sheet for X") surfaced the same failure a different way: Claude treated the pasted text
 as something to *carry out* rather than a skill to describe, and replied with the result of doing

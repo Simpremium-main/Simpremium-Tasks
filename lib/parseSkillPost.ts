@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { isClaudeConfigured } from "./claude";
-import { detectPlatform, transcribeVideoUrl } from "./transcribe";
+import { detectPlatform, transcribeUploadedMedia, transcribeVideoUrl } from "./transcribe";
 import type { TranscribeResult } from "./transcribe";
 import type { InputField, SkillDraftProposal } from "./types";
 
@@ -25,7 +25,9 @@ Never invent a credential, token or endpoint that isn't in the post — if the s
 
 If the pasted content is just a bare link with no other text, use the web_fetch tool to read what's actually at that URL before extracting. Many social platforms (Instagram, TikTok, X/Twitter, LinkedIn, and similar) require a login and will refuse the fetch, or the page is a video/JS app with no readable text — that's expected, not an error on your part. If you can't actually read what the post says (fetch failed, blocked, login wall, no extractable text), still return the shape above: set "name" to a short placeholder like "Nova skill (revisar)", leave "promptTemplate" as the raw URL you were given, and make "description" explain in Portuguese that you couldn't access the content behind the link and that the person should paste the post's actual text or a screenshot's transcript instead for a real draft.
 
-Sometimes the content IS readable (a video transcript, a caption) but the creator deliberately withholds the actual prompt — showing off the result and telling the viewer to DM them for it ("manda DM que eu te mando o prompt", "link na bio", etc.). That is not the same failure as an inaccessible link: don't fall back to the placeholder shape for it. Instead, use the web_search tool to research the technique, tool, or workflow being demonstrated — what kind of task it is, what inputs/outputs it involves, any known prompt patterns for that kind of result — and, combining that with whatever the post itself shows or describes, draft a promptTemplate that would plausibly produce a similar result yourself. This is a reconstruction, not the creator's original: say so plainly in "description" (in Portuguese) and note it needs testing before being trusted, but still produce a real, usable first draft rather than an empty placeholder — that's the whole point of being asked to do this instead of the person going and DMing the creator themselves.`;
+Sometimes the content IS readable (a video transcript, a caption) but the creator deliberately withholds the actual prompt — showing off the result and telling the viewer to DM them for it ("manda DM que eu te mando o prompt", "link na bio", etc.). That is not the same failure as an inaccessible link: don't fall back to the placeholder shape for it. Instead, use the web_search tool to research the technique, tool, or workflow being demonstrated — what kind of task it is, what inputs/outputs it involves, any known prompt patterns for that kind of result — and, combining that with whatever the post itself shows or describes, draft a promptTemplate that would plausibly produce a similar result yourself. This is a reconstruction, not the creator's original: say so plainly in "description" (in Portuguese) and note it needs testing before being trusted, but still produce a real, usable first draft rather than an empty placeholder — that's the whole point of being asked to do this instead of the person going and DMing the creator themselves.
+
+The person may also attach images and/or PDFs directly as part of this message (e.g. a screenshot of someone else's prompt, a PDF guide) — look at them as real evidence of what the skill does, the same as the pasted text, not as decoration. A video or audio file they attached has already been transcribed to plain text before you see it, wrapped in a note naming which file it came from, so treat that the same as any other pasted text describing the post.`;
 
 const PARSE_TOOLS: Anthropic.Messages.ToolUnion[] = [
   { type: "web_fetch_20260209", name: "web_fetch", max_uses: 3 },
@@ -77,26 +79,54 @@ const EXTRACTION_JSON_SCHEMA = {
   additionalProperties: false,
 };
 
+export interface SkillPostAttachment {
+  name: string;
+  mimeType: string;
+  bytes: ArrayBuffer;
+}
+
+type ImageMediaType = "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+type ExtraContentBlock =
+  | { type: "image"; source: { type: "base64"; media_type: ImageMediaType; data: string } }
+  | { type: "document"; source: { type: "base64"; media_type: "application/pdf"; data: string } };
+
 /**
  * Turns a pasted post into a draft skill proposal for the user to review
  * before saving. Uses Claude to extract structure when an API key is
  * configured; otherwise falls back to a conservative heuristic so the flow
  * still works, but flags the result as needing manual review.
  *
- * A bare YouTube/Instagram/X link (nothing else pasted alongside it) gets
- * routed through lib/transcribe.ts's own video pipeline first — the same
- * one "video" input fields use at run time — instead of relying on
- * Claude's web_fetch tool, which can't get past those platforms' login
- * walls anyway. The transcript (when we get one) becomes the "post
- * content" fed into extraction below, so a video post drafts a real skill
- * instead of the generic "couldn't access this link" placeholder. When
- * transcription itself can't run (missing OPENAI_API_KEY) or fails —
- * always the case for Instagram right now, see lib/transcribe.ts's own
- * comment on why — that's surfaced as a pending/needs-review draft with
- * the actual reason, never a faked result, per the onboarding flow's own
- * rule.
+ * `attachments` are files uploaded directly in the "Nova skill" form —
+ * images and PDFs go to Claude as real content blocks (see
+ * processAttachments below), video/audio gets transcribed first
+ * (lib/transcribe.ts's transcribeUploadedMedia), and plain text files get
+ * decoded and folded into the post text. When attachments are present they
+ * take priority over the bare-video-link routing below — the person
+ * directly gave us a file, no need to also guess at a link.
+ *
+ * A bare YouTube/Instagram/X link (nothing else pasted alongside it, no
+ * attachments) gets routed through lib/transcribe.ts's own video pipeline
+ * first — the same one "video" input fields use at run time — instead of
+ * relying on Claude's web_fetch tool, which can't get past those
+ * platforms' login walls anyway. The transcript (when we get one) becomes
+ * the "post content" fed into extraction below, so a video post drafts a
+ * real skill instead of the generic "couldn't access this link"
+ * placeholder. When transcription itself can't run (missing
+ * OPENAI_API_KEY) or fails — always the case for Instagram right now, see
+ * lib/transcribe.ts's own comment on why — that's surfaced as a
+ * pending/needs-review draft with the actual reason, never a faked result,
+ * per the onboarding flow's own rule.
  */
-export async function parseSkillPost(postContent: string): Promise<SkillDraftProposal> {
+export async function parseSkillPost(
+  postContent: string,
+  attachments: SkillPostAttachment[] = []
+): Promise<SkillDraftProposal> {
+  if (attachments.length > 0) {
+    const { extraText, extraBlocks } = await processAttachments(attachments);
+    const combinedText = [postContent.trim(), ...extraText].filter(Boolean).join("\n\n---\n\n");
+    return parseContent(combinedText || "(Nenhum texto colado — só anexos.)", extraBlocks);
+  }
+
   const trimmed = postContent.trim();
 
   if (isBareVideoLink(trimmed)) {
@@ -124,10 +154,137 @@ export async function parseSkillPost(postContent: string): Promise<SkillDraftPro
   return parseContent(postContent);
 }
 
-async function parseContent(content: string): Promise<SkillDraftProposal> {
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp"]);
+const PDF_EXTENSIONS = new Set(["pdf"]);
+const MEDIA_EXTENSIONS = new Set(["mp4", "mov", "m4v", "webm", "mkv", "mp3", "m4a", "wav", "ogg", "aac"]);
+const TEXT_EXTENSIONS = new Set(["txt", "csv", "json", "md", "log"]);
+
+// Max 10MB per image (Claude's own image limits, plus keeps the request
+// well under Vercel's default ~4.5MB *combined* body limit isn't
+// guaranteed by this alone — see README's "Adding images, videos, and
+// files when creating a skill" for the real-world size guidance) and 20MB
+// per PDF (comfortably under the API's 32MB request cap with room for
+// everything else in the request). Video/audio is bounded by
+// lib/transcribe.ts's own WHISPER_MAX_BYTES (25MB) inside
+// transcribeUploadedMedia, not here.
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_PDF_BYTES = 20 * 1024 * 1024;
+// Matches components/DynamicForm.tsx's FILE_TEXT_CHAR_LIMIT for a runtime
+// "file" input field — same reasoning: plenty for real notes/CSV/JSON,
+// truncated with a visible marker rather than blowing up the prompt.
+const ATTACHMENT_TEXT_CHAR_LIMIT = 20_000;
+
+type AttachmentKind = "image" | "pdf" | "media" | "text" | "unsupported";
+
+function categorizeAttachment(name: string, mimeType: string): AttachmentKind {
+  const ext = name.toLowerCase().split(".").pop() ?? "";
+  if (mimeType.startsWith("image/") || IMAGE_EXTENSIONS.has(ext)) return "image";
+  if (mimeType === "application/pdf" || PDF_EXTENSIONS.has(ext)) return "pdf";
+  if (mimeType.startsWith("video/") || mimeType.startsWith("audio/") || MEDIA_EXTENSIONS.has(ext)) return "media";
+  if (mimeType.startsWith("text/") || mimeType === "application/json" || TEXT_EXTENSIONS.has(ext)) return "text";
+  return "unsupported";
+}
+
+function normalizeImageMediaType(name: string, mimeType: string): ImageMediaType {
+  if (mimeType === "image/jpeg" || mimeType === "image/png" || mimeType === "image/gif" || mimeType === "image/webp") {
+    return mimeType;
+  }
+  const ext = name.toLowerCase().split(".").pop();
+  if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
+  if (ext === "gif") return "image/gif";
+  if (ext === "webp") return "image/webp";
+  return "image/png";
+}
+
+/**
+ * Turns uploaded files into what parseWithClaude needs: real image/PDF
+ * content blocks Claude can actually look at, plus a list of text
+ * fragments (transcripts, decoded text files, and a clear note for
+ * anything skipped) to fold into the post text. Never silently drops a
+ * file — every attachment either becomes a content block or leaves a
+ * visible note explaining why it didn't (too big, unsupported type,
+ * transcription failed), matching the app's own never-fail-silently rule.
+ */
+async function processAttachments(
+  attachments: SkillPostAttachment[]
+): Promise<{ extraText: string[]; extraBlocks: ExtraContentBlock[] }> {
+  const extraText: string[] = [];
+  const extraBlocks: ExtraContentBlock[] = [];
+
+  for (const file of attachments) {
+    const kind = categorizeAttachment(file.name, file.mimeType);
+    console.log(
+      "[parseSkillPost] attachment:",
+      file.name,
+      file.mimeType || "(sem mime type)",
+      "->",
+      kind,
+      `(${(file.bytes.byteLength / 1024).toFixed(0)}KB)`
+    );
+
+    if (kind === "image") {
+      if (file.bytes.byteLength > MAX_IMAGE_BYTES) {
+        extraText.push(
+          `[Anexo "${file.name}" ignorado: imagem maior que ${MAX_IMAGE_BYTES / (1024 * 1024)}MB.]`
+        );
+        continue;
+      }
+      extraBlocks.push({
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: normalizeImageMediaType(file.name, file.mimeType),
+          data: Buffer.from(file.bytes).toString("base64"),
+        },
+      });
+      continue;
+    }
+
+    if (kind === "pdf") {
+      if (file.bytes.byteLength > MAX_PDF_BYTES) {
+        extraText.push(`[Anexo "${file.name}" ignorado: PDF maior que ${MAX_PDF_BYTES / (1024 * 1024)}MB.]`);
+        continue;
+      }
+      extraBlocks.push({
+        type: "document",
+        source: { type: "base64", media_type: "application/pdf", data: Buffer.from(file.bytes).toString("base64") },
+      });
+      continue;
+    }
+
+    if (kind === "media") {
+      const result = await transcribeUploadedMedia(file.bytes, file.name, file.mimeType);
+      if (result.status === "success" && result.transcript) {
+        extraText.push(`Transcrição do arquivo anexado "${file.name}":\n${result.transcript}`);
+      } else {
+        extraText.push(`[Não foi possível transcrever o anexo "${file.name}": ${result.error ?? "erro desconhecido"}]`);
+      }
+      continue;
+    }
+
+    if (kind === "text") {
+      const text = Buffer.from(file.bytes).toString("utf8");
+      const truncated = text.length > ATTACHMENT_TEXT_CHAR_LIMIT;
+      extraText.push(
+        `Conteúdo do arquivo anexado "${file.name}":\n${text.slice(0, ATTACHMENT_TEXT_CHAR_LIMIT)}${
+          truncated ? "\n[conteúdo truncado]" : ""
+        }`
+      );
+      continue;
+    }
+
+    extraText.push(
+      `[Anexo "${file.name}" ignorado: tipo de arquivo ainda não suportado — cole o conteúdo manualmente se for relevante.]`
+    );
+  }
+
+  return { extraText, extraBlocks };
+}
+
+async function parseContent(content: string, extraBlocks: ExtraContentBlock[] = []): Promise<SkillDraftProposal> {
   if (isClaudeConfigured()) {
     try {
-      return await parseWithClaude(content);
+      return await parseWithClaude(content, extraBlocks);
     } catch (err) {
       // Fall through to the heuristic parser rather than failing the whole
       // onboarding flow — the user still gets an editable draft to work from.
@@ -141,7 +298,17 @@ async function parseContent(content: string): Promise<SkillDraftProposal> {
     }
   }
 
-  return heuristicParse(content);
+  const heuristic = heuristicParse(content);
+  if (extraBlocks.length === 0) return heuristic;
+  // The heuristic parser only ever sees plain text — image/PDF blocks mean
+  // nothing to it, so say so explicitly instead of quietly ignoring them.
+  return {
+    ...heuristic,
+    reviewNote:
+      "ANTHROPIC_API_KEY não está configurada — imagens/PDFs anexados não puderam ser lidos, esse " +
+      "rascunho é só do texto (incluindo transcrições de vídeo/áudio, se houver). " +
+      heuristic.reviewNote,
+  };
 }
 
 function isBareVideoLink(trimmed: string): boolean {
@@ -186,7 +353,10 @@ function videoLinkFailureDraft(url: string, result: TranscribeResult): SkillDraf
   };
 }
 
-async function parseWithClaude(postContent: string): Promise<SkillDraftProposal> {
+async function parseWithClaude(
+  postContent: string,
+  extraBlocks: ExtraContentBlock[] = []
+): Promise<SkillDraftProposal> {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
   const message = await anthropic.messages.create({
     model: "claude-sonnet-5",
@@ -197,7 +367,10 @@ async function parseWithClaude(postContent: string): Promise<SkillDraftProposal>
     messages: [
       {
         role: "user",
-        content: `<pasted_post>\n${postContent}\n</pasted_post>`,
+        content: [
+          { type: "text", text: `<pasted_post>\n${postContent}\n</pasted_post>` },
+          ...extraBlocks,
+        ],
       },
     ],
   });

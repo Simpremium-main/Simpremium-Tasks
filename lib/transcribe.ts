@@ -149,24 +149,36 @@ const INSTAGRAM_UNSUPPORTED_MESSAGE =
  *  no local audio extraction (no ffmpeg available here): Whisper accepts
  *  containers like mp4/m4a directly and pulls the audio track itself. */
 async function transcribeMediaWithWhisper(media: MediaRef): Promise<string> {
+  const mediaRes = await fetch(media.url);
+  log("whisper: media download status =", mediaRes.status);
+  if (!mediaRes.ok) throw new Error(`Falha ao baixar o vídeo (HTTP ${mediaRes.status}).`);
+  const bytes = await mediaRes.arrayBuffer();
+  return transcribeBytesWithWhisper(bytes, media.filename, media.contentType);
+}
+
+/** Shared by the URL-based flow above and transcribeUploadedMedia below —
+ *  the only difference between "a video link" and "a file the person
+ *  uploaded directly" is how the bytes were obtained; once we have them,
+ *  sending them to Whisper is identical either way. */
+async function transcribeBytesWithWhisper(
+  bytes: ArrayBuffer,
+  filename: string,
+  contentType: string
+): Promise<string> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY_MISSING");
   }
 
-  const mediaRes = await fetch(media.url);
-  log("whisper: media download status =", mediaRes.status);
-  if (!mediaRes.ok) throw new Error(`Falha ao baixar o vídeo (HTTP ${mediaRes.status}).`);
-  const bytes = await mediaRes.arrayBuffer();
   log("whisper: media size =", (bytes.byteLength / (1024 * 1024)).toFixed(2), "MB");
   if (bytes.byteLength > WHISPER_MAX_BYTES) {
     throw new Error(
-      `O vídeo tem ${(bytes.byteLength / (1024 * 1024)).toFixed(1)}MB — acima do limite de 25MB que a transcrição aceita.`
+      `O arquivo tem ${(bytes.byteLength / (1024 * 1024)).toFixed(1)}MB — acima do limite de 25MB que a transcrição aceita.`
     );
   }
 
   const form = new FormData();
-  form.append("file", new Blob([bytes], { type: media.contentType }), media.filename);
+  form.append("file", new Blob([bytes], { type: contentType || "application/octet-stream" }), filename);
   form.append("model", "whisper-1");
 
   const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
@@ -180,6 +192,36 @@ async function transcribeMediaWithWhisper(media: MediaRef): Promise<string> {
   }
   const data = await res.json();
   return data.text as string;
+}
+
+/**
+ * Transcribes a video/audio file the user uploaded directly (e.g. in the
+ * "Nova skill" onboarding form) — same Whisper call as a video link, minus
+ * the "find the URL" step, since we already have the bytes. Never
+ * simulates a result: a missing OPENAI_API_KEY or a real transcription
+ * failure comes back as "needs_setup"/"error" respectively, same as the
+ * URL-based path.
+ */
+export async function transcribeUploadedMedia(
+  bytes: ArrayBuffer,
+  filename: string,
+  contentType: string
+): Promise<TranscribeResult> {
+  try {
+    const transcript = await transcribeBytesWithWhisper(bytes, filename, contentType);
+    return { status: "success", transcript };
+  } catch (err) {
+    if (err instanceof Error && err.message === "OPENAI_API_KEY_MISSING") {
+      return {
+        status: "needs_setup",
+        error: "OPENAI_API_KEY não está configurada — necessária pra transcrever vídeos/áudios anexados.",
+      };
+    }
+    return {
+      status: "error",
+      error: err instanceof Error ? err.message : "Falha ao transcrever o arquivo anexado.",
+    };
+  }
 }
 
 /**
