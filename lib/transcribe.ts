@@ -105,6 +105,39 @@ async function fetchXVideoUrl(tweetUrl: string): Promise<string> {
   return best.url;
 }
 
+/**
+ * A public post's direct video URL, scraped off Instagram's own embed page
+ * (`/embed/captioned/`) — that page is meant to be viewable without login
+ * (it's what an embedded post on another site renders), so it reliably
+ * carries an `og:video` meta tag pointing at the real mp4, the same thing
+ * link-preview crawlers read. Falls back to scanning the page's own
+ * embedded JSON for a `video_url` field if the meta tag isn't there. Like
+ * the X syndication endpoint, this is unofficial and undocumented — no
+ * stability guarantee, just the most direct approach found that doesn't
+ * need a login session.
+ */
+async function fetchInstagramVideoUrl(postUrl: string): Promise<string> {
+  const match = postUrl.match(/instagram\.com\/(?:p|reel|reels|tv)\/([^/?#]+)/);
+  if (!match) throw new Error("Não consegui identificar o post nesse link do Instagram.");
+  const shortcode = match[1];
+
+  const res = await fetch(`https://www.instagram.com/p/${shortcode}/embed/captioned/`, {
+    headers: { "User-Agent": "Mozilla/5.0 (compatible; SkillsHubBot/1.0)" },
+  });
+  if (!res.ok) throw new Error(`Falha ao abrir o post no Instagram (HTTP ${res.status}).`);
+  const html = await res.text();
+
+  const ogMatch = html.match(/<meta property="og:video" content="([^"]+)"/);
+  if (ogMatch) return ogMatch[1].replace(/&amp;/g, "&");
+
+  const jsonMatch = html.match(/"video_url":"([^"]+)"/);
+  if (jsonMatch) return jsonMatch[1].replace(/\\u0026/g, "&").replace(/\\\//g, "/");
+
+  throw new Error(
+    "Não achei um vídeo nesse post do Instagram — pode ser um carrossel de fotos, ou o post exigir login pra ver."
+  );
+}
+
 /** Downloads the media at `mediaUrl` and sends it straight to Whisper —
  *  no local audio extraction (no ffmpeg available here): Whisper accepts
  *  video containers like mp4 directly and pulls the audio track itself. */
@@ -161,39 +194,42 @@ export async function transcribeVideoUrl(url: string): Promise<TranscribeResult>
   }
 }
 
+/** Shared by X and Instagram: find the video's direct URL, download it,
+ *  send it to Whisper — the only difference between the two platforms is
+ *  how the video URL itself gets found. */
+async function downloadAndTranscribe(
+  findVideoUrl: () => Promise<string>,
+  platformLabel: string
+): Promise<TranscribeResult> {
+  try {
+    const videoUrl = await findVideoUrl();
+    const transcript = await transcribeMediaUrlWithWhisper(videoUrl);
+    return { status: "success", transcript };
+  } catch (err) {
+    if (err instanceof Error && err.message === "OPENAI_API_KEY_MISSING") {
+      return {
+        status: "needs_setup",
+        error: `OPENAI_API_KEY não está configurada — necessária pra transcrever vídeos do ${platformLabel}.`,
+      };
+    }
+    return {
+      status: "error",
+      error: err instanceof Error ? err.message : `Falha ao transcrever o vídeo do ${platformLabel}.`,
+    };
+  }
+}
+
 async function transcribeByPlatform(platform: Platform, url: string): Promise<TranscribeResult> {
   if (platform === "youtube") {
     return fetchYouTubeTranscript(url);
   }
 
   if (platform === "instagram") {
-    // Deliberately not implemented: unlike X, there's no comparably stable
-    // public endpoint for a post's video URL — every approach found relies
-    // on scraping techniques that Instagram actively fights and that break
-    // without warning. Rather than ship something unverified that could
-    // silently produce wrong results, this stays a documented gap.
-    return {
-      status: "needs_setup",
-      error:
-        "Transcrição de vídeo do Instagram ainda não está disponível — não encontrei um jeito confiável de " +
-        "baixar o vídeo sem risco de quebrar sem aviso. YouTube e X já funcionam.",
-    };
+    return downloadAndTranscribe(() => fetchInstagramVideoUrl(url), "Instagram");
   }
 
   if (platform === "x") {
-    try {
-      const videoUrl = await fetchXVideoUrl(url);
-      const transcript = await transcribeMediaUrlWithWhisper(videoUrl);
-      return { status: "success", transcript };
-    } catch (err) {
-      if (err instanceof Error && err.message === "OPENAI_API_KEY_MISSING") {
-        return {
-          status: "needs_setup",
-          error: "OPENAI_API_KEY não está configurada — necessária pra transcrever vídeos do X.",
-        };
-      }
-      return { status: "error", error: err instanceof Error ? err.message : "Falha ao transcrever o vídeo do X." };
-    }
+    return downloadAndTranscribe(() => fetchXVideoUrl(url), "X");
   }
 
   return {

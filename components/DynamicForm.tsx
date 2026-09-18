@@ -122,8 +122,7 @@ export default function DynamicForm({
               </div>
               <p className="mt-1 text-xs text-muted">
                 Link de YouTube, Instagram ou X — o vídeo é transcrito antes de rodar a skill (YouTube usa
-                a legenda do próprio vídeo; Instagram e X passam pela transcrição via Whisper). Instagram
-                ainda não está disponível.
+                a legenda do próprio vídeo; Instagram e X passam pela transcrição via Whisper).
               </p>
             </div>
           ) : (

@@ -832,15 +832,17 @@ Per-platform, since there's no single mechanism that covers all three:
 - **YouTube** — free, no external service: fetches the video's own caption track (`youtube-transcript`
   npm package, an unofficial-but-widely-used wrapper around YouTube's public timedtext endpoint).
   Only works when the video actually has captions (most do, not all).
-- **X/Twitter** — downloads the video via X's own syndication endpoint (the same one X's embed
-  widgets use, so no login needed, but unofficial and undocumented — could stop working without
-  notice) and sends it to OpenAI's Whisper (`OPENAI_API_KEY`, `$0.006`/min, 25MB file cap). Missing
-  the key surfaces as `needs_setup`, same pattern as a missing `ANTHROPIC_API_KEY` or Cowork
-  webhook — never a faked transcript.
-- **Instagram** — not implemented. Every approach found relies on scraping techniques Instagram
-  actively fights and that break without warning; rather than ship something unverified that could
-  silently produce wrong results, this stays a documented gap (`needs_setup`, with that reasoning
-  in the error message) until a real, stable method turns up.
+- **X/Twitter** and **Instagram** — both download the actual video, then send it to OpenAI's
+  Whisper (`OPENAI_API_KEY`, `$0.006`/min, 25MB file cap). Missing the key surfaces as
+  `needs_setup`, same pattern as a missing `ANTHROPIC_API_KEY` or Cowork webhook — never a faked
+  transcript. Finding the video's direct URL is platform-specific and, for both, unofficial and
+  undocumented — explicitly "functional, not guaranteed reliable" per how this was scoped: X uses
+  its own syndication endpoint (the same one its embed widgets use, no login needed); Instagram
+  scrapes the post's `/embed/captioned/` page for its `og:video` meta tag (falling back to
+  scanning the page's own embedded JSON for a `video_url` field) — that page is meant to render an
+  embedded post without a login, so it's the most direct public source found. Either can stop
+  working without notice if the platform changes something; when that happens, it surfaces as a
+  normal recorded `error` on the execution, same as any other run failure — not a silent gap.
 
 The whole attempt is capped at 60s (`TRANSCRIBE_TIMEOUT_MS`) so a slow download can't quietly eat
 into the run's own time budget — see "Long-running skills" above for why that budget already has
