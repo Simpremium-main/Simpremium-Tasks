@@ -77,6 +77,7 @@ function mapExecutionRow(row: Record<string, unknown>): Execution {
     conversationState: (row.conversation_state as ConversationState | null) ?? null,
     usage: (row.usage as TokenUsage | null) ?? null,
     ranBy: (row.ran_by as string | null) ?? null,
+    favorite: Boolean(row.favorite),
     startedAt: new Date(row.started_at as string),
     finishedAt: row.finished_at ? new Date(row.finished_at as string) : null,
   };
@@ -447,7 +448,7 @@ export async function listAllExecutionsForExport(): Promise<
   const { data, error, status, statusText } = await supabase
     .from("executions")
     .select(
-      "id, skill_id, status, source, input_values, prompt_snapshot, result, error, files, usage, ran_by, started_at, finished_at, skill:skills(id, name)"
+      "id, skill_id, status, source, input_values, prompt_snapshot, result, error, files, usage, ran_by, favorite, started_at, finished_at, skill:skills(id, name)"
     )
     .order("started_at", { ascending: false });
   if (error) throw describeError("listAllExecutionsForExport", error, status, statusText);
@@ -539,6 +540,7 @@ export interface UpdateExecutionInput {
   files?: ExecutionFile[] | null;
   conversationState?: ConversationState | null;
   usage?: TokenUsage | null;
+  favorite?: boolean;
 }
 
 /**
@@ -570,6 +572,7 @@ export async function updateExecution(
   if (patch.files !== undefined) row.files = patch.files;
   if (patch.conversationState !== undefined) row.conversation_state = patch.conversationState;
   if (patch.usage !== undefined) row.usage = patch.usage;
+  if (patch.favorite !== undefined) row.favorite = patch.favorite;
 
   const { data, error, status, statusText } = await supabase
     .from("executions")

@@ -153,6 +153,9 @@ export interface Execution {
   conversationState: ConversationState | null;
   usage: TokenUsage | null;
   ranBy: string | null;
+  /** Starred by hand — "this was the good run" among several attempts. Pure
+   *  UI convenience, no effect on scheduling/retry/anything else. */
+  favorite: boolean;
   startedAt: Date;
   finishedAt: Date | null;
 }

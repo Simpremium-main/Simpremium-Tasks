@@ -299,6 +299,27 @@ page's stats row (next to "Histórico de execuções") adds an average across th
 executions, so a skill quietly getting slower over time (more chunks needed, heavier searches)
 shows up as a trend instead of only being noticeable one execution at a time.
 
+### Favoriting an execution
+
+A star toggle on every execution row and in the details modal (`ExecutionList.tsx`'s
+`FavoriteToggle`, `PATCH /api/executions/[id]`) marks "this was the good run" among several
+attempts — a plain `favorite` boolean on the execution row, read by nothing else in the app.
+Optimistic: the star flips the instant you click it, the request happens in the background, and it
+reverts if that fails. `/history` gets a **Favoritas** filter tab (shown only once at least one
+execution is starred, same pattern as the **Arquivos** tab) — `HistoryBoard.tsx` now keeps its own
+copy of the execution list in state instead of just reading the server-fetched prop directly, so
+toggling a star updates the filter live instead of needing a page reload to show up. Disabled
+entirely on the public `/share/[token]` page (`favoritable={false}`) — that view is read-only and
+needs no login, so it can't let an anonymous visitor mutate anything, the same reasoning that
+already keeps a run button off that page.
+
+Needs one new column on `executions` that a fresh `supabase/schema.sql` already includes — if you
+set this project up earlier, run in the SQL Editor:
+
+```sql
+alter table executions add column if not exists favorite boolean not null default false;
+```
+
 ### Prompt caching (cutting the API cost per skill run)
 
 Two Anthropic ephemeral cache breakpoints are set on every Claude-direct call

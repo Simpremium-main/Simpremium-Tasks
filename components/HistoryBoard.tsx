@@ -4,17 +4,24 @@ import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import ExecutionList, { type ExecutionItem } from "./ExecutionList";
 
-type Filter = "all" | "success" | "error" | "needs_setup" | "files";
+type Filter = "all" | "success" | "error" | "needs_setup" | "files" | "favorites";
 
-export default function HistoryBoard({ executions }: { executions: ExecutionItem[] }) {
+export default function HistoryBoard({ executions: initialExecutions }: { executions: ExecutionItem[] }) {
+  const [executions, setExecutions] = useState(initialExecutions);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
 
   const hasFiles = useMemo(() => executions.some((e) => e.files && e.files.length > 0), [executions]);
+  const hasFavorites = useMemo(() => executions.some((e) => e.favorite), [executions]);
+
+  function handleFavoriteChange(id: string, favorite: boolean) {
+    setExecutions((prev) => prev.map((e) => (e.id === id ? { ...e, favorite } : e)));
+  }
 
   const filtered = useMemo(() => {
     let list = executions;
     if (filter === "files") list = list.filter((e) => e.files && e.files.length > 0);
+    else if (filter === "favorites") list = list.filter((e) => e.favorite);
     else if (filter !== "all") list = list.filter((e) => e.status === filter);
     if (query.trim()) {
       const q = query.trim().toLowerCase();
@@ -57,6 +64,7 @@ export default function HistoryBoard({ executions }: { executions: ExecutionItem
               ["error", "Erro"],
               ["needs_setup", "Setup"],
               ...(hasFiles ? [["files", "Arquivos"] as [Filter, string]] : []),
+              ...(hasFavorites ? [["favorites", "Favoritas"] as [Filter, string]] : []),
             ] as [Filter, string][]
           ).map(([value, label]) => (
             <button
@@ -78,7 +86,7 @@ export default function HistoryBoard({ executions }: { executions: ExecutionItem
           Nenhuma execução encontrada com esse filtro.
         </p>
       ) : (
-        <ExecutionList executions={filtered} showSkillName />
+        <ExecutionList executions={filtered} showSkillName onFavoriteChange={handleFavoriteChange} />
       )}
     </div>
   );

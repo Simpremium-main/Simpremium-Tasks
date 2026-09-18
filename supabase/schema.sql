@@ -48,6 +48,7 @@ create table if not exists executions (
   conversation_state jsonb, -- ConversationState | null — saved mid-flight state for a run split across multiple requests
   usage           jsonb, -- TokenUsage | null — {inputTokens, outputTokens}, null for Cowork/heuristic dispatch (no Claude API call to report on)
   ran_by          text, -- display name of the logged-in user who triggered this run
+  favorite        boolean not null default false, -- starred by hand, "this was the good run" among several attempts
   started_at      timestamptz not null default now(),
   finished_at     timestamptz
 );

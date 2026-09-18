@@ -16,6 +16,7 @@ import {
   Paperclip,
   RotateCcw,
   Sparkles,
+  Star,
   Timer,
   User,
   X,
@@ -50,6 +51,7 @@ export interface ExecutionItem {
   files: ExecutionFileItem[] | null;
   usage: ExecutionUsageItem | null;
   ranBy: string | null;
+  favorite: boolean;
   startedAt: string;
   finishedAt: string | null;
   skill?: { id: string; name: string };
@@ -112,6 +114,8 @@ export default function ExecutionList({
   showSkillName = false,
   highlightId,
   onRetry,
+  favoritable = true,
+  onFavoriteChange,
 }: {
   executions: ExecutionItem[];
   showSkillName?: boolean;
@@ -119,6 +123,13 @@ export default function ExecutionList({
   /** Present only on the skill's own page (RunSkillPanel owns the run form
    *  to prefill) — the global history list has no form to retry into. */
   onRetry?: (execution: ExecutionItem) => void;
+  /** False on the public /share/[token] page — that view is read-only, no
+   *  login required, so it can't let an anonymous visitor mutate anything. */
+  favoritable?: boolean;
+  /** Lets a parent holding its own copy of the list (HistoryBoard, for its
+   *  "Favoritas" filter) stay in sync after a toggle — this component
+   *  itself only owns the optimistic per-row display, not the source list. */
+  onFavoriteChange?: (id: string, favorite: boolean) => void;
 }) {
   const [detailsFor, setDetailsFor] = useState<ExecutionItem | null>(null);
   // Only running while some row is actually "running" — no point ticking a
@@ -151,6 +162,8 @@ export default function ExecutionList({
             stuck={isLikelyStuck(execution, now)}
             onViewDetails={() => setDetailsFor(execution)}
             onRetry={onRetry ? () => retry(execution) : undefined}
+            favoritable={favoritable}
+            onFavoriteChange={onFavoriteChange}
           />
         ))}
       </ul>
@@ -160,6 +173,8 @@ export default function ExecutionList({
           stuck={isLikelyStuck(detailsFor, now)}
           onClose={() => setDetailsFor(null)}
           onRetry={onRetry ? () => retry(detailsFor) : undefined}
+          favoritable={favoritable}
+          onFavoriteChange={onFavoriteChange}
         />
       )}
     </>
@@ -173,6 +188,8 @@ function ExecutionRow({
   stuck,
   onViewDetails,
   onRetry,
+  favoritable,
+  onFavoriteChange,
 }: {
   execution: ExecutionItem;
   showSkillName: boolean;
@@ -180,6 +197,8 @@ function ExecutionRow({
   stuck: boolean;
   onViewDetails: () => void;
   onRetry?: () => void;
+  favoritable: boolean;
+  onFavoriteChange?: (id: string, favorite: boolean) => void;
 }) {
   const failedScheduled = isFailedScheduled(execution);
   const durationMs = executionDurationMs(execution.startedAt, execution.finishedAt);
@@ -265,6 +284,13 @@ function ExecutionRow({
             {new Date(execution.startedAt).toLocaleString("pt-BR")}
           </span>
         </button>
+        {favoritable && (
+          <FavoriteToggle
+            executionId={execution.id}
+            favorite={execution.favorite}
+            onChange={onFavoriteChange}
+          />
+        )}
         <CopyPromptButton text={execution.promptSnapshot} />
         {onRetry && (
           <button
@@ -287,6 +313,62 @@ function ExecutionRow({
         </button>
       </div>
     </li>
+  );
+}
+
+/**
+ * Starred by hand — "this was the good run" among several attempts, nothing
+ * else in the app reads it. Optimistic: flips immediately on click, PATCHes
+ * in the background, and reverts if that fails. `onChange` is only there so
+ * a parent holding its own copy of the list (HistoryBoard's "Favoritas"
+ * filter) can stay in sync — this component doesn't own that source list.
+ */
+function FavoriteToggle({
+  executionId,
+  favorite,
+  onChange,
+}: {
+  executionId: string;
+  favorite: boolean;
+  onChange?: (id: string, favorite: boolean) => void;
+}) {
+  const [current, setCurrent] = useState(favorite);
+  const [working, setWorking] = useState(false);
+
+  useEffect(() => setCurrent(favorite), [favorite]);
+
+  async function toggle(e: React.MouseEvent) {
+    e.stopPropagation();
+    const next = !current;
+    setCurrent(next);
+    setWorking(true);
+    try {
+      const res = await fetch(`/api/executions/${executionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ favorite: next }),
+      });
+      if (!res.ok) throw new Error();
+      onChange?.(executionId, next);
+    } catch {
+      setCurrent(!next);
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      disabled={working}
+      title={current ? "Remover dos favoritos" : "Marcar como favorita"}
+      className={`shrink-0 transition-colors disabled:opacity-60 ${
+        current ? "text-amber-500" : "text-muted hover:text-amber-500"
+      }`}
+    >
+      <Star size={15} className={current ? "fill-current" : ""} />
+    </button>
   );
 }
 
@@ -324,11 +406,15 @@ function ExecutionDetailsModal({
   stuck,
   onClose,
   onRetry,
+  favoritable,
+  onFavoriteChange,
 }: {
   execution: ExecutionItem;
   stuck: boolean;
   onClose: () => void;
   onRetry?: () => void;
+  favoritable: boolean;
+  onFavoriteChange?: (id: string, favorite: boolean) => void;
 }) {
   const fileBase = `execucao-${execution.id.slice(0, 8)}`;
   const durationMs = executionDurationMs(execution.startedAt, execution.finishedAt);
@@ -382,14 +468,23 @@ function ExecutionDetailsModal({
               </Link>
             )}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Fechar"
-            className="text-muted hover:text-ink rounded-md p-1 hover:bg-canvas transition-colors shrink-0"
-          >
-            <X size={16} />
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            {favoritable && (
+              <FavoriteToggle
+                executionId={execution.id}
+                favorite={execution.favorite}
+                onChange={onFavoriteChange}
+              />
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Fechar"
+              className="text-muted hover:text-ink rounded-md p-1 hover:bg-canvas transition-colors"
+            >
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center gap-1.5 text-xs text-muted mb-4">

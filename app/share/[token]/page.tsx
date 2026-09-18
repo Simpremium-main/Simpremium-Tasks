@@ -73,7 +73,7 @@ export default async function SharedSkillPage({ params }: { params: { token: str
         </div>
 
         <h2 className="text-sm font-semibold text-ink mb-2">Histórico de execuções</h2>
-        <ExecutionList executions={executions} />
+        <ExecutionList executions={executions} favoritable={false} />
 
         <p className="mt-8 text-center text-xs text-muted">Skills Hub</p>
       </div>

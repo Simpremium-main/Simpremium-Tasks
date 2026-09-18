@@ -295,7 +295,14 @@ export default function RunSkillPanel({
             </div>
           )}
         </div>
-        <ExecutionList executions={executions} highlightId={highlightId} onRetry={handleRetry} />
+        <ExecutionList
+          executions={executions}
+          highlightId={highlightId}
+          onRetry={handleRetry}
+          onFavoriteChange={(id, favorite) =>
+            setExecutions((prev) => prev.map((e) => (e.id === id ? { ...e, favorite } : e)))
+          }
+        />
       </div>
     </div>
   );
