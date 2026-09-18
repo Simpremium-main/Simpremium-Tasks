@@ -186,10 +186,27 @@ async function fetchInstagramVideoFromGraphQL(shortcode: string): Promise<string
   });
   if (!res.ok) return null;
 
-  const data = await res.json();
-  const media = data?.data?.xdt_shortcode_media;
+  // Instagram doesn't always answer this with the expected JSON — a
+  // suspected-bot request can get a 200 with an HTML login/challenge page
+  // instead of a proper error status, which used to surface as a raw,
+  // confusing "Unexpected token '<'..." JSON.parse exception. Checking the
+  // content-type first, and falling back to null on a parse failure either
+  // way, turns that into the same clean "no video found" outcome as every
+  // other way this lookup can come up empty.
+  const contentType = res.headers.get("content-type") ?? "";
+  if (!contentType.includes("json") && !contentType.includes("javascript")) return null;
+
+  let data: unknown;
+  try {
+    data = await res.json();
+  } catch {
+    return null;
+  }
+
+  const media = (data as { data?: { xdt_shortcode_media?: { is_video?: boolean; video_url?: string } } })?.data
+    ?.xdt_shortcode_media;
   if (!media?.is_video || !media?.video_url) return null;
-  return media.video_url as string;
+  return media.video_url;
 }
 
 /**
