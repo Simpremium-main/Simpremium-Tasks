@@ -605,6 +605,34 @@ export async function claimNextCoworkJob(): Promise<CoworkJob | null> {
   return { executionId, skillName, prompt };
 }
 
+/** Stamped by GET /api/cowork-agent/next-job on every poll from the Mac
+ *  mini agent — see supabase/schema.sql's cowork_agent_status. Failing to
+ *  record a heartbeat shouldn't ever block handing the agent a real job,
+ *  so callers should treat this as best-effort (log, don't throw) rather
+ *  than fatal. */
+export async function recordCoworkAgentSeen(): Promise<void> {
+  const supabase = getSupabase();
+  const { error, status, statusText } = await supabase
+    .from("cowork_agent_status")
+    .upsert({ id: 1, last_seen_at: new Date().toISOString() });
+  if (error) throw describeError("recordCoworkAgentSeen", error, status, statusText);
+}
+
+/** null means the agent has never polled at all (row doesn't exist yet, or
+ *  last_seen_at was never stamped) — the dashboard shows "nunca conectou"
+ *  for that case rather than treating it the same as "polled a while
+ *  ago". */
+export async function getCoworkAgentLastSeen(): Promise<Date | null> {
+  const supabase = getSupabase();
+  const { data, error, status, statusText } = await supabase
+    .from("cowork_agent_status")
+    .select("last_seen_at")
+    .eq("id", 1)
+    .maybeSingle();
+  if (error) throw describeError("getCoworkAgentLastSeen", error, status, statusText);
+  return data?.last_seen_at ? new Date(data.last_seen_at as string) : null;
+}
+
 export interface UpdateExecutionInput {
   status?: ExecutionStatus;
   result?: string | null;

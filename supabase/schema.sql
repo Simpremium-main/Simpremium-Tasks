@@ -72,9 +72,22 @@ create table if not exists skill_prompt_versions (
 
 create index if not exists skill_prompt_versions_skill_id_idx on skill_prompt_versions (skill_id);
 
+-- Single-row heartbeat: GET /api/cowork-agent/next-job stamps last_seen_at
+-- on every poll from the Mac mini agent (see lib/cowork.ts), regardless of
+-- whether a job was actually found — the poll itself is the signal the
+-- agent is alive. The dashboard reads it to show "agente visto há Xs" /
+-- "nunca conectou" instead of that only being visible in the agent's own
+-- terminal output. The `id = 1` check keeps this to exactly one row.
+create table if not exists cowork_agent_status (
+  id             integer primary key default 1,
+  last_seen_at   timestamptz,
+  constraint cowork_agent_status_singleton check (id = 1)
+);
+
 alter table skills enable row level security;
 alter table executions enable row level security;
 alter table skill_prompt_versions enable row level security;
+alter table cowork_agent_status enable row level security;
 -- No policies added — see the note at the top of this file for why.
 
 -- Secrets are masked in lib/mask.ts before a row is ever written here — this

@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { Download, LayoutGrid, Plus, Sparkles } from "lucide-react";
-import { listSkills } from "@/lib/data";
+import { getCoworkAgentLastSeen, listSkills } from "@/lib/data";
 import { isClaudeConfigured } from "@/lib/claude";
 import { isCoworkAgentConfigured } from "@/lib/cowork";
 import { hasUnschedulableSecret } from "@/lib/schedule";
 import SkillsBoard from "@/components/SkillsBoard";
 import PageHeader from "@/components/PageHeader";
 import ImportSkillsButton from "@/components/ImportSkillsButton";
+import CoworkAgentStatus from "@/components/CoworkAgentStatus";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +44,7 @@ export default async function DashboardPage() {
 
   const claudeReady = isClaudeConfigured();
   const coworkReady = isCoworkAgentConfigured();
+  const coworkAgentLastSeen = coworkReady ? await getCoworkAgentLastSeen() : null;
   const archivedCount = skills.filter((s) => s.status === "archived").length;
   const boardSkills = skills.map((s) => ({
     id: s.id,
@@ -74,6 +76,9 @@ export default async function DashboardPage() {
         }
         actions={
           <>
+            {coworkReady && (
+              <CoworkAgentStatus initialLastSeenAt={coworkAgentLastSeen?.toISOString() ?? null} />
+            )}
             <a
               href="/api/skills/export"
               title="Baixar todas as skills como JSON"

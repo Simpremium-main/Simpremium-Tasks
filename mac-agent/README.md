@@ -29,7 +29,10 @@ best guess, not a working integration yet.
    `{DASHBOARD_URL}/api/cowork-agent/report-result` — success with the real text, or a clear error.
 5. Back to step 1.
 
-Every step is logged to stdout (`[cowork-agent] ...`) so you can watch what it's doing.
+Every step is logged to stdout (`[cowork-agent] ...`) so you can watch what it's doing. The
+dashboard itself also shows a live "Agente ativo — visto há Xs" pill (next to the skills list's
+other buttons) once this agent has polled at least once — a quick way to confirm it's actually
+reaching the dashboard without needing to check this Terminal output.
 
 ## Requirements
 

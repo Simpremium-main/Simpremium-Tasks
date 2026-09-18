@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { claimNextCoworkJob } from "@/lib/data";
+import { claimNextCoworkJob, recordCoworkAgentSeen } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +23,12 @@ export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  // Every authenticated poll — job or not — means the agent is alive right
+  // now, which is what the dashboard's "agente visto há Xs" indicator
+  // reads. Best-effort: a heartbeat write failing shouldn't ever block
+  // handing the agent a real job.
+  recordCoworkAgentSeen().catch((err) => console.error("recordCoworkAgentSeen failed:", err));
 
   try {
     const job = await claimNextCoworkJob();

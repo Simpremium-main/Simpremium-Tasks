@@ -442,12 +442,42 @@ testing" section for how to test and adjust it once you have Cowork running on t
 Skills that don't depend on Cowork run directly through the Claude API when `ANTHROPIC_API_KEY`
 is set (`lib/claude.ts`); otherwise they're flagged `needs_setup` the same way.
 
-Needs one new column on `executions` that a fresh `supabase/schema.sql` already includes — if
-you set this project up before this feature existed, run in the SQL Editor:
+**"Agente ativo/inativo/nunca conectou" pill** next to the skills list's other actions
+(`components/CoworkAgentStatus.tsx`) — otherwise the only way to know the Mac mini agent is
+actually alive is to go look at its own terminal output. `GET /api/cowork-agent/next-job` stamps
+a single-row heartbeat (`cowork_agent_status`, `lib/data.ts`'s `recordCoworkAgentSeen`) on *every*
+poll from the agent, job or not, since the poll itself is the signal; the pill polls its own small
+authenticated route (`GET /api/cowork-agent/status`, behind the normal login gate — unlike the
+agent's own two routes) every 20s and ticks the "visto há Xs" text live in between. Green while
+under 90s old (well above the agent's default 15s poll interval, so normal jitter doesn't flip it),
+amber past that, gray/"nunca conectou" if the row doesn't exist yet at all. Only shown when
+`COWORK_AGENT_TOKEN` is set — no point showing agent status before the mechanism is even wired up.
+
+Needs two new tables/columns that a fresh `supabase/schema.sql` already includes — if you set
+this project up before this feature existed, run in the SQL Editor:
 
 ```sql
 alter table executions add column if not exists cowork_payload text;
+
+create table if not exists cowork_agent_status (
+  id             integer primary key default 1,
+  last_seen_at   timestamptz,
+  constraint cowork_agent_status_singleton check (id = 1)
+);
+alter table cowork_agent_status enable row level security;
 ```
+
+**A middleware bug found and fixed while building this**: `middleware.ts` gates every path behind
+a real Supabase Auth session and redirects to `/login` otherwise — but it ran *before* any
+route-specific logic, including this feature's two agent routes and the pre-existing
+`GET /api/cron/run-scheduled`, both of which authenticate their caller with their own bearer token
+(`COWORK_AGENT_TOKEN`, `CRON_SECRET`) because the caller isn't a logged-in browser at all. Neither
+check could ever run — the request was 307-redirected to `/login` first, every time, since neither
+Vercel Cron nor the Mac mini agent carries a Supabase session cookie. In practice this meant
+scheduled-skill cron runs have likely never actually executed in production since login was added,
+and the Cowork agent would have failed identically on its first real request. Fixed by excluding
+`/api/cron/` and `/api/cowork-agent/` from the session gate — their own token checks are the real
+(and only needed) authorization for those two prefixes.
 
 ## Login — real Supabase Auth
 
