@@ -563,6 +563,7 @@ export async function setCoworkPayload(executionId: string, payload: string): Pr
     .eq("id", executionId)
     .select("id, status, cowork_payload");
   if (error) throw describeError("setCoworkPayload", error, status, statusText);
+  console.log(`[cowork-agent-server] setCoworkPayload: update call itself returned HTTP ${status} ${statusText}`);
   const updatedRow = data?.[0];
   console.log(
     `[cowork-agent-server] setCoworkPayload: update affected ${data?.length ?? 0} row(s)` +
@@ -570,6 +571,27 @@ export async function setCoworkPayload(executionId: string, payload: string): Pr
         ? `; row ${updatedRow.id} now has status="${updatedRow.status}", hasPayload=${updatedRow.cowork_payload !== null}`
         : " — no row matched this executionId, which means the job was never actually queued")
   );
+
+  // Read-your-write check, deliberately via a fresh plain SELECT instead of
+  // trusting the UPDATE...RETURNING data above — if this disagrees with what
+  // the update itself just reported, that's a real clue (a second writer
+  // racing this one, or the two queries somehow hitting different data)
+  // rather than something wrong with claimNextCoworkJob's later query.
+  const { data: verifyRow, error: verifyError } = await supabase
+    .from("executions")
+    .select("id, status, cowork_payload")
+    .eq("id", executionId)
+    .maybeSingle();
+  if (verifyError) {
+    console.log(`[cowork-agent-server] setCoworkPayload: verificação pós-escrita falhou:`, verifyError.message);
+  } else {
+    console.log(
+      `[cowork-agent-server] setCoworkPayload: verificação pós-escrita (SELECT separado) — ` +
+        (verifyRow
+          ? `status="${verifyRow.status}", hasPayload=${verifyRow.cowork_payload !== null && verifyRow.cowork_payload !== undefined}`
+          : "linha não encontrada (!)")
+    );
+  }
 }
 
 export interface CoworkJob {
@@ -613,12 +635,42 @@ export async function claimNextCoworkJob(): Promise<CoworkJob | null> {
     );
     console.log(
       "[cowork-agent-server] detalhe das execuções 'running':",
-      runningRows.map((r) => ({
-        id: r.id,
-        source: r.source,
-        startedAt: r.started_at,
-        hasPayload: r.cowork_payload !== null && r.cowork_payload !== undefined,
-      }))
+      JSON.stringify(
+        runningRows.map((r) => ({
+          id: r.id,
+          source: r.source,
+          startedAt: r.started_at,
+          hasPayload: r.cowork_payload !== null && r.cowork_payload !== undefined,
+          payloadLen: r.cowork_payload?.length ?? 0,
+        }))
+      )
+    );
+  }
+
+  // Second, INDEPENDENT diagnostic query: instead of filtering by status
+  // first, filter by "has a payload" first, with NO status filter at all.
+  // If a row shows up here that did NOT show up in the "running" list
+  // above, that proves the row's actual status isn't "running" (contrary
+  // to what queueForCowork/setCoworkPayload assumed when it queued it) —
+  // pinpointing the mismatch instead of guessing at it.
+  const { data: payloadRows, error: payloadError } = await supabase
+    .from("executions")
+    .select("id, status, source, started_at, cowork_payload")
+    .not("cowork_payload", "is", null);
+  if (payloadError) {
+    console.log("[cowork-agent-server] busca por cowork_payload (qualquer status) falhou:", payloadError.message);
+  } else {
+    console.log(
+      `[cowork-agent-server] execuções com cowork_payload preenchido, QUALQUER status (${payloadRows?.length ?? 0}):`,
+      JSON.stringify(
+        (payloadRows ?? []).map((r) => ({
+          id: r.id,
+          status: r.status,
+          source: r.source,
+          startedAt: r.started_at,
+          payloadLen: r.cowork_payload?.length ?? 0,
+        }))
+      )
     );
   }
 
@@ -642,6 +694,9 @@ export async function claimNextCoworkJob(): Promise<CoworkJob | null> {
     .order("started_at", { ascending: true })
     .limit(1)
     .maybeSingle();
+  console.log(
+    `[cowork-agent-server] claimNextCoworkJob: query final retornou HTTP ${status} ${statusText}, error=${error ? error.message : "null"}, data=${data ? JSON.stringify({ id: data.id, payloadLen: data.cowork_payload?.length ?? 0 }) : "null"}`
+  );
   if (error) throw describeError("claimNextCoworkJob", error, status, statusText);
   if (!data) {
     console.log("[cowork-agent-server] resultado: nenhum job do Cowork pra entregar ao agente agora");

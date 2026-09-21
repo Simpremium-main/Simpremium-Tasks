@@ -199,11 +199,22 @@ async function main() {
     `[cowork-agent] Rodando — consultando ${CONFIG.dashboardUrl} a cada ${CONFIG.pollIntervalMs}ms`
   );
   for (;;) {
+    console.log(`[cowork-agent] Consultando ${CONFIG.dashboardUrl}/api/cowork-agent/next-job...`);
     try {
       const job = await fetchNextJob();
       if (job) {
+        console.log(`[cowork-agent] Job recebido: ${JSON.stringify({ executionId: job.executionId, skillName: job.skillName, promptLen: job.prompt?.length ?? 0 })}`);
         await processJob(job);
-        continue; // check again right away in case more jobs are queued
+        // Deliberately always sleeps below now, even after a job — this used
+        // to `continue` straight into another poll "in case more jobs are
+        // queued", but that fast path turned a broken/rejected report (e.g.
+        // the server refusing an already-finalized execution) into a tight
+        // loop hammering the dashboard many times a second with no delay at
+        // all — confirmed from the dashboard's own request logs during a
+        // real debugging session. A few seconds of extra latency between
+        // chained jobs is a fine trade for never doing that again.
+      } else {
+        console.log("[cowork-agent] Nenhum job disponível agora.");
       }
     } catch (err) {
       console.error(
