@@ -1,0 +1,15 @@
+{
+  "name": "skills-hub-report-result-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Minimal MCP server (one tool, report_cowork_result) so a Cowork task can report its result directly to the Skills Hub dashboard's API instead of writing to a local results file — see mac-agent/README.md.",
+  "main": "index.mjs",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^3.23.0"
+  }
+}

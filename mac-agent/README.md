@@ -124,6 +124,67 @@ If a job's result file never shows up within the timeout, the agent reports the 
 main dashboard's own rule that a missing/unconfirmed outcome gets recorded honestly instead of
 guessed at.
 
+## Reporting results via MCP instead of a local file (experimental, untested)
+
+The file-watching approach above works, but it's indirect: it depends on Cowork actually writing
+the file, `agent.js` polling for it every 5s, and a 20-minute timeout before giving up if it never
+shows. `mac-agent/mcp-report-result/` is a small alternative worth testing: a minimal
+[MCP](https://modelcontextprotocol.io) server exposing one tool, `report_cowork_result`, that POSTs
+straight to the dashboard's `POST /api/cowork-agent/report-result` — the same route `agent.js`
+itself calls after reading the results file. If a Cowork task can actually call it, the result lands
+the instant the task finishes, with no polling delay and no results-folder convention needed.
+
+**What's genuinely unverified here**: whether a Cowork task inherits the MCP servers configured in
+Claude Desktop's regular chat settings at all, or runs in a separate context that doesn't see them.
+There's no documentation confirming this either way — it needs a real test, which is why this is
+kept as a separate, opt-in tool rather than wired into `agent.js`'s main flow yet.
+
+**Setup:**
+
+1. Install its dependencies:
+   ```
+   cd mac-agent/mcp-report-result
+   npm install
+   ```
+2. Add it to Claude Desktop's MCP config — `~/Library/Application Support/Claude/claude_desktop_config.json`
+   (create the file if it doesn't exist yet). Merge this into the `mcpServers` object, filling in
+   the two env values (same `DASHBOARD_URL`/`COWORK_AGENT_TOKEN` as this agent's own `.env`, and the
+   **absolute** path to `index.mjs` — `pwd` inside `mac-agent/mcp-report-result` to get it):
+   ```json
+   {
+     "mcpServers": {
+       "skills-hub-report-result": {
+         "command": "node",
+         "args": ["/absolute/path/to/mac-agent/mcp-report-result/index.mjs"],
+         "env": {
+           "DASHBOARD_URL": "https://simpremium-tasks.vercel.app",
+           "COWORK_AGENT_TOKEN": "same value as mac-agent/.env's COWORK_AGENT_TOKEN"
+         }
+       }
+     }
+   }
+   ```
+3. **Fully quit and reopen Claude Desktop** (MCP servers are only picked up on startup).
+
+**Test in two phases — don't skip straight to a real Cowork task:**
+
+1. **Plain chat first.** Open a normal (non-Cowork) conversation in Claude Desktop and ask something
+   like: *"Chame a ferramenta report_cowork_result com executionId 'teste-123', status 'success' e
+   result 'teste manual'."* If the tool is wired up at all, Claude should call it and you'll see a
+   confirmation; check the dashboard's Vercel logs for a `report-result: recebido do agente —
+   executionId=teste-123` line (it'll fail with 404 since `teste-123` isn't a real execution — that's
+   fine, it proves the call reached the server). If Claude says it has no such tool, the MCP server
+   isn't loaded — recheck the config path and restart Desktop again.
+2. **Only once that works**, test whether a Cowork task specifically can reach it — start any real
+   Cowork task and explicitly ask it, as part of the prompt, to call `report_cowork_result` at the
+   end with a real (or fake, for this first try) execution ID instead of saving to a file. Watch
+   whether it actually happens.
+
+If phase 2 works, the next step (not done yet, on purpose) would be changing `agent.js`'s
+`driveCowork()` to append a "call this tool with this executionId" instruction instead of the
+"save to this file" one, and possibly skip `waitForResult`'s polling entirely — but that's worth
+doing only after confirming Cowork can really reach this tool, not before.
+
 ## Troubleshooting
 
 - **A dashboard run just sits at "running" forever.** Check this agent's own terminal/log output —
