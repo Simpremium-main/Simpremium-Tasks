@@ -85,6 +85,12 @@ create index if not exists skill_prompt_versions_skill_id_idx on skill_prompt_ve
 create table if not exists cowork_agent_status (
   id             integer primary key default 1,
   last_seen_at   timestamptz,
+  -- Manual kill switch: when true, claimNextCoworkJob hands back null no
+  -- matter what's queued — lets you stop new jobs from being dispatched to
+  -- the agent (e.g. while investigating something odd) without having to
+  -- kill the process on the Mac mini itself. Toggled from the dashboard's
+  -- Cowork queue badge.
+  queue_paused   boolean not null default false,
   constraint cowork_agent_status_singleton check (id = 1)
 );
 

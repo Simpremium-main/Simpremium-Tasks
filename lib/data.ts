@@ -595,6 +595,32 @@ export async function setCoworkPayload(executionId: string, payload: string): Pr
   }
 }
 
+/** Manual kill switch for the Cowork queue — see supabase/schema.sql's
+ *  cowork_agent_status.queue_paused. A missing row (fresh setup) reads as
+ *  not-paused, same "nothing configured yet" default as getCoworkAgentLastSeen. */
+export async function isCoworkQueuePaused(): Promise<boolean> {
+  const supabase = getSupabase();
+  const { data, error, status, statusText } = await supabase
+    .from("cowork_agent_status")
+    .select("queue_paused")
+    .eq("id", 1)
+    .maybeSingle();
+  if (error) throw describeError("isCoworkQueuePaused", error, status, statusText);
+  return Boolean(data?.queue_paused);
+}
+
+/** Toggled from the dashboard's Cowork queue badge — upsert so this works
+ *  even before the agent has ever polled once (no cowork_agent_status row
+ *  yet). Only sets id/queue_paused, so it can't clobber last_seen_at on an
+ *  existing row. */
+export async function setCoworkQueuePaused(paused: boolean): Promise<void> {
+  const supabase = getSupabase();
+  const { error, status, statusText } = await supabase
+    .from("cowork_agent_status")
+    .upsert({ id: 1, queue_paused: paused });
+  if (error) throw describeError("setCoworkQueuePaused", error, status, statusText);
+}
+
 export interface CoworkJob {
   executionId: string;
   skillName: string;
@@ -615,6 +641,11 @@ export interface CoworkJob {
 export async function claimNextCoworkJob(): Promise<CoworkJob | null> {
   const supabase = getSupabase();
   console.log("[cowork-agent-server] claimNextCoworkJob: starting search for a queued job");
+
+  if (await isCoworkQueuePaused()) {
+    console.log("[cowork-agent-server] fila pausada manualmente — não entregando nenhum job agora");
+    return null;
+  }
 
   // Diagnostic: "no job found" looks identical from the agent's side
   // whether there's genuinely nothing queued, or there's a running Cowork
@@ -750,10 +781,16 @@ export async function markCoworkStarted(executionId: string): Promise<void> {
 /** Feeds the dashboard's Cowork queue badge (components/CoworkQueueBadge.tsx)
  *  — "waiting" is queued but not yet claimed by the agent (cowork_payload
  *  still set, same signal claimNextCoworkJob matches on), "inProgress" is
- *  claimed and being worked on (payload cleared, status still running). */
-export async function getCoworkQueueSummary(): Promise<{ waiting: number; inProgress: number }> {
+ *  claimed and being worked on (payload cleared, status still running).
+ *  "paused" mirrors isCoworkQueuePaused so the badge can render the kill
+ *  switch's current state without a second round-trip. */
+export async function getCoworkQueueSummary(): Promise<{
+  waiting: number;
+  inProgress: number;
+  paused: boolean;
+}> {
   const supabase = getSupabase();
-  const [waitingResult, inProgressResult] = await Promise.all([
+  const [waitingResult, inProgressResult, paused] = await Promise.all([
     supabase
       .from("executions")
       .select("id", { count: "exact", head: true })
@@ -766,6 +803,7 @@ export async function getCoworkQueueSummary(): Promise<{ waiting: number; inProg
       .eq("status", "running")
       .eq("source", "cowork")
       .is("cowork_payload", null),
+    isCoworkQueuePaused(),
   ]);
   if (waitingResult.error) {
     throw describeError("getCoworkQueueSummary (waiting)", waitingResult.error, waitingResult.status, waitingResult.statusText);
@@ -778,7 +816,7 @@ export async function getCoworkQueueSummary(): Promise<{ waiting: number; inProg
       inProgressResult.statusText
     );
   }
-  return { waiting: waitingResult.count ?? 0, inProgress: inProgressResult.count ?? 0 };
+  return { waiting: waitingResult.count ?? 0, inProgress: inProgressResult.count ?? 0, paused };
 }
 
 /** Stamped by GET /api/cowork-agent/next-job on every poll from the Mac

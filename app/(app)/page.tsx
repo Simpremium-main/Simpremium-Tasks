@@ -57,9 +57,9 @@ export default async function DashboardPage() {
   const coworkQueueSummary = coworkReady
     ? await getCoworkQueueSummary().catch((err) => {
         console.error("getCoworkQueueSummary failed:", err);
-        return { waiting: 0, inProgress: 0 };
+        return { waiting: 0, inProgress: 0, paused: false };
       })
-    : { waiting: 0, inProgress: 0 };
+    : { waiting: 0, inProgress: 0, paused: false };
   const archivedCount = skills.filter((s) => s.status === "archived").length;
   const boardSkills = skills.map((s) => ({
     id: s.id,

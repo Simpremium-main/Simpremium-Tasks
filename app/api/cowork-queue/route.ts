@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
-import { getCoworkQueueSummary } from "@/lib/data";
+import { NextRequest, NextResponse } from "next/server";
+import { getCoworkQueueSummary, setCoworkQueuePaused } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +17,30 @@ export async function GET() {
     console.error("GET /api/cowork-queue failed:", err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Failed to fetch Cowork queue summary" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * The kill switch itself — flips cowork_agent_status.queue_paused, which
+ * claimNextCoworkJob checks before handing anything to the agent. Stops new
+ * work from being dispatched without needing to kill mac-agent/agent.js on
+ * the Mac mini itself.
+ */
+export async function PATCH(req: NextRequest) {
+  const body = await req.json().catch(() => ({}));
+  if (typeof body.paused !== "boolean") {
+    return NextResponse.json({ error: "paused must be a boolean" }, { status: 400 });
+  }
+  try {
+    await setCoworkQueuePaused(body.paused);
+    const summary = await getCoworkQueueSummary();
+    return NextResponse.json(summary);
+  } catch (err) {
+    console.error("PATCH /api/cowork-queue failed:", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to update Cowork queue pause state" },
       { status: 500 }
     );
   }

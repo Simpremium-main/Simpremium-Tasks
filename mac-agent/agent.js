@@ -250,4 +250,20 @@ async function main() {
   }
 }
 
+// Last-resort safety net — everything in main()'s loop already has its own
+// try/catch, so these should normally never fire. But if something slips
+// past that (a bug in the error handling itself, a rejected promise nobody
+// awaited), Node's default behavior is to print a stack trace and kill the
+// whole process outright — which for a script meant to run unattended for
+// days turns one edge case into total silence until someone notices the
+// terminal isn't doing anything anymore. Logging and staying up is the
+// right tradeoff here: the next poll cycle is a clean retry regardless of
+// what just went wrong.
+process.on("uncaughtException", (err) => {
+  console.error("[cowork-agent] Exceção não tratada (o agente continua rodando):", err);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[cowork-agent] Promise rejeitada sem tratamento (o agente continua rodando):", reason);
+});
+
 main();

@@ -591,6 +591,32 @@ Needs one more column that a fresh `supabase/schema.sql` already includes:
 alter table executions add column if not exists cowork_started_at timestamptz;
 ```
 
+### Pausing the Cowork queue, and the agent surviving its own crashes
+
+Two more reliability pieces, both about what happens when something's genuinely wrong rather than
+just slow:
+
+- **A kill switch for the queue** — the same `CoworkQueueBadge` pill now has a pause/resume button.
+  Pausing sets `cowork_agent_status.queue_paused` (`lib/data.ts`'s `setCoworkQueuePaused`,
+  `PATCH /api/cowork-queue`), which `claimNextCoworkJob` checks first and, if true, hands back `null`
+  no matter what's queued — new jobs simply don't go out to the agent. For stopping the flow of new
+  work while investigating something odd, without needing to SSH into or physically sit at the Mac
+  mini to kill the process. Existing "in progress" jobs the agent already claimed aren't affected;
+  pausing only blocks the *next* handoff.
+- **`mac-agent/agent.js` no longer dies silently on a truly unexpected error.** Every step in its
+  main loop already has its own try/catch, but a script meant to run unattended for days needs a
+  last-resort net too — added `process.on("uncaughtException", ...)` and
+  `process.on("unhandledRejection", ...)` at the top level, both just logging and letting the loop
+  continue rather than Node's default (print a stack trace, kill the whole process). Without this,
+  one edge case nobody anticipated would silently turn into "the agent stopped polling and nothing
+  in the terminal explains why."
+
+Needs one more column, also in a fresh `supabase/schema.sql`:
+
+```sql
+alter table cowork_agent_status add column if not exists queue_paused boolean not null default false;
+```
+
 ## Login — real Supabase Auth
 
 `middleware.ts` gates every page behind `/login`, backed by real Supabase Auth (email +
