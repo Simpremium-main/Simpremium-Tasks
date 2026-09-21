@@ -37,7 +37,14 @@ function loadConfig() {
       fileVars[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
     }
   }
-  const get = (key, fallback) => fileVars[key] ?? process.env[key] ?? fallback;
+  // Deliberately `||`, not `??`: a line like `RESULTS_DIR=` left blank in a
+  // copied .env.example (no value after the `=`) parses to an empty string,
+  // not undefined — `??` would keep that empty string instead of falling
+  // back to the default, which is exactly what broke driveCowork's
+  // `mkdirSync(CONFIG.resultsDir, ...)` with `mkdir ''` (confirmed from a
+  // real run's crash log). None of these values are meant to legitimately
+  // be "", so treating blank the same as unset is always what's wanted here.
+  const get = (key, fallback) => fileVars[key] || process.env[key] || fallback;
 
   const dashboardUrl = get("DASHBOARD_URL");
   const token = get("COWORK_AGENT_TOKEN");
