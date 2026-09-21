@@ -13,10 +13,12 @@ dashboard for queued Cowork jobs, drives the Claude Desktop app locally through 
 reports the result back. No inbound networking needed on this machine — it only ever calls *out* to
 the dashboard, so nothing needs port-forwarding, a tunnel, or a public IP.
 
-**Read "The part that needs your testing" below before you rely on this for anything.** The
-polling/reporting half is solid — it's plain HTTP calls and file I/O. The half that actually drives
-Cowork's UI was written without any way to see Cowork running on a real Mac, so it's a documented
-best guess, not a working integration yet.
+**Two things both need to work for a job to actually complete**: `drive-cowork.applescript`
+(confirmed working — tested against a real Mac mini) actually driving Cowork, and the
+`report_cowork_result` MCP tool (`mac-agent/mcp-report-result/`, see "Reportando resultado via MCP"
+below) actually being reachable from a Cowork task, so it can report back. There's no local-file
+fallback anymore — if the MCP tool can't be reached, a job has no way to report its result at all,
+so get both working before relying on this for anything real.
 
 ## How it works
 
@@ -25,17 +27,19 @@ best guess, not a working integration yet.
    (best-effort — a failure here never blocks the job itself) so the dashboard can show "Cowork
    trabalhando há Xm" instead of a generic "running" that could just as easily mean "still in the
    queue, nobody's touched it yet".
-3. It writes the skill's prompt to a temp file, appends an instruction telling Cowork to save its
-   final answer to `~/CoworkAgent/results/<execution-id>.txt`, and runs `drive-cowork.applescript`
-   to paste that prompt into Cowork and submit it.
-4. It then watches that results folder for the file to show up (up to 20 minutes by default).
-5. Once it appears (or the timeout hits), it `POST`s the outcome to
-   `{DASHBOARD_URL}/api/cowork-agent/report-result` — success with the real text, or a clear error.
+3. It writes the skill's prompt to a temp file, appends an instruction telling Cowork to call the
+   `report_cowork_result` MCP tool with this exact execution id when it's done, and runs
+   `drive-cowork.applescript` to paste that prompt into Cowork and submit it.
+4. It then polls `GET {DASHBOARD_URL}/api/cowork-agent/execution-status` (up to 20 minutes by
+   default) waiting for that MCP call to have landed and moved the execution off "running" — the
+   MCP tool itself is what actually calls `POST {DASHBOARD_URL}/api/cowork-agent/report-result`
+   with the real result, not this agent.
+5. If the timeout hits with no report, `agent.js` reports the execution as failed itself, with a
+   message pointing at the MCP setup.
 6. Back to step 1 — always after the full `POLL_INTERVAL_MS` wait, even right after finishing a
    job. (It used to skip that wait to check for more work sooner, but that turned "the server keeps
    handing back a job it can't actually process" into an unthrottled retry loop, confirmed from a
-   real run's logs — a `mkdir ''` crash calling `report-result` on an already-cancelled execution,
-   dozens of times a second. Worth knowing if you ever see a burst of near-identical log lines.)
+   real run's logs. Worth knowing if you ever see a burst of near-identical log lines.)
 
 Every step is logged to stdout (`[cowork-agent] ...`) — now including every poll attempt and every
 job received, not just successful pickups, so a "nothing's happening" silence versus "it's polling
@@ -79,20 +83,17 @@ on the execution in the dashboard — no more reaching into the database by hand
    (`com.simpremium.coworkagent.plist.example`) to keep it running in the background and restart it
    automatically — see the comments in that file for the two placeholders to fill in.
 
-## The part that needs your testing
+## Testar o AppleScript
 
-`drive-cowork.applescript` is the one piece of this agent that's genuinely unverified — it was
-written without any way to see Claude Desktop's Cowork UI running on a real Mac, so every step in
-it is a documented best guess (look for the `TODO/verify` comments), not a confirmed fact:
+`drive-cowork.applescript` — the piece that actually drives Claude Desktop's Cowork UI — is
+**confirmed working**, tested against a real Mac mini: **"Claude"** as the app's process name,
+**⌘N** for a new Cowork task, **⌘V** to paste into the (auto-focused) prompt field, and a plain
+**Return** to submit all check out. It's still worth re-running this test on a fresh machine, or if
+a Claude Desktop update ever changes the UI and jobs start failing at the "drive Cowork" step —
+every assumption is still marked with `TODO/verify` comments in the script itself for exactly that
+case.
 
-- Whether **"Claude"** is the app's actual process name on your Mac.
-- Whether **⌘N** starts a new Cowork task (vs. a different shortcut, a menu item, or a button you
-  need to click).
-- Whether the prompt input field ends up focused automatically after that, so **⌘V** (paste) lands
-  in the right place.
-- Whether a plain **Return** submits the message (vs. ⌘+Return, Shift+Return, or a Send button).
-
-**Test it by itself first**, before trusting `agent.js` to run it unattended:
+**Test it by itself**, before trusting `agent.js` to run it unattended:
 
 ```
 echo "diga oi e me diga que horas são" > /tmp/test-prompt.txt
@@ -108,40 +109,27 @@ keystroke, the delay, or the whole approach) to match what Cowork's UI actually 
 covers that; you can also open **Automator**'s "Record" feature or use the Accessibility Inspector
 (part of Xcode's developer tools) to see the actual element names available.
 
-## How results get back
+## How results get back — via MCP, no local file
 
-Since there's no API to read Cowork's conversation, the prompt sent to Cowork carries an appended
-instruction asking it to save its final answer to a specific local file
-(`~/CoworkAgent/results/<execution-id>.txt`). This only works if:
+There's no API to read Cowork's conversation, so the prompt sent to Cowork carries an appended
+instruction telling it to call the `report_cowork_result` MCP tool (`mac-agent/mcp-report-result/`)
+with this exact execution id when it's done — that tool `POST`s straight to
+`{DASHBOARD_URL}/api/cowork-agent/report-result`, the same route this agent itself used to call
+after reading a local results file. There's **no file-drop fallback**: if a Cowork task can't reach
+that tool, the job has no way to report its result at all, and `agent.js` will eventually report it
+as failed once `RESULT_TIMEOUT_MS` elapses with the execution still "running".
 
-- Cowork actually has permission to read/write files on your Mac (it should, as part of its normal
-  local file access — grant it when the app asks the first time).
-- The instruction survives however you end up pasting the prompt in (it's part of the same text,
-  so it should, but double-check if you customize the AppleScript).
+This only works if:
 
-If a job's result file never shows up within the timeout, the agent reports the execution as
-**failed** with a message pointing back to this section — it never fakes a result, matching the
-main dashboard's own rule that a missing/unconfirmed outcome gets recorded honestly instead of
-guessed at.
+- The MCP server is actually configured in Claude Desktop (setup below) and Desktop was restarted
+  after configuring it.
+- A Cowork task inherits the MCP servers configured there — this is the one thing genuinely worth
+  confirming on a fresh setup (no documentation either way), which the two-phase test below checks.
 
-## Reporting results via MCP instead of a local file
-
-`agent.js` now asks Cowork to report its result two ways, in order of preference — see
-`driveCowork()`'s appended instruction: call the `report_cowork_result` MCP tool
-(`mac-agent/mcp-report-result/`) directly if that tool is available to it, otherwise fall back to
-the older file-drop convention (saving to `~/CoworkAgent/results/<execution-id>.txt`, which this
-agent still watches for). Whichever one actually happens, the execution gets finalized exactly
-once — `agent.js` also polls `GET /api/cowork-agent/execution-status` alongside the file check, so
-if the MCP tool call lands first it stops waiting immediately instead of sitting on the file/timeout
-for up to `RESULT_TIMEOUT_MS`; and if the file shows up after an MCP report already went through
-(or vice versa), the second report is a harmless no-op (the server just says "already finalized",
-logged as informational, not an error).
-
-**What's still worth confirming on a fresh setup**: whether a Cowork task on *your* Claude Desktop
-actually inherits the MCP servers configured there. It's wired into the real flow now (not just an
-opt-in experiment), with the file-drop fallback as a safety net — but if the MCP tool never gets
-reached, every job just quietly falls back to the file method, same as before this existed. The
-two-phase test below is still the fastest way to confirm the MCP path specifically is working.
+If a job's report never lands within the timeout, the agent reports the execution as **failed**
+with a message pointing back to this section — it never fakes a result, matching the main
+dashboard's own rule that a missing/unconfirmed outcome gets recorded honestly instead of guessed
+at.
 
 **Setup:**
 
@@ -180,17 +168,17 @@ two-phase test below is still the fastest way to confirm the MCP path specifical
    fine, it proves the call reached the server). If Claude says it has no such tool, the MCP server
    isn't loaded — recheck the config path and restart Desktop again.
 2. **Only once that works**, run any real Cowork skill through the normal dashboard flow (not a
-   manual test prompt) — `driveCowork()` already tells it to try the MCP tool first. Watch this
-   agent's log: `Resultado recebido via arquivo` means it fell back to the file (MCP didn't reach
-   it, or wasn't asked to for some reason); no such line, and the job still finishes, means the MCP
-   path worked.
+   manual test prompt). Watch this agent's log: `Execução finalizada via MCP.` means it worked;
+   `Cowork não chamou report_cowork_result dentro do tempo esperado` means it didn't reach the tool
+   (or didn't call it) — recheck the config and the phase-1 test above.
 
 ## Troubleshooting
 
 - **A dashboard run just sits at "running" forever.** Check this agent's own terminal/log output —
   is it actually running? Is `DASHBOARD_URL`/`COWORK_AGENT_TOKEN` correct (a 401 in the log means
-  they don't match what's set in Vercel)? If the agent picked the job up but Cowork never actually
-  got the prompt, see "The part that needs your testing" above.
+  they don't match what's set in Vercel)? If it logs `Cowork disparado, aguardando o report via
+  MCP...` and then never resolves, the MCP tool isn't reaching Cowork — see "How results get back"
+  above. If the agent never even logged picking up the job, see "Testar o AppleScript".
 - **"HTTP 401" in the log.** `COWORK_AGENT_TOKEN` here doesn't match the one in Vercel's environment
   variables, or `COWORK_AGENT_TOKEN` isn't set in Vercel at all.
 - **AppleScript errors mentioning permission/not authorized.** Accessibility permission isn't

@@ -37,13 +37,13 @@ function loadConfig() {
       fileVars[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
     }
   }
-  // Deliberately `||`, not `??`: a line like `RESULTS_DIR=` left blank in a
-  // copied .env.example (no value after the `=`) parses to an empty string,
-  // not undefined — `??` would keep that empty string instead of falling
-  // back to the default, which is exactly what broke driveCowork's
-  // `mkdirSync(CONFIG.resultsDir, ...)` with `mkdir ''` (confirmed from a
-  // real run's crash log). None of these values are meant to legitimately
-  // be "", so treating blank the same as unset is always what's wanted here.
+  // Deliberately `||`, not `??`: a blank value left after the `=` in a
+  // copied .env.example parses to an empty string, not undefined — `??`
+  // would keep that empty string instead of falling back to the default
+  // (this exact gap once broke a since-removed local-results-dir setting
+  // with a `mkdir ''` crash). None of these values are meant to
+  // legitimately be "", so treating blank the same as unset is always
+  // what's wanted here.
   const get = (key, fallback) => fileVars[key] || process.env[key] || fallback;
 
   const dashboardUrl = get("DASHBOARD_URL");
@@ -62,7 +62,6 @@ function loadConfig() {
     token,
     pollIntervalMs: Number(get("POLL_INTERVAL_MS", "15000")),
     resultTimeoutMs: Number(get("RESULT_TIMEOUT_MS", String(20 * 60 * 1000))),
-    resultsDir: get("RESULTS_DIR", path.join(os.homedir(), "CoworkAgent", "results")),
   };
 }
 
@@ -101,21 +100,20 @@ async function reportResult(executionId, outcome) {
   });
 }
 
-// Now that a job's result can also arrive via the MCP tool
-// (mac-agent/mcp-report-result/) calling report-result directly, this
-// agent's own attempt to report the same execution can legitimately lose
-// that race — the server correctly rejects a report for an execution
-// that's already finalized. That's not a real failure, just two paths
-// converging; treat it as informational instead of retrying/erroring loudly.
+// Two things can finalize the same execution in a genuine (if unlikely)
+// race — this agent's own catch-block error report, and the MCP tool
+// reporting first. When that happens the server correctly rejects the
+// second attempt; treat it as informational instead of retrying/erroring
+// loudly.
 function isAlreadyFinalizedError(err) {
   return err instanceof Error && /HTTP 404/.test(err.message);
 }
 
-// Lets waitForResult notice a job finished through the MCP tool instead of
-// the results file, so it doesn't sit polling for up to RESULT_TIMEOUT_MS
-// after the job is already done. Best-effort: a failed check just means
-// the agent falls back to relying on the file/timeout, same as before this
-// existed.
+// Polled while waiting for a job to finish — the only way this agent
+// learns a Cowork task is done, now that reporting happens via the
+// report_cowork_result MCP tool calling the dashboard directly instead of
+// this agent reading a local file. Best-effort: a failed check just means
+// one more 5s tick before the next attempt.
 async function checkExecutionStatus(executionId) {
   try {
     const data = await fetchJson(
@@ -162,30 +160,21 @@ function runAppleScript(scriptPath, args) {
  * mini) — see README.md's "Testar o AppleScript" section if it ever stops
  * matching Cowork's UI after a Claude Desktop update.
  *
- * Appends an instruction telling Cowork how to report its answer back:
- * primarily by calling the report_cowork_result MCP tool
- * (mac-agent/mcp-report-result/) directly with this exact executionId —
- * see README.md's "Reportando resultado via MCP" section for how that's
- * set up in Claude Desktop. Falls back to the older file-drop convention
- * (saving to a known local path, which this agent still watches for via
- * waitForResult) for whenever that tool isn't available to it, so a job
- * never has literally no way to report back.
+ * Appends an instruction telling Cowork to report its answer by calling
+ * the report_cowork_result MCP tool (mac-agent/mcp-report-result/)
+ * directly with this exact executionId — see README.md's "Reportando
+ * resultado via MCP" section for how that's set up in Claude Desktop.
+ * Deliberately MCP-only, no local-file fallback: this agent no longer
+ * reads or watches any results file at all.
  */
 async function driveCowork(executionId, prompt) {
-  const resultPath = path.join(CONFIG.resultsDir, `${executionId}.txt`);
-  fs.mkdirSync(CONFIG.resultsDir, { recursive: true });
-  // Clean up any stale file from an earlier, unrelated attempt with the
-  // same id (shouldn't normally happen — ids are unique — but avoids ever
-  // reading a leftover file and reporting a false success).
-  if (fs.existsSync(resultPath)) fs.unlinkSync(resultPath);
-
   const fullPrompt =
-    `${prompt}\n\n---\nQuando terminar essa tarefa, reporte o resultado assim: se você tiver ` +
-    `acesso à ferramenta MCP "report_cowork_result", chame ela com executionId ` +
-    `"${executionId}", status "success" e result igual à sua resposta final completa (sem ` +
-    `comentário adicional). Se essa ferramenta NÃO estiver disponível pra você, em vez disso ` +
-    `salve sua resposta final completa (só o conteúdo, sem comentário adicional) no arquivo ` +
-    `"${resultPath}". Use só um dos dois métodos, nunca os dois.`;
+    `${prompt}\n\n---\nQuando terminar essa tarefa, chame a ferramenta MCP ` +
+    `"report_cowork_result" com executionId "${executionId}", status "success" e result ` +
+    `igual à sua resposta final completa (sem comentário adicional). Se a tarefa falhar ou ` +
+    `faltar alguma configuração pra completá-la, chame a mesma ferramenta com status "error" ` +
+    `(ou "needs_setup", se for falta de configuração) e error explicando o que aconteceu — ` +
+    `nunca deixe de chamar essa ferramenta ao final, mesmo em caso de falha.`;
 
   const promptFile = path.join(os.tmpdir(), `cowork-prompt-${executionId}.txt`);
   fs.writeFileSync(promptFile, fullPrompt, "utf8");
@@ -195,68 +184,38 @@ async function driveCowork(executionId, prompt) {
   } finally {
     fs.rmSync(promptFile, { force: true });
   }
-
-  return resultPath;
 }
 
-// Watches for either the result file to show up, or the execution to have
-// already been finalized some other way (the MCP tool calling report-result
-// directly) — whichever happens first. Checking status is cheap and
-// best-effort, so it rides the same 5s tick as the file check instead of
-// its own timer.
-async function waitForResult(executionId, resultPath) {
+// The only way this agent learns a job is done: poll the execution's
+// status until report_cowork_result (called by Cowork itself) has moved it
+// off "running", or give up at the timeout.
+async function waitForCompletion(executionId) {
   const deadline = Date.now() + CONFIG.resultTimeoutMs;
   while (Date.now() < deadline) {
-    if (fs.existsSync(resultPath)) {
-      // A short settle delay in case Cowork is still mid-write when the
-      // file first appears on disk.
-      await sleep(1500);
-      const text = fs.readFileSync(resultPath, "utf8").trim();
-      if (text) return { text, alreadyResolved: false };
-    }
     const status = await checkExecutionStatus(executionId);
-    if (status && status !== "running") {
-      return { text: null, alreadyResolved: true };
-    }
+    if (status && status !== "running") return true;
     await sleep(5000);
   }
-  return { text: null, alreadyResolved: false };
+  return false;
 }
 
 async function processJob(job) {
   console.log(`[cowork-agent] Peguei a tarefa da skill "${job.skillName}" (execução ${job.executionId})`);
   await markStarted(job.executionId);
   try {
-    const resultPath = await driveCowork(job.executionId, job.prompt);
-    console.log(`[cowork-agent] Cowork disparado, aguardando resultado em ${resultPath} (ou via MCP)`);
-    const { text, alreadyResolved } = await waitForResult(job.executionId, resultPath);
-    if (alreadyResolved) {
-      console.log(
-        "[cowork-agent] Essa execução já foi finalizada por outro caminho (provavelmente a " +
-          "ferramenta MCP report_cowork_result) — nada a reportar aqui."
-      );
-    } else if (text) {
-      console.log(`[cowork-agent] Resultado recebido via arquivo (${text.length} caracteres) — reportando sucesso`);
-      try {
-        await reportResult(job.executionId, { status: "success", result: text });
-      } catch (err) {
-        if (isAlreadyFinalizedError(err)) {
-          console.log(
-            "[cowork-agent] O arquivo apareceu, mas essa execução já tinha sido finalizada via " +
-              "MCP antes — reporte pelo arquivo descartado, sem problema."
-          );
-        } else {
-          throw err;
-        }
-      }
+    await driveCowork(job.executionId, job.prompt);
+    console.log(`[cowork-agent] Cowork disparado, aguardando o report via MCP (report_cowork_result)...`);
+    const done = await waitForCompletion(job.executionId);
+    if (done) {
+      console.log("[cowork-agent] Execução finalizada via MCP.");
     } else {
-      console.log("[cowork-agent] Cowork não respondeu dentro do tempo esperado — reportando erro");
+      console.log("[cowork-agent] Cowork não chamou report_cowork_result dentro do tempo esperado — reportando erro");
       await reportResult(job.executionId, {
         status: "error",
         error:
-          "O Cowork não reportou um resultado (nem via arquivo, nem via MCP) dentro do tempo " +
-          "esperado. Verifique manualmente o app no Mac mini — a tarefa pode ainda estar " +
-          "rodando, ou o agente não conseguiu dispará-la corretamente (veja mac-agent/README.md).",
+          "O Cowork não chamou a ferramenta MCP report_cowork_result dentro do tempo esperado. " +
+          "Confira se o servidor MCP (mac-agent/mcp-report-result) está configurado no Claude " +
+          "Desktop e se o app foi reiniciado depois da configuração (veja mac-agent/README.md).",
       });
     }
   } catch (err) {

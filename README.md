@@ -485,22 +485,22 @@ instead of the dashboard calling *in*.
 **Missing `COWORK_AGENT_TOKEN` still means `needs_setup`, not a silent queue into a void** — the
 same never-fake-a-result rule as everywhere else in this app credentials are involved.
 
-**What's genuinely unverified.** The polling/reporting half (`mac-agent/agent.js`'s HTTP calls,
-job claiming, timeout, and error reporting) was tested end-to-end against a local mock server
-before being committed — that part works. The half that actually drives Cowork's UI
-(`drive-cowork.applescript`) was written with no way to see Claude Desktop's Cowork feature running
-on a real Mac, so its exact keystrokes (⌘N for a new task, ⌘V to paste, Return to submit) are a
-documented best guess, not a confirmed fact — see `mac-agent/README.md`'s "The part that needs your
-testing" section for how to test and adjust it once you have Cowork running on the Mac mini.
+**The AppleScript step is confirmed working**, tested against a real Mac mini
+(`drive-cowork.applescript`'s ⌘N/⌘V/Return sequence actually drives Cowork) — see
+`mac-agent/README.md`'s "Testar o AppleScript" section if it ever needs adjusting after a Claude
+Desktop update. The polling/dispatch half (`mac-agent/agent.js`'s HTTP calls, job claiming, timeout,
+error reporting) was also tested end-to-end against a local mock server before being committed.
 
-**Results can now come back via MCP instead of only the local file** (`mac-agent/mcp-report-result/`)
-— a minimal MCP server exposing one tool, `report_cowork_result`, that POSTs straight to
+**Results come back via MCP, not a local file** (`mac-agent/mcp-report-result/`) — a minimal MCP
+server exposing one tool, `report_cowork_result`, that POSTs straight to
 `POST /api/cowork-agent/report-result`, tested end-to-end against a mock server from this sandbox.
-`driveCowork()` asks Cowork to try that tool first and only falls back to the file if it's not
-available, and `agent.js` polls a new `GET /api/cowork-agent/execution-status` alongside the file
-check so it notices an MCP report immediately instead of waiting out the full timeout. See
-`mac-agent/README.md`'s "Reporting results via MCP instead of a local file" section for setup and
-the two-phase test to confirm a given Claude Desktop install actually reaches the tool.
+`driveCowork()` tells every Cowork task to call that tool directly as its last step — there's no
+local-file fallback, so the MCP server has to actually be configured and reachable from Claude
+Desktop for a job to ever report a result at all. `agent.js` polls `GET
+/api/cowork-agent/execution-status` to notice the moment that report lands, instead of waiting out
+the full timeout. See `mac-agent/README.md`'s "How results get back — via MCP, no local file"
+section for setup and the two-phase test to confirm a given Claude Desktop install actually reaches
+the tool.
 
 Skills that don't depend on Cowork run directly through the Claude API when `ANTHROPIC_API_KEY`
 is set (`lib/claude.ts`); otherwise they're flagged `needs_setup` the same way.

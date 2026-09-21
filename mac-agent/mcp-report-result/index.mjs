@@ -1,16 +1,14 @@
 #!/usr/bin/env node
 /**
- * Experimental — see mac-agent/README.md's "Reporting results via MCP
- * instead of a local file" section before relying on this.
+ * Required for Cowork jobs to report back at all — see mac-agent/README.md's
+ * "How results get back — via MCP, no local file" section for setup.
  *
  * A minimal MCP server exposing exactly one tool, report_cowork_result,
  * that POSTs a finished task's outcome straight to the Skills Hub
- * dashboard's own POST /api/cowork-agent/report-result — the same route
- * mac-agent/agent.js already calls after reading the local results file.
- * The point of this server: if Claude Desktop's Cowork tasks turn out to
- * inherit the Desktop app's configured MCP tools, a Cowork task could call
- * this directly as its very last step instead of us waiting on
- * agent.js to notice a file appear on disk.
+ * dashboard's own POST /api/cowork-agent/report-result. mac-agent/agent.js's
+ * driveCowork() tells every Cowork task to call this tool directly as its
+ * very last step — there's no local-file fallback, so this server has to
+ * actually be configured and reachable for a job to ever finish.
  *
  * Deliberately scoped to this one job, not a general bash/HTTP tool — the
  * task's own prompt never needs to see COWORK_AGENT_TOKEN at all, it just
