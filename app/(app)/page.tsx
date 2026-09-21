@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Download, LayoutGrid, Plus, Sparkles } from "lucide-react";
-import { getCoworkAgentLastSeen, listSkills } from "@/lib/data";
+import { getCoworkAgentLastSeen, getCoworkQueueSummary, listSkills } from "@/lib/data";
 import { isClaudeConfigured } from "@/lib/claude";
 import { isCoworkAgentConfigured } from "@/lib/cowork";
 import { hasUnschedulableSecret } from "@/lib/schedule";
@@ -8,6 +8,7 @@ import SkillsBoard from "@/components/SkillsBoard";
 import PageHeader from "@/components/PageHeader";
 import ImportSkillsButton from "@/components/ImportSkillsButton";
 import CoworkAgentStatus from "@/components/CoworkAgentStatus";
+import CoworkQueueBadge from "@/components/CoworkQueueBadge";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +54,12 @@ export default async function DashboardPage() {
         return null;
       })
     : null;
+  const coworkQueueSummary = coworkReady
+    ? await getCoworkQueueSummary().catch((err) => {
+        console.error("getCoworkQueueSummary failed:", err);
+        return { waiting: 0, inProgress: 0 };
+      })
+    : { waiting: 0, inProgress: 0 };
   const archivedCount = skills.filter((s) => s.status === "archived").length;
   const boardSkills = skills.map((s) => ({
     id: s.id,
@@ -86,7 +93,10 @@ export default async function DashboardPage() {
         actions={
           <>
             {coworkReady && (
-              <CoworkAgentStatus initialLastSeenAt={coworkAgentLastSeen?.toISOString() ?? null} />
+              <>
+                <CoworkAgentStatus initialLastSeenAt={coworkAgentLastSeen?.toISOString() ?? null} />
+                <CoworkQueueBadge initialSummary={coworkQueueSummary} />
+              </>
             )}
             <a
               href="/api/skills/export"

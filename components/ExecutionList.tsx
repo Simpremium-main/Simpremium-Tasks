@@ -13,6 +13,7 @@ import {
   Eye,
   FileText,
   Hand,
+  Loader2,
   Paperclip,
   RotateCcw,
   Sparkles,
@@ -20,6 +21,7 @@ import {
   Timer,
   User,
   X,
+  XCircle,
 } from "lucide-react";
 import StatusBadge from "./StatusBadge";
 import ChainResultButton from "./ChainResultButton";
@@ -52,6 +54,10 @@ export interface ExecutionItem {
   usage: ExecutionUsageItem | null;
   ranBy: string | null;
   favorite: boolean;
+  /** Null while a Cowork job still sits in the queue; set once the agent
+   *  actually starts driving Cowork for it (see mac-agent/agent.js's
+   *  markStarted). Only meaningful when source is "cowork". */
+  coworkStartedAt: string | null;
   startedAt: string;
   finishedAt: string | null;
   skill?: { id: string; name: string };
@@ -113,6 +119,17 @@ function isLikelyStuck(execution: ExecutionItem, now: number): boolean {
   return now - new Date(execution.startedAt).getTime() > threshold;
 }
 
+/** A "running" Cowork execution could mean two very different things: still
+ *  sitting in the queue (nobody's touched it yet), or actively being worked
+ *  on by the agent right now — coworkStartedAt is the only thing that tells
+ *  them apart. Returns null for anything that isn't a running Cowork job. */
+function coworkPhaseLabel(execution: ExecutionItem, now: number): string | null {
+  if (execution.status !== "running" || execution.source !== "cowork") return null;
+  if (!execution.coworkStartedAt) return "aguardando o agente";
+  const elapsedMs = now - new Date(execution.coworkStartedAt).getTime();
+  return `Cowork trabalhando há ${formatDuration(elapsedMs)}`;
+}
+
 // A scheduled run that failed is easy to miss compared to a manual one — you
 // were there when you clicked "Rodar" and saw the error immediately; nobody
 // was watching this one, so it deserves to stand out instead of blending
@@ -128,6 +145,7 @@ export default function ExecutionList({
   onRetry,
   favoritable = true,
   onFavoriteChange,
+  onCancel,
 }: {
   executions: ExecutionItem[];
   showSkillName?: boolean;
@@ -142,6 +160,10 @@ export default function ExecutionList({
    *  "Favoritas" filter) stay in sync after a toggle — this component
    *  itself only owns the optimistic per-row display, not the source list. */
   onFavoriteChange?: (id: string, favorite: boolean) => void;
+  /** Present wherever a run can actually be cancelled (not on the read-only
+   *  /share/[token] page) — lets the parent PATCH the cancel and update its
+   *  own copy of the list, same pattern as onFavoriteChange. */
+  onCancel?: (execution: ExecutionItem) => void;
 }) {
   const [detailsFor, setDetailsFor] = useState<ExecutionItem | null>(null);
   // Only running while some row is actually "running" — no point ticking a
@@ -172,10 +194,12 @@ export default function ExecutionList({
             showSkillName={showSkillName}
             highlighted={execution.id === highlightId}
             stuck={isLikelyStuck(execution, now)}
+            coworkPhase={coworkPhaseLabel(execution, now)}
             onViewDetails={() => setDetailsFor(execution)}
             onRetry={onRetry ? () => retry(execution) : undefined}
             favoritable={favoritable}
             onFavoriteChange={onFavoriteChange}
+            onCancel={onCancel}
           />
         ))}
       </ul>
@@ -183,10 +207,19 @@ export default function ExecutionList({
         <ExecutionDetailsModal
           execution={detailsFor}
           stuck={isLikelyStuck(detailsFor, now)}
+          coworkPhase={coworkPhaseLabel(detailsFor, now)}
           onClose={() => setDetailsFor(null)}
           onRetry={onRetry ? () => retry(detailsFor) : undefined}
           favoritable={favoritable}
           onFavoriteChange={onFavoriteChange}
+          onCancel={
+            onCancel
+              ? (execution) => {
+                  onCancel(execution);
+                  setDetailsFor(null);
+                }
+              : undefined
+          }
         />
       )}
     </>
@@ -198,19 +231,23 @@ function ExecutionRow({
   showSkillName,
   highlighted,
   stuck,
+  coworkPhase,
   onViewDetails,
   onRetry,
   favoritable,
   onFavoriteChange,
+  onCancel,
 }: {
   execution: ExecutionItem;
   showSkillName: boolean;
   highlighted?: boolean;
   stuck: boolean;
+  coworkPhase: string | null;
   onViewDetails: () => void;
   onRetry?: () => void;
   favoritable: boolean;
   onFavoriteChange?: (id: string, favorite: boolean) => void;
+  onCancel?: (execution: ExecutionItem) => void;
 }) {
   const failedScheduled = isFailedScheduled(execution);
   const durationMs = executionDurationMs(execution.startedAt, execution.finishedAt);
@@ -250,6 +287,19 @@ function ExecutionRow({
             {SOURCE_ICONS[execution.source]}
             {SOURCE_LABELS[execution.source] ?? execution.source}
           </span>
+          {coworkPhase && (
+            <span
+              className="hidden sm:inline-flex items-center gap-1 text-xs text-cowork bg-cowork-soft rounded-full px-2 py-0.5"
+              title={
+                execution.coworkStartedAt
+                  ? "O agente do Mac mini já pegou essa tarefa e está trabalhando nela agora."
+                  : "Ainda na fila — o agente do Mac mini ainda não pegou essa tarefa."
+              }
+            >
+              <Bot size={11} />
+              {coworkPhase}
+            </span>
+          )}
           {execution.ranBy && (
             <span className="hidden sm:inline-flex items-center gap-1 text-xs text-muted">
               <User size={11} />
@@ -305,6 +355,9 @@ function ExecutionRow({
           />
         )}
         <CopyPromptButton text={execution.promptSnapshot} />
+        {onCancel && (execution.status === "pending" || execution.status === "running") && (
+          <CancelExecutionButton execution={execution} stuck={stuck} onCancelled={onCancel} />
+        )}
         {onRetry && (
           <button
             type="button"
@@ -424,20 +477,120 @@ function CopyPromptButton({ text }: { text: string }) {
   );
 }
 
+/**
+ * Marks a "pending"/"running" execution as manually cancelled — the UI
+ * replacement for the only escape hatch this app used to have for a stuck
+ * run: going into Supabase's SQL editor and deleting the row by hand.
+ * Two clicks on purpose (arms, then confirms) since this overwrites the
+ * row's final status and can't be undone; `stuck` just makes the first
+ * click's button read more like a suggestion than a rarely-needed option.
+ */
+function CancelExecutionButton({
+  execution,
+  stuck,
+  onCancelled,
+}: {
+  execution: ExecutionItem;
+  stuck: boolean;
+  onCancelled: (execution: ExecutionItem) => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function confirm(e: React.MouseEvent) {
+    e.stopPropagation();
+    setWorking(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/executions/${execution.id}/cancel`, { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? `Falha ao cancelar (HTTP ${res.status})`);
+      onCancelled({
+        ...execution,
+        status: body.status,
+        error: body.error,
+        finishedAt: body.finishedAt,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao cancelar");
+      setWorking(false);
+      setConfirming(false);
+    }
+  }
+
+  if (confirming) {
+    return (
+      <span className="inline-flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+        <button
+          type="button"
+          onClick={confirm}
+          disabled={working}
+          title="Confirmar cancelamento"
+          className="inline-flex items-center gap-1 rounded-md bg-red-600 text-white px-2 py-1 text-xs font-medium hover:bg-red-700 transition-colors disabled:opacity-60"
+        >
+          {working ? <Loader2 size={12} className="animate-spin" /> : <XCircle size={12} />}
+          Confirmar?
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setConfirming(false);
+          }}
+          disabled={working}
+          title="Voltar"
+          className="text-muted hover:text-ink transition-colors disabled:opacity-40"
+        >
+          <X size={13} />
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <span className="shrink-0 flex items-center gap-1">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setConfirming(true);
+        }}
+        title={
+          stuck
+            ? "Essa execução está rodando há bastante tempo — provavelmente travou. Cancelar libera o histórico e para de esperar por um resultado que talvez nunca chegue."
+            : "Cancela essa execução e marca como erro"
+        }
+        className={`inline-flex items-center gap-1 text-xs transition-colors ${
+          stuck ? "text-amber-700 hover:text-red-600" : "text-muted hover:text-red-600"
+        }`}
+      >
+        <XCircle size={13} />
+        <span className="hidden sm:inline">Cancelar</span>
+      </button>
+      {error && <span className="text-xs text-red-600">{error}</span>}
+    </span>
+  );
+}
+
 function ExecutionDetailsModal({
   execution,
   stuck,
+  coworkPhase,
   onClose,
   onRetry,
   favoritable,
   onFavoriteChange,
+  onCancel,
 }: {
   execution: ExecutionItem;
   stuck: boolean;
+  coworkPhase: string | null;
   onClose: () => void;
   onRetry?: () => void;
   favoritable: boolean;
   onFavoriteChange?: (id: string, favorite: boolean) => void;
+  onCancel?: (execution: ExecutionItem) => void;
 }) {
   const fileBase = `execucao-${execution.id.slice(0, 8)}`;
   const durationMs = executionDurationMs(execution.startedAt, execution.finishedAt);
@@ -476,6 +629,12 @@ function ExecutionDetailsModal({
               {SOURCE_ICONS[execution.source]}
               {SOURCE_LABELS[execution.source] ?? execution.source}
             </span>
+            {coworkPhase && (
+              <span className="inline-flex items-center gap-1 text-xs text-cowork bg-cowork-soft rounded-full px-2 py-0.5">
+                <Bot size={11} />
+                {coworkPhase}
+              </span>
+            )}
             {execution.ranBy && (
               <span className="inline-flex items-center gap-1 text-xs text-muted">
                 <User size={11} />
@@ -582,7 +741,7 @@ function ExecutionDetailsModal({
 
         {execution.error && <DetailBlock label="Erro" text={execution.error} tone="red" />}
 
-        <div className="flex flex-wrap items-start gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {onRetry && (
             <button
               type="button"
@@ -594,6 +753,9 @@ function ExecutionDetailsModal({
             </button>
           )}
           {execution.result && <ChainResultButton resultText={execution.result} />}
+          {onCancel && (execution.status === "pending" || execution.status === "running") && (
+            <CancelExecutionButton execution={execution} stuck={stuck} onCancelled={onCancel} />
+          )}
         </div>
       </div>
     </div>

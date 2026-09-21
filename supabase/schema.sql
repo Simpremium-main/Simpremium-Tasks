@@ -53,6 +53,7 @@ create table if not exists executions (
   ran_by          text, -- display name of the logged-in user who triggered this run
   favorite        boolean not null default false, -- starred by hand, "this was the good run" among several attempts
   cowork_payload  text, -- the real, unmasked prompt for a queued Cowork job, set only between dispatch and pickup — see lib/cowork.ts. Never read through mapExecutionRow/the Execution type, so it never reaches the UI.
+  cowork_started_at timestamptz, -- stamped by POST /api/cowork-agent/mark-started the moment the Mac mini agent actually starts driving Cowork for this job (not when it was queued) — lets the UI say "Cowork's been working on this for Xm" instead of a generic "running" for a job that might still just be waiting in the queue.
   started_at      timestamptz not null default now(),
   finished_at     timestamptz
 );

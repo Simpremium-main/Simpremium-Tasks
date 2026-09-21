@@ -79,6 +79,7 @@ function mapExecutionRow(row: Record<string, unknown>): Execution {
     usage: (row.usage as TokenUsage | null) ?? null,
     ranBy: (row.ran_by as string | null) ?? null,
     favorite: Boolean(row.favorite),
+    coworkStartedAt: row.cowork_started_at ? new Date(row.cowork_started_at as string) : null,
     startedAt: new Date(row.started_at as string),
     finishedAt: row.finished_at ? new Date(row.finished_at as string) : null,
   };
@@ -730,6 +731,56 @@ export async function claimNextCoworkJob(): Promise<CoworkJob | null> {
   return { executionId, skillName, prompt };
 }
 
+/** Stamped by POST /api/cowork-agent/mark-started the moment the Mac mini
+ *  agent actually begins driving Cowork for a claimed job (right before it
+ *  runs the AppleScript) — separate from claimNextCoworkJob's handoff,
+ *  which only means the job left the queue, not that Cowork itself has
+ *  started working on it. Best-effort like recordCoworkAgentSeen: a failed
+ *  stamp shouldn't ever block the agent from actually running the job. */
+export async function markCoworkStarted(executionId: string): Promise<void> {
+  const supabase = getSupabase();
+  const { error, status, statusText } = await supabase
+    .from("executions")
+    .update({ cowork_started_at: new Date().toISOString() })
+    .eq("id", executionId)
+    .eq("status", "running");
+  if (error) throw describeError("markCoworkStarted", error, status, statusText);
+}
+
+/** Feeds the dashboard's Cowork queue badge (components/CoworkQueueBadge.tsx)
+ *  — "waiting" is queued but not yet claimed by the agent (cowork_payload
+ *  still set, same signal claimNextCoworkJob matches on), "inProgress" is
+ *  claimed and being worked on (payload cleared, status still running). */
+export async function getCoworkQueueSummary(): Promise<{ waiting: number; inProgress: number }> {
+  const supabase = getSupabase();
+  const [waitingResult, inProgressResult] = await Promise.all([
+    supabase
+      .from("executions")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "running")
+      .eq("source", "cowork")
+      .not("cowork_payload", "is", null),
+    supabase
+      .from("executions")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "running")
+      .eq("source", "cowork")
+      .is("cowork_payload", null),
+  ]);
+  if (waitingResult.error) {
+    throw describeError("getCoworkQueueSummary (waiting)", waitingResult.error, waitingResult.status, waitingResult.statusText);
+  }
+  if (inProgressResult.error) {
+    throw describeError(
+      "getCoworkQueueSummary (inProgress)",
+      inProgressResult.error,
+      inProgressResult.status,
+      inProgressResult.statusText
+    );
+  }
+  return { waiting: waitingResult.count ?? 0, inProgress: inProgressResult.count ?? 0 };
+}
+
 /** Stamped by GET /api/cowork-agent/next-job on every poll from the Mac
  *  mini agent — see supabase/schema.sql's cowork_agent_status. Failing to
  *  record a heartbeat shouldn't ever block handing the agent a real job,
@@ -806,6 +857,41 @@ export async function updateExecution(
     .select()
     .maybeSingle();
   if (error) throw describeError("updateExecution", error, status, statusText);
+  return data ? mapExecutionRow(data) : null;
+}
+
+/**
+ * Manually cancels a stuck/unwanted execution — the escape hatch that used
+ * to only exist as "go delete the row by hand in Supabase's SQL editor"
+ * (exactly what today's debugging session had to resort to). Only acts on
+ * "pending"/"running" rows — cancelling something already finished would
+ * silently overwrite a real result/error, so this is a no-op (returns null)
+ * for anything else. Also clears cowork_payload defensively: a cancelled
+ * job that's still sitting in the Cowork queue (never claimed yet) must not
+ * be handed to the agent after this.
+ */
+export async function cancelExecution(id: string, cancelledBy: string | null): Promise<Execution | null> {
+  const supabase = getSupabase();
+  const { data: current, error: readError } = await supabase
+    .from("executions")
+    .select("status")
+    .eq("id", id)
+    .maybeSingle();
+  if (readError) throw describeError("cancelExecution (read)", readError);
+  if (!current || (current.status !== "pending" && current.status !== "running")) return null;
+
+  const { data, error, status, statusText } = await supabase
+    .from("executions")
+    .update({
+      status: "error",
+      error: cancelledBy ? `Cancelada manualmente por ${cancelledBy}.` : "Cancelada manualmente.",
+      cowork_payload: null,
+      finished_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .select()
+    .maybeSingle();
+  if (error) throw describeError("cancelExecution (update)", error, status, statusText);
   return data ? mapExecutionRow(data) : null;
 }
 

@@ -101,6 +101,22 @@ async function reportResult(executionId, outcome) {
   });
 }
 
+// Best-effort, like the dashboard's own agent-seen heartbeat — lets the UI
+// show "Cowork trabalhando nisso há Xm" instead of a generic "running" that
+// could just as easily mean "still sitting in the queue". A failure here
+// should never stop the actual job from running.
+async function markStarted(executionId) {
+  try {
+    await fetchJson(`${CONFIG.dashboardUrl}/api/cowork-agent/mark-started`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${CONFIG.token}` },
+      body: JSON.stringify({ executionId }),
+    });
+  } catch (err) {
+    console.error("[cowork-agent] Falha ao marcar início (não bloqueia a tarefa):", err instanceof Error ? err.message : err);
+  }
+}
+
 function runAppleScript(scriptPath, args) {
   return new Promise((resolve, reject) => {
     execFile("osascript", [scriptPath, ...args], (err, stdout, stderr) => {
@@ -163,6 +179,7 @@ async function waitForResult(resultPath) {
 
 async function processJob(job) {
   console.log(`[cowork-agent] Peguei a tarefa da skill "${job.skillName}" (execução ${job.executionId})`);
+  await markStarted(job.executionId);
   try {
     const resultPath = await driveCowork(job.executionId, job.prompt);
     console.log(`[cowork-agent] Cowork disparado, aguardando resultado em ${resultPath}`);

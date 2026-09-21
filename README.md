@@ -533,6 +533,64 @@ and the Cowork agent would have failed identically on its first real request. Fi
 `/api/cron/` and `/api/cowork-agent/` from the session gate — their own token checks are the real
 (and only needed) authorization for those two prefixes.
 
+### Bugs found testing against a real Mac mini, and what changed
+
+Getting the agent running against production surfaced two more real bugs, past the middleware one
+above — both fixed, both worth knowing about if you're setting this up fresh:
+
+- **`claimNextCoworkJob`'s query silently dropped every queued job.** It originally embedded the
+  skill's name via a PostgREST join (`.select("id, cowork_payload, skills(name)")`). Confirmed via
+  logging that an identical query *without* the join found the row fine — the join version came
+  back empty every time, no error, just zero rows. Fixed by dropping the join entirely: two plain
+  queries (fetch the execution, then look up the skill name separately) instead of one joined
+  select. Simpler, and it can't recur.
+- **`mac-agent/agent.js` crashed with `mkdir ''`** the moment it actually picked up a job, if
+  `RESULTS_DIR` was left blank in `.env` (exactly what a copied `.env.example` looks like before
+  you fill it in) — the config loader's `??` only falls back for a genuinely missing value, not an
+  empty string. Fixed by using `||` instead, and commented out the blank line in `.env.example` so
+  a fresh copy doesn't hit this at all.
+
+Also added much more `[cowork-agent-server]`-prefixed logging across the whole queue/claim/report
+path (`lib/data.ts`, the `app/api/cowork-agent/*` routes) — worth knowing these exist if the agent
+ever looks stuck again: Vercel's Runtime Logs will show exactly which execution the server thinks
+is queued, claimed, or already finalized, without guessing from the outside.
+
+### Queue visibility, "in progress" vs. "waiting", and cancelling a stuck run
+
+The debugging above kept running into the same UX gap: a "running" Cowork execution could mean
+"still sitting in the queue" or "the agent is actively working on it" — genuinely indistinguishable
+from the dashboard — and the *only* way to get out of a truly stuck one was to open Supabase's SQL
+editor and delete the row by hand. Three additions close that gap:
+
+- **`cowork_started_at`** on `executions`, stamped by a new route,
+  `POST /api/cowork-agent/mark-started`, that `mac-agent/agent.js` calls right before it runs the
+  AppleScript (separate from `claimNextCoworkJob`'s handoff, which only means the job left the
+  queue). `components/ExecutionList.tsx` reads it to show "aguardando o agente" vs. "Cowork
+  trabalhando há Xm" instead of a generic "running" badge for both.
+- **A queue badge** next to the agent's "ativo/inativo" pill on the dashboard
+  (`components/CoworkQueueBadge.tsx`, `GET /api/cowork-queue`,
+  `lib/data.ts`'s `getCoworkQueueSummary`) — "N aguardando · M em andamento", polled every 20s, so
+  a backlog is visible without opening Supabase at all. Hidden entirely when the queue is empty.
+- **A "Cancelar" action** on any execution still "pending"/"running" (both the row and the details
+  modal, in the skill's own history and the global `/history`) — `lib/data.ts`'s `cancelExecution`
+  marks it `error` with a "cancelada manualmente" message and clears any leftover `cowork_payload`
+  so a cancelled-but-still-queued job can't be handed to the agent afterward. Two clicks on purpose
+  (arms, then confirms) since it overwrites the row's final status for good. The existing "demorando"
+  badge's button reads as more of a suggestion (amber, not muted) once a row's been running long
+  enough to flag as likely stuck.
+
+Also fixed a related staleness bug while building this: `RunSkillPanel`/`HistoryBoard` used to seed
+their execution list once from the server-rendered page and never re-sync — so a Cowork job that
+finished minutes later (reported out-of-band by the agent) stayed stuck at "running" in the UI
+until a full page reload. Both now re-sync to the server prop on every `router.refresh()`, and
+auto-poll (every 15s) for as long as any Cowork execution is still "running".
+
+Needs one more column that a fresh `supabase/schema.sql` already includes:
+
+```sql
+alter table executions add column if not exists cowork_started_at timestamptz;
+```
+
 ## Login — real Supabase Auth
 
 `middleware.ts` gates every page behind `/login`, backed by real Supabase Auth (email +

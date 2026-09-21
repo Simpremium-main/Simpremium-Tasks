@@ -16,6 +16,7 @@ export default async function HistoryPage() {
     ...e,
     startedAt: e.startedAt.toISOString(),
     finishedAt: e.finishedAt?.toISOString() ?? null,
+    coworkStartedAt: e.coworkStartedAt?.toISOString() ?? null,
   }));
 
   return (

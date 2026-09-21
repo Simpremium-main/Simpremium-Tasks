@@ -24,6 +24,7 @@ export default async function SharedSkillPage({ params }: { params: { token: str
     ...e,
     startedAt: e.startedAt.toISOString(),
     finishedAt: e.finishedAt?.toISOString() ?? null,
+    coworkStartedAt: e.coworkStartedAt?.toISOString() ?? null,
   }));
 
   return (

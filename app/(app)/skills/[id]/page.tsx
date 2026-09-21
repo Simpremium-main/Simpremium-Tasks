@@ -27,6 +27,7 @@ export default async function SkillDetailPage({ params }: { params: { id: string
     ...e,
     startedAt: e.startedAt.toISOString(),
     finishedAt: e.finishedAt?.toISOString() ?? null,
+    coworkStartedAt: e.coworkStartedAt?.toISOString() ?? null,
   }));
 
   return (

@@ -1,21 +1,42 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import ExecutionList, { type ExecutionItem } from "./ExecutionList";
 
 type Filter = "all" | "success" | "error" | "needs_setup" | "files" | "favorites";
 
 export default function HistoryBoard({ executions: initialExecutions }: { executions: ExecutionItem[] }) {
+  const router = useRouter();
   const [executions, setExecutions] = useState(initialExecutions);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
+
+  // Same staleness fix as RunSkillPanel: this page has no per-row way to
+  // learn a Cowork job finished (it's reported minutes later, out of band,
+  // by the Mac mini agent), so without re-syncing to the server-rendered
+  // prop a "running" row here would sit stale until a full page reload.
+  useEffect(() => {
+    setExecutions(initialExecutions);
+  }, [initialExecutions]);
+
+  useEffect(() => {
+    const hasPendingCowork = executions.some((e) => e.source === "cowork" && e.status === "running");
+    if (!hasPendingCowork) return;
+    const interval = setInterval(() => router.refresh(), 15000);
+    return () => clearInterval(interval);
+  }, [executions, router]);
 
   const hasFiles = useMemo(() => executions.some((e) => e.files && e.files.length > 0), [executions]);
   const hasFavorites = useMemo(() => executions.some((e) => e.favorite), [executions]);
 
   function handleFavoriteChange(id: string, favorite: boolean) {
     setExecutions((prev) => prev.map((e) => (e.id === id ? { ...e, favorite } : e)));
+  }
+
+  function handleCancel(cancelled: ExecutionItem) {
+    setExecutions((prev) => prev.map((e) => (e.id === cancelled.id ? cancelled : e)));
   }
 
   const filtered = useMemo(() => {
@@ -86,7 +107,12 @@ export default function HistoryBoard({ executions: initialExecutions }: { execut
           Nenhuma execução encontrada com esse filtro.
         </p>
       ) : (
-        <ExecutionList executions={filtered} showSkillName onFavoriteChange={handleFavoriteChange} />
+        <ExecutionList
+          executions={filtered}
+          showSkillName
+          onFavoriteChange={handleFavoriteChange}
+          onCancel={handleCancel}
+        />
       )}
     </div>
   );

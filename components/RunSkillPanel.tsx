@@ -337,6 +337,9 @@ export default function RunSkillPanel({
           onFavoriteChange={(id, favorite) =>
             setExecutions((prev) => prev.map((e) => (e.id === id ? { ...e, favorite } : e)))
           }
+          onCancel={(cancelled) =>
+            setExecutions((prev) => prev.map((e) => (e.id === cancelled.id ? cancelled : e)))
+          }
         />
       </div>
     </div>

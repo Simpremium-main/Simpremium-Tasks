@@ -170,6 +170,12 @@ export interface Execution {
   /** Starred by hand — "this was the good run" among several attempts. Pure
    *  UI convenience, no effect on scheduling/retry/anything else. */
   favorite: boolean;
+  /** Set only for a Cowork execution, the moment the Mac mini agent actually
+   *  starts driving Cowork for it (POST /api/cowork-agent/mark-started) —
+   *  null while it's still sitting in the queue waiting for the agent to
+   *  poll it up. Lets the UI distinguish "queued" from "in progress" instead
+   *  of both just reading "running". */
+  coworkStartedAt: Date | null;
   startedAt: Date;
   finishedAt: Date | null;
 }

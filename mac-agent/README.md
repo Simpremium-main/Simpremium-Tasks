@@ -21,18 +21,30 @@ best guess, not a working integration yet.
 ## How it works
 
 1. `agent.js` polls `GET {DASHBOARD_URL}/api/cowork-agent/next-job` every 15s (configurable).
-2. When a job comes back, it writes the skill's prompt to a temp file, appends an instruction
-   telling Cowork to save its final answer to `~/CoworkAgent/results/<execution-id>.txt`, and runs
-   `drive-cowork.applescript` to paste that prompt into Cowork and submit it.
-3. It then watches that results folder for the file to show up (up to 20 minutes by default).
-4. Once it appears (or the timeout hits), it `POST`s the outcome to
+2. When a job comes back, it immediately `POST`s to `{DASHBOARD_URL}/api/cowork-agent/mark-started`
+   (best-effort — a failure here never blocks the job itself) so the dashboard can show "Cowork
+   trabalhando há Xm" instead of a generic "running" that could just as easily mean "still in the
+   queue, nobody's touched it yet".
+3. It writes the skill's prompt to a temp file, appends an instruction telling Cowork to save its
+   final answer to `~/CoworkAgent/results/<execution-id>.txt`, and runs `drive-cowork.applescript`
+   to paste that prompt into Cowork and submit it.
+4. It then watches that results folder for the file to show up (up to 20 minutes by default).
+5. Once it appears (or the timeout hits), it `POST`s the outcome to
    `{DASHBOARD_URL}/api/cowork-agent/report-result` — success with the real text, or a clear error.
-5. Back to step 1.
+6. Back to step 1 — always after the full `POLL_INTERVAL_MS` wait, even right after finishing a
+   job. (It used to skip that wait to check for more work sooner, but that turned "the server keeps
+   handing back a job it can't actually process" into an unthrottled retry loop, confirmed from a
+   real run's logs — a `mkdir ''` crash calling `report-result` on an already-cancelled execution,
+   dozens of times a second. Worth knowing if you ever see a burst of near-identical log lines.)
 
-Every step is logged to stdout (`[cowork-agent] ...`) so you can watch what it's doing. The
-dashboard itself also shows a live "Agente ativo — visto há Xs" pill (next to the skills list's
-other buttons) once this agent has polled at least once — a quick way to confirm it's actually
-reaching the dashboard without needing to check this Terminal output.
+Every step is logged to stdout (`[cowork-agent] ...`) — now including every poll attempt and every
+job received, not just successful pickups, so a "nothing's happening" silence versus "it's polling
+but finding nothing" is visible without extra digging. The dashboard itself also shows a live
+"Agente ativo — visto há Xs" pill and a queue badge ("N aguardando · M em andamento") next to the
+skills list's other buttons — a quick way to confirm the agent is reaching the dashboard, and
+whether there's a backlog, without needing this Terminal or Supabase's SQL editor at all. If a job
+ever needs to be abandoned (stuck, wrong data, whatever), there's now a "Cancelar" button directly
+on the execution in the dashboard — no more reaching into the database by hand to delete a row.
 
 ## Requirements
 
