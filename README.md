@@ -493,12 +493,14 @@ on a real Mac, so its exact keystrokes (⌘N for a new task, ⌘V to paste, Retu
 documented best guess, not a confirmed fact — see `mac-agent/README.md`'s "The part that needs your
 testing" section for how to test and adjust it once you have Cowork running on the Mac mini.
 
-**An experimental alternative to the local results file exists** (`mac-agent/mcp-report-result/`) —
-a minimal MCP server exposing one tool that POSTs a result straight to
-`POST /api/cowork-agent/report-result`, tested to work end-to-end against a mock server from this
-sandbox. What's unverified is whether a Cowork task actually inherits Claude Desktop's configured
-MCP tools at all — see `mac-agent/README.md`'s "Reporting results via MCP instead of a local file"
-section for the two-phase test to find out before wiring it into `agent.js`'s real flow.
+**Results can now come back via MCP instead of only the local file** (`mac-agent/mcp-report-result/`)
+— a minimal MCP server exposing one tool, `report_cowork_result`, that POSTs straight to
+`POST /api/cowork-agent/report-result`, tested end-to-end against a mock server from this sandbox.
+`driveCowork()` asks Cowork to try that tool first and only falls back to the file if it's not
+available, and `agent.js` polls a new `GET /api/cowork-agent/execution-status` alongside the file
+check so it notices an MCP report immediately instead of waiting out the full timeout. See
+`mac-agent/README.md`'s "Reporting results via MCP instead of a local file" section for setup and
+the two-phase test to confirm a given Claude Desktop install actually reaches the tool.
 
 Skills that don't depend on Cowork run directly through the Claude API when `ANTHROPIC_API_KEY`
 is set (`lib/claude.ts`); otherwise they're flagged `needs_setup` the same way.

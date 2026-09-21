@@ -124,20 +124,24 @@ If a job's result file never shows up within the timeout, the agent reports the 
 main dashboard's own rule that a missing/unconfirmed outcome gets recorded honestly instead of
 guessed at.
 
-## Reporting results via MCP instead of a local file (experimental, untested)
+## Reporting results via MCP instead of a local file
 
-The file-watching approach above works, but it's indirect: it depends on Cowork actually writing
-the file, `agent.js` polling for it every 5s, and a 20-minute timeout before giving up if it never
-shows. `mac-agent/mcp-report-result/` is a small alternative worth testing: a minimal
-[MCP](https://modelcontextprotocol.io) server exposing one tool, `report_cowork_result`, that POSTs
-straight to the dashboard's `POST /api/cowork-agent/report-result` — the same route `agent.js`
-itself calls after reading the results file. If a Cowork task can actually call it, the result lands
-the instant the task finishes, with no polling delay and no results-folder convention needed.
+`agent.js` now asks Cowork to report its result two ways, in order of preference — see
+`driveCowork()`'s appended instruction: call the `report_cowork_result` MCP tool
+(`mac-agent/mcp-report-result/`) directly if that tool is available to it, otherwise fall back to
+the older file-drop convention (saving to `~/CoworkAgent/results/<execution-id>.txt`, which this
+agent still watches for). Whichever one actually happens, the execution gets finalized exactly
+once — `agent.js` also polls `GET /api/cowork-agent/execution-status` alongside the file check, so
+if the MCP tool call lands first it stops waiting immediately instead of sitting on the file/timeout
+for up to `RESULT_TIMEOUT_MS`; and if the file shows up after an MCP report already went through
+(or vice versa), the second report is a harmless no-op (the server just says "already finalized",
+logged as informational, not an error).
 
-**What's genuinely unverified here**: whether a Cowork task inherits the MCP servers configured in
-Claude Desktop's regular chat settings at all, or runs in a separate context that doesn't see them.
-There's no documentation confirming this either way — it needs a real test, which is why this is
-kept as a separate, opt-in tool rather than wired into `agent.js`'s main flow yet.
+**What's still worth confirming on a fresh setup**: whether a Cowork task on *your* Claude Desktop
+actually inherits the MCP servers configured there. It's wired into the real flow now (not just an
+opt-in experiment), with the file-drop fallback as a safety net — but if the MCP tool never gets
+reached, every job just quietly falls back to the file method, same as before this existed. The
+two-phase test below is still the fastest way to confirm the MCP path specifically is working.
 
 **Setup:**
 
@@ -175,15 +179,11 @@ kept as a separate, opt-in tool rather than wired into `agent.js`'s main flow ye
    executionId=teste-123` line (it'll fail with 404 since `teste-123` isn't a real execution — that's
    fine, it proves the call reached the server). If Claude says it has no such tool, the MCP server
    isn't loaded — recheck the config path and restart Desktop again.
-2. **Only once that works**, test whether a Cowork task specifically can reach it — start any real
-   Cowork task and explicitly ask it, as part of the prompt, to call `report_cowork_result` at the
-   end with a real (or fake, for this first try) execution ID instead of saving to a file. Watch
-   whether it actually happens.
-
-If phase 2 works, the next step (not done yet, on purpose) would be changing `agent.js`'s
-`driveCowork()` to append a "call this tool with this executionId" instruction instead of the
-"save to this file" one, and possibly skip `waitForResult`'s polling entirely — but that's worth
-doing only after confirming Cowork can really reach this tool, not before.
+2. **Only once that works**, run any real Cowork skill through the normal dashboard flow (not a
+   manual test prompt) — `driveCowork()` already tells it to try the MCP tool first. Watch this
+   agent's log: `Resultado recebido via arquivo` means it fell back to the file (MCP didn't reach
+   it, or wasn't asked to for some reason); no such line, and the job still finishes, means the MCP
+   path worked.
 
 ## Troubleshooting
 
