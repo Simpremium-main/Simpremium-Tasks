@@ -704,6 +704,22 @@ export async function claimNextCoworkJob(): Promise<CoworkJob | null> {
         }))
       )
     );
+    // Diagnostic: query 1 above (eq("status","running")) is filtering out
+    // rows that this query's own "status" field reads as "running" — the
+    // only way that's possible is if the stored value isn't byte-for-byte
+    // the string "running" (a stray space or other invisible character),
+    // which JSON.stringify alone won't make obvious in a casual log read.
+    // Dumping the length and a char-code array exposes exactly that.
+    console.log(
+      "[cowork-agent-server] status bruto (comprimento + códigos de caractere) de cada execução com payload:",
+      JSON.stringify(
+        (payloadRows ?? []).map((r) => ({
+          id: r.id,
+          statusLen: r.status?.length ?? null,
+          statusCodes: r.status ? Array.from(r.status as string).map((c) => c.charCodeAt(0)) : null,
+        }))
+      )
+    );
   }
 
   // Deliberately NOT embedding skills(name) here via a join (e.g.
