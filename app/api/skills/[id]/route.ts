@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { deleteSkill, getSkillWithExecutions, updateSkill, type UpdateSkillInput } from "@/lib/data";
 import { getCurrentUser } from "@/lib/auth";
 
+// See app/api/skills/route.ts — same missing-dynamic CDN-caching gap.
+export const dynamic = "force-dynamic";
+
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const skill = await getSkillWithExecutions(params.id);

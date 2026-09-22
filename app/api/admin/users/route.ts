@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { createUser, listUsers } from "@/lib/adminUsers";
 
+// See app/api/skills/route.ts — same missing-dynamic CDN-caching gap.
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     await requireAdmin();

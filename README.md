@@ -95,6 +95,23 @@ not something this app can trigger itself). If this ever recurs: rule out this a
 (it's been through exactly this), then go straight to Supabase's project controls rather than
 re-debugging the client.
 
+**Update — a second, more likely cause of the same symptom found later.** A separate stale-data
+episode (skills and execution history occasionally showing old/wrong data, fixed by manually
+purging Vercel's CDN cache) turned out to have a much simpler explanation than another PostgREST
+incident: `app/api/skills/route.ts`, `app/api/skills/[id]/route.ts`,
+`app/api/skills/[id]/prompt-history/route.ts`, `app/api/admin/users/route.ts`,
+`app/api/executions/route.ts`, and `app/api/executions/[id]/files/[index]/route.ts` were all
+missing `export const dynamic = "force-dynamic"` — every other data-reading API route in this app
+already has it (see `app/api/cowork-queue/route.ts`, `app/api/mcp/route.ts`, etc.), these six had
+simply been missed when they were written. A GET Route Handler with no dynamic API call in its own
+body (no direct `cookies()`/`headers()`/`searchParams` read — session auth happens in
+`middleware.ts`, before the route handler ever runs) can get treated as statically cacheable and
+served straight from Vercel's CDN edge instead of hitting the database on every request, matching
+exactly what "clearing the CDN cache fixes it" describes. All six now have the explicit opt-out.
+Doesn't retroactively explain the raw-fetch-vs-SQL-Editor mismatch documented above (that really
+did point at PostgREST specifically) — but if a "dashboard shows stale data" report comes up again,
+check for a route missing this export before assuming it's Supabase's REST layer again.
+
 **Known gap:** this codebase was built in a sandboxed environment whose network policy blocks
 the Supabase host, so the Supabase wiring was verified by unit-testing the client against the
 real project (confirmed the exact failure is the sandbox's own 403, not a code or schema issue)

@@ -605,8 +605,20 @@ function ExecutionDetailsModal({
   onFavoriteChange?: (id: string, favorite: boolean) => void;
   onCancel?: (execution: ExecutionItem) => void;
 }) {
+  const [activeTab, setActiveTab] = useState<"resultado" | "passos">("resultado");
   const fileBase = `execucao-${execution.id.slice(0, 8)}`;
   const durationMs = executionDurationMs(execution.startedAt, execution.finishedAt);
+
+  // Screenshots ride the same `files` array as any other generated file
+  // (see lib/types.ts's ExecutionFile) — split by MIME type here so they
+  // land in the "Passo a passo" tab as a gallery instead of the plain
+  // download list, while keeping each file's original index (the download
+  // route addresses files by position in the *full* array, not the
+  // filtered one).
+  const filesWithIndex = (execution.files ?? []).map((file, i) => ({ file, i }));
+  const imageFiles = filesWithIndex.filter(({ file }) => file.mimeType.startsWith("image/"));
+  const otherFiles = filesWithIndex.filter(({ file }) => !file.mimeType.startsWith("image/"));
+  const hasStepsTab = Boolean(execution.steps?.length) || imageFiles.length > 0;
 
   return (
     <div
@@ -715,78 +727,105 @@ function ExecutionDetailsModal({
           </div>
         )}
 
-        <DetailBlock label="Prompt enviado" text={execution.promptSnapshot} tone="canvas" />
-
-        {execution.steps && execution.steps.length > 0 && (
-          <div className="mb-4">
-            <div className="text-xs uppercase tracking-wide text-muted mb-1.5">Passo a passo</div>
-            <ol className="space-y-1 rounded-md bg-canvas p-3 text-sm text-ink/80">
-              {execution.steps.map((step, i) => (
-                <li key={i} className="flex gap-2">
-                  <span className="shrink-0 text-muted">{i + 1}.</span>
-                  <span className="min-w-0 break-words">{step}</span>
-                </li>
-              ))}
-            </ol>
+        {hasStepsTab && (
+          <div className="flex items-center gap-1 mb-4 border-b border-line">
+            <TabButton active={activeTab === "resultado"} onClick={() => setActiveTab("resultado")}>
+              Resultado
+            </TabButton>
+            <TabButton active={activeTab === "passos"} onClick={() => setActiveTab("passos")}>
+              <ListOrdered size={13} />
+              Passo a passo
+            </TabButton>
           </div>
         )}
 
-        {execution.files && execution.files.length > 0 && (
-          <div className="mb-4">
-            <div className="text-xs uppercase tracking-wide text-muted mb-1.5">
-              Arquivo{execution.files.length > 1 ? "s" : ""} gerado{execution.files.length > 1 ? "s" : ""}
-            </div>
-            <div className="space-y-1.5">
-              {execution.files.map((file, i) =>
-                file.mimeType.startsWith("image/") ? (
-                  <a
-                    key={i}
-                    href={`/api/executions/${execution.id}/files/${i}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center gap-3 rounded-md border border-line bg-primary-soft/40 px-3 py-2 text-sm hover:border-primary/40 hover:bg-primary-soft transition-colors"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={`/api/executions/${execution.id}/files/${i}`}
-                      alt={file.name}
-                      className="h-12 w-16 shrink-0 rounded object-cover border border-line/60"
-                    />
-                    <span className="flex-1 truncate">{file.name}</span>
-                    <span className="text-xs text-muted shrink-0">{formatBytes(file.sizeBytes)}</span>
-                    <Download size={13} className="text-primary shrink-0" />
-                  </a>
-                ) : (
-                  <a
-                    key={i}
-                    href={`/api/executions/${execution.id}/files/${i}`}
-                    className="flex items-center gap-2 rounded-md border border-line bg-primary-soft/40 px-3 py-2 text-sm hover:border-primary/40 hover:bg-primary-soft transition-colors"
-                  >
-                    <Paperclip size={14} className="text-primary shrink-0" />
-                    <span className="flex-1 truncate">{file.name}</span>
-                    <span className="text-xs text-muted shrink-0">{formatBytes(file.sizeBytes)}</span>
-                    <Download size={13} className="text-primary shrink-0" />
-                  </a>
-                )
-              )}
-            </div>
+        {(!hasStepsTab || activeTab === "resultado") && (
+          <>
+            <DetailBlock label="Prompt enviado" text={execution.promptSnapshot} tone="canvas" />
+
+            {otherFiles.length > 0 && (
+              <div className="mb-4">
+                <div className="text-xs uppercase tracking-wide text-muted mb-1.5">
+                  Arquivo{otherFiles.length > 1 ? "s" : ""} gerado{otherFiles.length > 1 ? "s" : ""}
+                </div>
+                <div className="space-y-1.5">
+                  {otherFiles.map(({ file, i }) => (
+                    <a
+                      key={i}
+                      href={`/api/executions/${execution.id}/files/${i}`}
+                      className="flex items-center gap-2 rounded-md border border-line bg-primary-soft/40 px-3 py-2 text-sm hover:border-primary/40 hover:bg-primary-soft transition-colors"
+                    >
+                      <Paperclip size={14} className="text-primary shrink-0" />
+                      <span className="flex-1 truncate">{file.name}</span>
+                      <span className="text-xs text-muted shrink-0">{formatBytes(file.sizeBytes)}</span>
+                      <Download size={13} className="text-primary shrink-0" />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {execution.result && (
+              <DetailBlock
+                label="Resultado"
+                text={execution.result}
+                tone="emerald"
+                // Only offer the .txt/.pdf export-of-text convenience when there's
+                // no real generated file — showing it next to an actual PDF/CSV
+                // would look like a second, fake copy of the same thing.
+                downloadBase={execution.files?.length ? undefined : fileBase}
+                downloadTitle={execution.skill?.name ?? "Resultado da execução"}
+              />
+            )}
+
+            {execution.error && <DetailBlock label="Erro" text={execution.error} tone="red" />}
+          </>
+        )}
+
+        {hasStepsTab && activeTab === "passos" && (
+          <div className="mb-4 space-y-4">
+            {execution.steps && execution.steps.length > 0 && (
+              <ol className="space-y-1.5 rounded-md bg-canvas p-3 text-sm text-ink/80">
+                {execution.steps.map((step, i) => (
+                  <li key={i} className="flex gap-2">
+                    <span className="shrink-0 text-muted">{i + 1}.</span>
+                    <span className="min-w-0 break-words">{step}</span>
+                  </li>
+                ))}
+              </ol>
+            )}
+            {imageFiles.length > 0 && (
+              <div>
+                <div className="text-xs uppercase tracking-wide text-muted mb-1.5">
+                  Print{imageFiles.length > 1 ? "s" : ""} de tela
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {imageFiles.map(({ file, i }) => (
+                    <a
+                      key={i}
+                      href={`/api/executions/${execution.id}/files/${i}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={file.name}
+                      className="group block rounded-md border border-line overflow-hidden hover:border-primary/40 transition-colors"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={`/api/executions/${execution.id}/files/${i}`}
+                        alt={file.name}
+                        className="h-24 w-full object-cover bg-canvas"
+                      />
+                      <div className="flex items-center justify-between gap-1 px-1.5 py-1 text-[11px] text-muted group-hover:text-primary">
+                        <span className="truncate">{file.name}</span>
+                        <Download size={11} className="shrink-0" />
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
-
-        {execution.result && (
-          <DetailBlock
-            label="Resultado"
-            text={execution.result}
-            tone="emerald"
-            // Only offer the .txt/.pdf export-of-text convenience when there's
-            // no real generated file — showing it next to an actual PDF/CSV
-            // would look like a second, fake copy of the same thing.
-            downloadBase={execution.files?.length ? undefined : fileBase}
-            downloadTitle={execution.skill?.name ?? "Resultado da execução"}
-          />
-        )}
-
-        {execution.error && <DetailBlock label="Erro" text={execution.error} tone="red" />}
 
         <div className="flex flex-wrap items-center gap-2">
           {onRetry && (
@@ -806,6 +845,30 @@ function ExecutionDetailsModal({
         </div>
       </div>
     </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors -mb-px ${
+        active
+          ? "border-primary text-primary"
+          : "border-transparent text-muted hover:text-ink"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 

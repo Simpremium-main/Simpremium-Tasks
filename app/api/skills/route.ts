@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSkill, listSkills } from "@/lib/data";
 import type { InputField } from "@/lib/types";
 
+// Without this, a GET handler with no dynamic API call in its body (no
+// cookies()/headers()/searchParams read) can get treated as static and
+// cached at Vercel's CDN edge — the actual cause of the dashboard
+// intermittently showing stale skills/executions until the CDN cache was
+// manually purged. Every other data-reading API route in this app already
+// has this; these few had simply been missed.
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const skills = await listSkills();

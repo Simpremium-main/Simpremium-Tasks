@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listExecutions } from "@/lib/data";
 
+// See app/api/skills/route.ts — same missing-dynamic CDN-caching gap.
+export const dynamic = "force-dynamic";
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status") ?? undefined;

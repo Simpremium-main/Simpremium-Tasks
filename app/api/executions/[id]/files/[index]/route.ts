@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { downloadExecutionFile, getExecution } from "@/lib/data";
 
+// See app/api/skills/route.ts — same missing-dynamic CDN-caching gap. Files
+// are immutable once generated, but the execution row's index→file mapping
+// isn't (a retried/edited run can change which file sits at which index),
+// so a cached response here could still serve the wrong file.
+export const dynamic = "force-dynamic";
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string; index: string } }
