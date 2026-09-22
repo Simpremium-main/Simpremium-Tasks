@@ -447,6 +447,36 @@ export async function listExecutions(
 }
 
 /**
+ * Every execution currently pending/running, across every skill — the
+ * "what's running now" homepage strip's data source. Unlike CoworkQueueBadge
+ * (a Cowork-only count), this covers every source (Claude-direct, scheduled,
+ * manual) so a stuck Claude-direct run or a scheduled job in flight shows up
+ * here too, not just Cowork jobs. Capped at 50: this is a live-status
+ * glance, not a list view, and the app has no path that leaves hundreds of
+ * executions genuinely in flight at once.
+ */
+export async function listActiveExecutions(): Promise<
+  (Execution & { skill: { id: string; name: string } })[]
+> {
+  const supabase = getSupabase();
+  const { data, error, status, statusText } = await supabase
+    .from("executions")
+    .select("*, skill:skills(id, name)")
+    .in("status", ["pending", "running"])
+    .order("started_at", { ascending: false })
+    .limit(50);
+  if (error) throw describeError("listActiveExecutions", error, status, statusText);
+
+  return (data ?? []).map((row) => {
+    const skill = row.skill as { id: string; name: string } | null;
+    return {
+      ...mapExecutionRow(row),
+      skill: { id: skill?.id ?? (row.skill_id as string), name: skill?.name ?? "Deleted skill" },
+    };
+  });
+}
+
+/**
  * Every execution ever recorded, for GET /api/executions/export — unlike
  * listExecutions' 200-row cap (a fast list view), this is meant to be a
  * genuine full backup/analysis export, so it doesn't cap or filter.

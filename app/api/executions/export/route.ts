@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { listAllExecutionsForExport } from "@/lib/data";
 import { estimateCostUsd } from "@/lib/cost";
 import { executionDurationMs } from "@/lib/duration";
@@ -41,9 +41,16 @@ const COLUMNS = [
  * (the original ask) means opening it in Excel/Sheets, not re-importing it
  * into this app — there's no matching import route for this shape.
  */
-export async function GET() {
+// `?ids=a,b,c` narrows the export to just those executions — used by
+// HistoryBoard's bulk "Exportar CSV" action; omitted, it exports
+// everything, same as before this filter existed.
+export async function GET(req: NextRequest) {
   try {
-    const executions = await listAllExecutionsForExport();
+    const idsParam = req.nextUrl.searchParams.get("ids");
+    const ids = idsParam ? new Set(idsParam.split(",").filter(Boolean)) : null;
+
+    const allExecutions = await listAllExecutionsForExport();
+    const executions = ids ? allExecutions.filter((e) => ids.has(e.id)) : allExecutions;
 
     const rows = executions.map((e) => {
       const durationMs = e.finishedAt ? executionDurationMs(e.startedAt.toISOString(), e.finishedAt.toISOString()) : null;

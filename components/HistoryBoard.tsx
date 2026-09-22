@@ -2,16 +2,31 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search } from "lucide-react";
+import { AlertTriangle, CheckSquare, Download, Loader2, RotateCcw, Search } from "lucide-react";
 import ExecutionList, { type ExecutionItem } from "./ExecutionList";
 
 type Filter = "all" | "success" | "error" | "needs_setup" | "files" | "favorites";
+
+// A stored input value only ever looks like this when it was masked before
+// being written to execution history (lib/mask.ts's maskValue — a run of
+// "•" characters). Retrying with a masked value would silently resubmit
+// garbage instead of the real secret, so bulk retry skips any execution
+// whose inputValues contain one rather than attempting it.
+function hasMaskedSecret(inputValues: Record<string, string> | null): boolean {
+  if (!inputValues) return false;
+  return Object.values(inputValues).some((v) => typeof v === "string" && v.includes("•"));
+}
 
 export default function HistoryBoard({ executions: initialExecutions }: { executions: ExecutionItem[] }) {
   const router = useRouter();
   const [executions, setExecutions] = useState(initialExecutions);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkWorking, setBulkWorking] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
+  const [bulkInfo, setBulkInfo] = useState<string | null>(null);
 
   // Same staleness fix as RunSkillPanel: this page has no per-row way to
   // learn a Cowork job finished (it's reported minutes later, out of band,
@@ -37,6 +52,62 @@ export default function HistoryBoard({ executions: initialExecutions }: { execut
 
   function handleCancel(cancelled: ExecutionItem) {
     setExecutions((prev) => prev.map((e) => (e.id === cancelled.id ? cancelled : e)));
+  }
+
+  function toggleSelectMode() {
+    setSelectMode((prev) => !prev);
+    setSelectedIds(new Set());
+    setBulkError(null);
+    setBulkInfo(null);
+  }
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function bulkExportCsv() {
+    const ids = Array.from(selectedIds).join(",");
+    window.location.href = `/api/executions/export?ids=${encodeURIComponent(ids)}`;
+  }
+
+  async function bulkRetry() {
+    setBulkWorking(true);
+    setBulkError(null);
+    setBulkInfo(null);
+    const selected = executions.filter((e) => selectedIds.has(e.id));
+    const retryable = selected.filter((e) => e.skill && !hasMaskedSecret(e.inputValues));
+    const skipped = selected.length - retryable.length;
+    try {
+      const results = await Promise.all(
+        retryable.map((e) =>
+          fetch(`/api/skills/${e.skill!.id}/run`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ inputValues: e.inputValues ?? {} }),
+          })
+        )
+      );
+      const failed = results.filter((r) => !r.ok).length;
+      const succeeded = results.length - failed;
+      const parts = [`${succeeded} de ${retryable.length} reexecutada${retryable.length === 1 ? "" : "s"}`];
+      if (skipped > 0) {
+        parts.push(
+          `${skipped} pulada${skipped === 1 ? "" : "s"} (tem campo de senha/token — precisa rodar manualmente)`
+        );
+      }
+      if (failed > 0) parts.push(`${failed} falhou${failed === 1 ? "" : "aram"} ao disparar`);
+      setBulkInfo(parts.join(" · "));
+      router.refresh();
+    } catch (err) {
+      setBulkError(err instanceof Error ? err.message : "Falha ao reexecutar em lote");
+    } finally {
+      setBulkWorking(false);
+    }
   }
 
   const filtered = useMemo(() => {
@@ -100,7 +171,56 @@ export default function HistoryBoard({ executions: initialExecutions }: { execut
             </button>
           ))}
         </div>
+        {filtered.length > 0 && (
+          <button
+            type="button"
+            onClick={toggleSelectMode}
+            className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-2 text-xs font-medium transition-colors ${
+              selectMode
+                ? "border-primary/30 bg-primary-soft text-primary"
+                : "border-line bg-surface text-muted hover:text-ink"
+            }`}
+          >
+            <CheckSquare size={13} />
+            {selectMode ? "Cancelar seleção" : "Selecionar"}
+          </button>
+        )}
       </div>
+
+      {selectMode && (
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-primary/20 bg-primary-soft/50 px-3.5 py-2.5">
+          <span className="text-sm font-medium text-ink">
+            {selectedIds.size} selecionada{selectedIds.size === 1 ? "" : "s"}
+          </span>
+          <div className="flex items-center gap-2 ml-auto">
+            <button
+              type="button"
+              onClick={bulkRetry}
+              disabled={selectedIds.size === 0 || bulkWorking}
+              className="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface px-3 py-1.5 text-xs font-medium text-ink/80 hover:border-primary/30 hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {bulkWorking ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
+              Reexecutar
+            </button>
+            <button
+              type="button"
+              onClick={bulkExportCsv}
+              disabled={selectedIds.size === 0 || bulkWorking}
+              className="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface px-3 py-1.5 text-xs font-medium text-ink/80 hover:border-primary/30 hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Download size={13} />
+              Exportar CSV
+            </button>
+          </div>
+          {bulkError && (
+            <span className="w-full inline-flex items-center gap-1 text-xs text-red-600">
+              <AlertTriangle size={12} />
+              {bulkError}
+            </span>
+          )}
+          {bulkInfo && <span className="w-full text-xs text-ink/70">{bulkInfo}</span>}
+        </div>
+      )}
 
       {filtered.length === 0 ? (
         <p className="text-sm text-muted border border-dashed border-line rounded-xl p-10 text-center">
@@ -112,6 +232,9 @@ export default function HistoryBoard({ executions: initialExecutions }: { execut
           showSkillName
           onFavoriteChange={handleFavoriteChange}
           onCancel={handleCancel}
+          selectMode={selectMode}
+          selectedIds={selectedIds}
+          onToggleSelect={toggleSelected}
         />
       )}
     </div>

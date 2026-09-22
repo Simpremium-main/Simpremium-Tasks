@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { DragEvent } from "react";
-import { AlertTriangle, Archive, CheckSquare, Loader2, Pin, Search, Trash2, X } from "lucide-react";
+import { AlertTriangle, Archive, CheckSquare, Download, Loader2, Pin, Search, Trash2, X } from "lucide-react";
 import SkillCard from "./SkillCard";
 import type { InputField, SkillSchedule } from "@/lib/types";
 
@@ -160,6 +160,11 @@ export default function SkillsBoard({ skills: initialSkills }: { skills: BoardSk
       setBulkError(err instanceof Error ? err.message : "Falha ao arquivar em lote");
       setBulkWorking(false);
     }
+  }
+
+  function bulkExport() {
+    const ids = Array.from(selectedIds).join(",");
+    window.location.href = `/api/skills/export?ids=${encodeURIComponent(ids)}`;
   }
 
   async function bulkDelete() {
@@ -337,6 +342,15 @@ export default function SkillsBoard({ skills: initialSkills }: { skills: BoardSk
             >
               {bulkWorking ? <Loader2 size={13} className="animate-spin" /> : <Archive size={13} />}
               Arquivar
+            </button>
+            <button
+              type="button"
+              onClick={bulkExport}
+              disabled={selectedIds.size === 0 || bulkWorking}
+              className="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface px-3 py-1.5 text-xs font-medium text-ink/80 hover:border-primary/30 hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Download size={13} />
+              Exportar
             </button>
             <button
               type="button"

@@ -906,6 +906,28 @@ but here's some Python...") instead of just the content that should go in it —
 prompt heads that off either way: write the content directly for a text answer, or actually run
 code for a real file.
 
+## What's running now, and bulk actions
+
+The homepage shows a small "Rodando agora" strip (`components/ActiveExecutionsStrip.tsx`, backed
+by `lib/data.ts`'s `listActiveExecutions()` / `GET /api/executions/active`) listing every
+pending/running execution across every skill and source — not just Cowork's own queue badge — so
+"is anything running right now?" doesn't require opening each skill. It polls independently every
+15s and keeps polling even while empty, since a schedule or another browser tab can start work at
+any time; hidden entirely when nothing's active.
+
+Both the skills board and `/history` support bulk selection (the "Selecionar" toggle → a toolbar
+with per-feature actions, same pattern in both places):
+- **Skills** (`components/SkillsBoard.tsx`): arquivar, exportar (now selection-aware —
+  `GET /api/skills/export?ids=a,b,c` narrows to just the selected skills; omitted, it exports
+  everything, unchanged from before), excluir.
+- **Executions** (`components/HistoryBoard.tsx` → `ExecutionList`'s new `selectMode`/`selectedIds`/
+  `onToggleSelect` props): reexecutar and exportar CSV (`GET /api/executions/export?ids=...`, same
+  narrowing pattern). Bulk retry re-POSTs to `/api/skills/{id}/run` with each execution's stored
+  `inputValues` — but skips (and reports) any execution whose stored values contain a masked
+  secret (`lib/mask.ts`'s `•` fill character), since resubmitting a masked value would silently
+  fail auth instead of actually retrying; those still need a manual run through the skill's own
+  page, where the real value can be typed in again.
+
 ## Security baseline
 
 - Any input field typed `secret` (credentials, tokens) is masked before it's ever written to

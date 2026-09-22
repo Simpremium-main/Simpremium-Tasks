@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { listSkills } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
@@ -8,10 +8,18 @@ export const dynamic = "force-dynamic";
  * no secret values (none are ever stored to begin with, see lib/mask.ts),
  * just enough to recreate every skill elsewhere or restore one you deleted
  * by hand. GET, not POST: this only reads.
+ *
+ * `?ids=a,b,c` narrows the export to just those skills — used by
+ * SkillsBoard's bulk "Exportar selecionadas" action; omitted, it exports
+ * everything, same as before this filter existed.
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const skills = await listSkills();
+    const idsParam = req.nextUrl.searchParams.get("ids");
+    const ids = idsParam ? new Set(idsParam.split(",").filter(Boolean)) : null;
+
+    const allSkills = await listSkills();
+    const skills = ids ? allSkills.filter((s) => ids.has(s.id)) : allSkills;
     const payload = skills.map((skill) => ({
       name: skill.name,
       description: skill.description,

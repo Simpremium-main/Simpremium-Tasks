@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Download, LayoutGrid, Plus, Sparkles } from "lucide-react";
-import { getCoworkAgentLastSeen, getCoworkQueueSummary, listSkills } from "@/lib/data";
+import { getCoworkAgentLastSeen, getCoworkQueueSummary, listActiveExecutions, listSkills } from "@/lib/data";
 import { isClaudeConfigured } from "@/lib/claude";
 import { isCoworkAgentConfigured } from "@/lib/cowork";
 import { hasUnschedulableSecret } from "@/lib/schedule";
@@ -9,6 +9,7 @@ import PageHeader from "@/components/PageHeader";
 import ImportSkillsButton from "@/components/ImportSkillsButton";
 import CoworkAgentStatus from "@/components/CoworkAgentStatus";
 import CoworkQueueBadge from "@/components/CoworkQueueBadge";
+import ActiveExecutionsStrip from "@/components/ActiveExecutionsStrip";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,12 @@ export default async function DashboardPage() {
         return { waiting: 0, inProgress: 0, paused: false };
       })
     : { waiting: 0, inProgress: 0, paused: false };
+  // Best-effort, same reasoning as the pills above — a hiccup here shouldn't
+  // take down the skills list.
+  const activeExecutions = await listActiveExecutions().catch((err) => {
+    console.error("listActiveExecutions failed:", err);
+    return [];
+  });
   const archivedCount = skills.filter((s) => s.status === "archived").length;
   const boardSkills = skills.map((s) => ({
     id: s.id,
@@ -116,6 +123,16 @@ export default async function DashboardPage() {
             </Link>
           </>
         }
+      />
+      <ActiveExecutionsStrip
+        initialExecutions={activeExecutions.map((e) => ({
+          id: e.id,
+          status: e.status,
+          source: e.source,
+          coworkStartedAt: e.coworkStartedAt?.toISOString() ?? null,
+          startedAt: e.startedAt.toISOString(),
+          skill: e.skill,
+        }))}
       />
       <SkillsBoard skills={boardSkills} />
     </div>

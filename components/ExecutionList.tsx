@@ -7,6 +7,7 @@ import {
   Bot,
   CalendarClock,
   Check,
+  CheckSquare,
   Coins,
   Copy,
   Download,
@@ -18,6 +19,7 @@ import {
   Paperclip,
   RotateCcw,
   Sparkles,
+  Square,
   Star,
   Timer,
   User,
@@ -150,6 +152,9 @@ export default function ExecutionList({
   favoritable = true,
   onFavoriteChange,
   onCancel,
+  selectMode = false,
+  selectedIds,
+  onToggleSelect,
 }: {
   executions: ExecutionItem[];
   showSkillName?: boolean;
@@ -168,6 +173,13 @@ export default function ExecutionList({
    *  /share/[token] page) — lets the parent PATCH the cancel and update its
    *  own copy of the list, same pattern as onFavoriteChange. */
   onCancel?: (execution: ExecutionItem) => void;
+  /** Bulk-selection mode (HistoryBoard's "Selecionar" toggle) — when on,
+   *  clicking a row toggles selection instead of opening its details, same
+   *  pattern SkillCard uses for skill bulk actions. All three go together;
+   *  omitted anywhere else in the app, rows behave exactly as before. */
+  selectMode?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
 }) {
   const [detailsFor, setDetailsFor] = useState<ExecutionItem | null>(null);
   // Only running while some row is actually "running" — no point ticking a
@@ -204,6 +216,9 @@ export default function ExecutionList({
             favoritable={favoritable}
             onFavoriteChange={onFavoriteChange}
             onCancel={onCancel}
+            selectMode={selectMode}
+            selected={selectedIds?.has(execution.id) ?? false}
+            onToggleSelect={onToggleSelect ? () => onToggleSelect(execution.id) : undefined}
           />
         ))}
       </ul>
@@ -241,6 +256,9 @@ function ExecutionRow({
   favoritable,
   onFavoriteChange,
   onCancel,
+  selectMode,
+  selected,
+  onToggleSelect,
 }: {
   execution: ExecutionItem;
   showSkillName: boolean;
@@ -252,6 +270,9 @@ function ExecutionRow({
   favoritable: boolean;
   onFavoriteChange?: (id: string, favorite: boolean) => void;
   onCancel?: (execution: ExecutionItem) => void;
+  selectMode?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }) {
   const failedScheduled = isFailedScheduled(execution);
   const durationMs = executionDurationMs(execution.startedAt, execution.finishedAt);
@@ -267,9 +288,18 @@ function ExecutionRow({
       }`}
     >
       <div className="w-full flex items-start gap-3 px-4 py-3">
+        {selectMode && (
+          <button
+            type="button"
+            onClick={() => onToggleSelect?.()}
+            className={`shrink-0 mt-0.5 ${selected ? "text-primary" : "text-muted"}`}
+          >
+            {selected ? <CheckSquare size={18} /> : <Square size={18} />}
+          </button>
+        )}
         <button
           type="button"
-          onClick={onViewDetails}
+          onClick={selectMode ? () => onToggleSelect?.() : onViewDetails}
           className="flex flex-col gap-1.5 flex-1 min-w-0 text-left"
         >
           <div className="flex items-center gap-2 flex-wrap">
@@ -368,7 +398,8 @@ function ExecutionRow({
             </span>
           </div>
         </button>
-        <div className="flex items-center gap-1 shrink-0 pt-px">
+        {!selectMode && (
+          <div className="flex items-center gap-1 shrink-0 pt-px">
           {favoritable && (
             <FavoriteToggle
               executionId={execution.id}
@@ -400,6 +431,7 @@ function ExecutionRow({
             <span className="hidden sm:inline">Ver detalhes</span>
           </button>
         </div>
+        )}
       </div>
       {previewText && (
         <div className="pointer-events-none absolute left-3 right-3 top-full z-20 mt-1.5 hidden group-hover/row:block animate-fade-in">
