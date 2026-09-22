@@ -266,130 +266,140 @@ function ExecutionRow({
             : "border-line"
       }`}
     >
-      <div className="w-full flex items-center gap-3 px-4 py-3">
-        <button type="button" onClick={onViewDetails} className="flex items-center gap-3 flex-1 min-w-0 text-left">
-          <StatusBadge status={execution.status} />
-          {stuck && (
-            <span
-              className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 rounded-full px-2 py-0.5"
-              title="Passou de 5 minutos rodando — nada nesse app continua uma execução sozinho depois que a aba que a iniciou fecha, então isso provavelmente travou."
-            >
-              <AlertTriangle size={11} />
-              demorando
-            </span>
-          )}
-          {failedScheduled && (
-            <span
-              className="inline-flex items-center gap-1 text-xs text-red-700 bg-red-100 rounded-full px-2 py-0.5"
-              title="Rodou sozinha pelo agendamento e falhou — ninguém estava vendo na hora."
-            >
-              <AlertTriangle size={11} />
-              falhou sozinha
-            </span>
-          )}
-          <span className="inline-flex items-center gap-1 text-xs text-muted">
-            {SOURCE_ICONS[execution.source]}
-            {SOURCE_LABELS[execution.source] ?? execution.source}
-          </span>
-          {coworkPhase && (
-            <span
-              className="hidden sm:inline-flex items-center gap-1 text-xs text-cowork bg-cowork-soft rounded-full px-2 py-0.5"
-              title={
-                execution.coworkStartedAt
-                  ? "O agente do Mac mini já pegou essa tarefa e está trabalhando nela agora."
-                  : "Ainda na fila — o agente do Mac mini ainda não pegou essa tarefa."
-              }
-            >
-              <Bot size={11} />
-              {coworkPhase}
-            </span>
-          )}
-          {execution.ranBy && (
-            <span className="hidden sm:inline-flex items-center gap-1 text-xs text-muted">
-              <User size={11} />
-              {execution.ranBy}
-            </span>
-          )}
-          {execution.files && execution.files.length > 0 && (
-            <span
-              className="inline-flex items-center gap-1 text-xs text-primary"
-              title={`${execution.files.length} arquivo(s) gerado(s)`}
-            >
-              <Paperclip size={11} />
-              {execution.files.length}
-            </span>
-          )}
-          {execution.steps && execution.steps.length > 0 && (
-            <span
-              className="hidden sm:inline-flex items-center gap-1 text-xs text-muted"
-              title={`${execution.steps.length} passo(s) registrado(s)`}
-            >
-              <ListOrdered size={11} />
-              {execution.steps.length}
-            </span>
-          )}
-          {execution.usage && (
-            <span
-              className="hidden sm:inline-flex items-center gap-1 text-xs text-muted"
-              title={`${execution.usage.inputTokens} tokens de entrada, ${execution.usage.outputTokens} de saída${execution.usage.cacheReadInputTokens ? `, ${execution.usage.cacheReadInputTokens} lidos do cache` : ""} — estimativa de custo, não a cobrança real`}
-            >
-              <Coins size={11} />
-              {formatTokens(totalTokens(execution.usage))} tok · ~
-              {formatCostUsd(estimateCostUsd(execution.usage))}
-            </span>
-          )}
-          {durationMs !== null && (
-            <span
-              className="hidden sm:inline-flex items-center gap-1 text-xs text-muted"
-              title="Tempo total da execução, do início ao fim (todos os passos, se precisou de mais de um)"
-            >
-              <Timer size={11} />
-              {formatDuration(durationMs)}
-            </span>
-          )}
-          {showSkillName && execution.skill && (
-            <Link
-              href={`/skills/${execution.skill.id}`}
-              onClick={(e) => e.stopPropagation()}
-              className="text-sm font-medium hover:text-primary transition-colors"
-            >
-              {execution.skill.name}
-            </Link>
-          )}
-          <span className="ml-auto text-xs text-muted hidden sm:inline">
-            {new Date(execution.startedAt).toLocaleString("pt-BR")}
-          </span>
-        </button>
-        {favoritable && (
-          <FavoriteToggle
-            executionId={execution.id}
-            favorite={execution.favorite}
-            onChange={onFavoriteChange}
-          />
-        )}
-        <CopyPromptButton text={execution.promptSnapshot} />
-        {onCancel && (execution.status === "pending" || execution.status === "running") && (
-          <CancelExecutionButton execution={execution} stuck={stuck} onCancelled={onCancel} />
-        )}
-        {onRetry && (
-          <button
-            type="button"
-            onClick={onRetry}
-            title="Rodar de novo"
-            className="inline-flex items-center gap-1 text-xs text-muted hover:text-primary transition-colors shrink-0"
-          >
-            <RotateCcw size={13} />
-            <span className="hidden sm:inline">Rodar de novo</span>
-          </button>
-        )}
+      <div className="w-full flex items-start gap-3 px-4 py-3">
         <button
           type="button"
           onClick={onViewDetails}
-          className="inline-flex items-center gap-1 text-xs font-medium text-primary shrink-0"
+          className="flex flex-col gap-1.5 flex-1 min-w-0 text-left"
         >
-          <Eye size={13} />
-          <span className="hidden sm:inline">Ver detalhes</span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <StatusBadge status={execution.status} />
+            {stuck && (
+              <span
+                className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 rounded-full px-2 py-0.5 shrink-0"
+                title="Passou de 5 minutos rodando — nada nesse app continua uma execução sozinho depois que a aba que a iniciou fecha, então isso provavelmente travou."
+              >
+                <AlertTriangle size={11} />
+                demorando
+              </span>
+            )}
+            {failedScheduled && (
+              <span
+                className="inline-flex items-center gap-1 text-xs text-red-700 bg-red-100 rounded-full px-2 py-0.5 shrink-0"
+                title="Rodou sozinha pelo agendamento e falhou — ninguém estava vendo na hora."
+              >
+                <AlertTriangle size={11} />
+                falhou sozinha
+              </span>
+            )}
+            <span className="inline-flex items-center gap-1 text-xs text-muted shrink-0">
+              {SOURCE_ICONS[execution.source]}
+              {SOURCE_LABELS[execution.source] ?? execution.source}
+            </span>
+            {coworkPhase && (
+              <span
+                className="hidden sm:inline-flex items-center gap-1 text-xs text-cowork bg-cowork-soft rounded-full px-2 py-0.5 shrink-0 max-w-[220px] truncate"
+                title={
+                  execution.coworkStartedAt
+                    ? "O agente do Mac mini já pegou essa tarefa e está trabalhando nela agora."
+                    : "Ainda na fila — o agente do Mac mini ainda não pegou essa tarefa."
+                }
+              >
+                <Bot size={11} className="shrink-0" />
+                <span className="truncate">{coworkPhase}</span>
+              </span>
+            )}
+            {showSkillName && execution.skill && (
+              <Link
+                href={`/skills/${execution.skill.id}`}
+                onClick={(e) => e.stopPropagation()}
+                className="text-sm font-medium hover:text-primary transition-colors truncate max-w-[260px]"
+              >
+                {execution.skill.name}
+              </Link>
+            )}
+          </div>
+          <div className="flex items-center gap-3 flex-wrap text-xs text-muted">
+            {execution.ranBy && (
+              <span className="hidden sm:inline-flex items-center gap-1 min-w-0 max-w-[220px] shrink">
+                <User size={11} className="shrink-0" />
+                <span className="truncate">{execution.ranBy}</span>
+              </span>
+            )}
+            {execution.files && execution.files.length > 0 && (
+              <span
+                className="inline-flex items-center gap-1 text-primary shrink-0"
+                title={`${execution.files.length} arquivo(s) gerado(s)`}
+              >
+                <Paperclip size={11} />
+                {execution.files.length}
+              </span>
+            )}
+            {execution.steps && execution.steps.length > 0 && (
+              <span
+                className="hidden sm:inline-flex items-center gap-1 shrink-0"
+                title={`${execution.steps.length} passo(s) registrado(s)`}
+              >
+                <ListOrdered size={11} />
+                {execution.steps.length}
+              </span>
+            )}
+            {execution.usage && (
+              <span
+                className="hidden sm:inline-flex items-center gap-1 shrink-0"
+                title={`${execution.usage.inputTokens} tokens de entrada, ${execution.usage.outputTokens} de saída${execution.usage.cacheReadInputTokens ? `, ${execution.usage.cacheReadInputTokens} lidos do cache` : ""} — estimativa de custo, não a cobrança real`}
+              >
+                <Coins size={11} />
+                {formatTokens(totalTokens(execution.usage))} tok · ~
+                {formatCostUsd(estimateCostUsd(execution.usage))}
+              </span>
+            )}
+            {durationMs !== null && (
+              <span
+                className="hidden sm:inline-flex items-center gap-1 shrink-0"
+                title="Tempo total da execução, do início ao fim (todos os passos, se precisou de mais de um)"
+              >
+                <Timer size={11} />
+                {formatDuration(durationMs)}
+              </span>
+            )}
+            <span className="ml-auto shrink-0 hidden sm:inline">
+              {new Date(execution.startedAt).toLocaleString("pt-BR")}
+            </span>
+          </div>
         </button>
+        <div className="flex items-center gap-1 shrink-0 pt-px">
+          {favoritable && (
+            <FavoriteToggle
+              executionId={execution.id}
+              favorite={execution.favorite}
+              onChange={onFavoriteChange}
+            />
+          )}
+          <CopyPromptButton text={execution.promptSnapshot} />
+          {onCancel && (execution.status === "pending" || execution.status === "running") && (
+            <CancelExecutionButton execution={execution} stuck={stuck} onCancelled={onCancel} />
+          )}
+          {onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              title="Rodar de novo"
+              className="inline-flex items-center gap-1 text-xs text-muted hover:text-primary transition-colors shrink-0"
+            >
+              <RotateCcw size={13} />
+              <span className="hidden sm:inline">Rodar de novo</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onViewDetails}
+            className="inline-flex items-center gap-1 text-xs font-medium text-primary shrink-0"
+          >
+            <Eye size={13} />
+            <span className="hidden sm:inline">Ver detalhes</span>
+          </button>
+        </div>
       </div>
       {previewText && (
         <div className="pointer-events-none absolute left-3 right-3 top-full z-20 mt-1.5 hidden group-hover/row:block animate-fade-in">
