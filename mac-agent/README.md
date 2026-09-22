@@ -112,26 +112,33 @@ covers that; you can also open **Automator**'s "Record" feature or use the Acces
 ## How results get back — via MCP, no local file
 
 There's no API to read Cowork's conversation, so the prompt sent to Cowork carries an appended
-instruction telling it to call the `report_cowork_result` MCP tool (`mac-agent/mcp-report-result/`)
-with this exact execution id when it's done — that tool `POST`s straight to
-`{DASHBOARD_URL}/api/cowork-agent/report-result`, the same route this agent itself used to call
-after reading a local results file. There's **no file-drop fallback**: if a Cowork task can't reach
-that tool, the job has no way to report its result at all, and `agent.js` will eventually report it
-as failed once `RESULT_TIMEOUT_MS` elapses with the execution still "running".
+instruction telling it to call the `report_cowork_result` MCP tool with this exact execution id
+when it's done — that tool finalizes the execution directly, the same as this agent's own old
+`report-result` call used to after reading a local results file. There's **no file-drop fallback**:
+if a Cowork task can't reach the tool, the job has no way to report its result at all, and
+`agent.js` will eventually report it as failed once `RESULT_TIMEOUT_MS` elapses with the execution
+still "running".
 
-This only works if:
+`driveCowork()`'s prompt instruction just says "call a tool named report_cowork_result" — it
+doesn't know or care which of the two servers below actually answers that call. Pick one:
 
-- The MCP server is actually configured in Claude Desktop (setup below) and Desktop was restarted
-  after configuring it.
-- A Cowork task inherits the MCP servers configured there — this is the one thing genuinely worth
-  confirming on a fresh setup (no documentation either way), which the two-phase test below checks.
+### Option A: remote connector (recommended)
 
-If a job's report never lands within the timeout, the agent reports the execution as **failed**
-with a message pointing back to this section — it never fakes a result, matching the main
-dashboard's own rule that a missing/unconfirmed outcome gets recorded honestly instead of guessed
-at.
+`app/api/mcp/route.ts`, already deployed as part of the dashboard on Vercel — no local process on
+the Mac mini for this piece at all, which sidesteps the whole class of "PATH/config/local Node"
+problems the local option (Option B) tends to run into.
 
-**Setup:**
+1. In Claude Desktop: **Settings → Connectors → Add custom connector**.
+2. **URL**: `https://simpremium-tasks.vercel.app/api/mcp`
+3. Under request headers / authentication, add a header:
+   - Name: `Authorization`
+   - Value: `Bearer <same value as mac-agent/.env's COWORK_AGENT_TOKEN>`
+4. Save. No restart needed — connectors apply as soon as they're saved.
+
+### Option B: local stdio server (alternative)
+
+`mac-agent/mcp-report-result/` — runs as its own local Node process, configured through Claude
+Desktop's config file directly.
 
 1. Install its dependencies:
    ```
@@ -139,9 +146,10 @@ at.
    npm install
    ```
 2. Add it to Claude Desktop's MCP config — `~/Library/Application Support/Claude/claude_desktop_config.json`
-   (create the file if it doesn't exist yet). Merge this into the `mcpServers` object, filling in
-   the two env values (same `DASHBOARD_URL`/`COWORK_AGENT_TOKEN` as this agent's own `.env`, and the
-   **absolute** path to `index.mjs` — `pwd` inside `mac-agent/mcp-report-result` to get it):
+   (Claude Desktop → Settings → Developer → Edit Config opens/creates this same file for you). Merge
+   this into the `mcpServers` object, filling in the two env values (same
+   `DASHBOARD_URL`/`COWORK_AGENT_TOKEN` as this agent's own `.env`, and the **absolute** path to
+   `index.mjs` — `pwd` inside `mac-agent/mcp-report-result` to get it):
    ```json
    {
      "mcpServers": {
@@ -156,21 +164,30 @@ at.
      }
    }
    ```
-3. **Fully quit and reopen Claude Desktop** (MCP servers are only picked up on startup).
+3. **Fully quit (⌘Q) and reopen Claude Desktop** (MCP servers are only picked up on startup).
+4. If the tool still isn't picked up: GUI apps on macOS often don't inherit the Terminal's `PATH`,
+   so a bare `"command": "node"` can fail to resolve even though `node agent.js` works fine in a
+   Terminal tab. Run `which node` in Terminal and use that **full path** as `"command"` instead.
 
-**Test in two phases — don't skip straight to a real Cowork task:**
+If a job's report never lands within the timeout, the agent reports the execution as **failed**
+with a message pointing back to this section — it never fakes a result, matching the main
+dashboard's own rule that a missing/unconfirmed outcome gets recorded honestly instead of guessed
+at.
+
+**Test in two phases — don't skip straight to a real Cowork task**, whichever option you set up:
 
 1. **Plain chat first.** Open a normal (non-Cowork) conversation in Claude Desktop and ask something
    like: *"Chame a ferramenta report_cowork_result com executionId 'teste-123', status 'success' e
    result 'teste manual'."* If the tool is wired up at all, Claude should call it and you'll see a
-   confirmation; check the dashboard's Vercel logs for a `report-result: recebido do agente —
-   executionId=teste-123` line (it'll fail with 404 since `teste-123` isn't a real execution — that's
-   fine, it proves the call reached the server). If Claude says it has no such tool, the MCP server
-   isn't loaded — recheck the config path and restart Desktop again.
+   confirmation; check the dashboard's Vercel logs for a `report_cowork_result chamado —
+   executionId=teste-123` (Option A) or `report-result: recebido do agente — executionId=teste-123`
+   (Option B) line (it'll fail since `teste-123` isn't a real execution — that's fine, it proves the
+   call reached the server). If Claude says it has no such tool, recheck the connector/config setup
+   above.
 2. **Only once that works**, run any real Cowork skill through the normal dashboard flow (not a
    manual test prompt). Watch this agent's log: `Execução finalizada via MCP.` means it worked;
    `Cowork não chamou report_cowork_result dentro do tempo esperado` means it didn't reach the tool
-   (or didn't call it) — recheck the config and the phase-1 test above.
+   (or didn't call it) — recheck the setup and the phase-1 test above.
 
 ## Troubleshooting
 

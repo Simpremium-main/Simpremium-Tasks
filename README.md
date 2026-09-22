@@ -491,16 +491,30 @@ same never-fake-a-result rule as everywhere else in this app credentials are inv
 Desktop update. The polling/dispatch half (`mac-agent/agent.js`'s HTTP calls, job claiming, timeout,
 error reporting) was also tested end-to-end against a local mock server before being committed.
 
-**Results come back via MCP, not a local file** (`mac-agent/mcp-report-result/`) — a minimal MCP
-server exposing one tool, `report_cowork_result`, that POSTs straight to
-`POST /api/cowork-agent/report-result`, tested end-to-end against a mock server from this sandbox.
-`driveCowork()` tells every Cowork task to call that tool directly as its last step — there's no
-local-file fallback, so the MCP server has to actually be configured and reachable from Claude
+**Results come back via MCP, not a local file** — `driveCowork()` tells every Cowork task to call
+an MCP tool, `report_cowork_result`, as its last step, which finalizes the execution directly.
+There's no local-file fallback, so the tool has to actually be configured and reachable from Claude
 Desktop for a job to ever report a result at all. `agent.js` polls `GET
 /api/cowork-agent/execution-status` to notice the moment that report lands, instead of waiting out
-the full timeout. See `mac-agent/README.md`'s "How results get back — via MCP, no local file"
-section for setup and the two-phase test to confirm a given Claude Desktop install actually reaches
-the tool.
+the full timeout.
+
+Two ways to actually serve that tool to Claude Desktop:
+
+- **`app/api/mcp/route.ts`** (recommended) — a *remote* MCP server hosted on this same Vercel
+  deployment, built with [`mcp-handler`](https://github.com/vercel/mcp-handler) (Streamable HTTP
+  transport, `withMcpAuth` checking `COWORK_AGENT_TOKEN` as a bearer header). Configured once in
+  Claude Desktop's Settings → Connectors as a URL + one header — no local Node process, no
+  `claude_desktop_config.json` editing, no PATH issues (all of which came up repeatedly setting up
+  the local version). Verified end-to-end locally: unauthenticated request → 401, authenticated
+  `initialize`/`tools/list`/`tools/call` all work, and a tool call that can't reach Supabase from
+  this sandbox fails gracefully instead of crashing the route.
+- **`mac-agent/mcp-report-result/`** — the original local `stdio` MCP server, still there as an
+  alternative for whoever prefers a local process (or is on a Claude Desktop version without remote
+  connector support). Same tool, same effect from Cowork's side — `driveCowork()`'s prompt
+  instruction doesn't care which one actually serves the call.
+
+See `mac-agent/README.md`'s "How results get back — via MCP, no local file" section for setup of
+both, and the two-phase test to confirm a given Claude Desktop install actually reaches the tool.
 
 Skills that don't depend on Cowork run directly through the Claude API when `ANTHROPIC_API_KEY`
 is set (`lib/claude.ts`); otherwise they're flagged `needs_setup` the same way.

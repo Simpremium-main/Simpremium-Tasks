@@ -18,8 +18,12 @@ const PUBLIC_PATHS = ["/login", "/api/auth/login"];
 // request to /login before the route handler (and its real token check)
 // ever ran — silently breaking both scheduled-skill cron runs and Cowork
 // agent dispatch. Every other /api/* route stays behind the normal session
-// gate below; only these two prefixes skip it.
-const TOKEN_AUTHENTICATED_API_PREFIXES = ["/api/cron/", "/api/cowork-agent/"];
+// gate below; only these prefixes skip it. /api/mcp is the same idea for a
+// different caller: Claude Desktop's own MCP client, authenticated by
+// app/api/mcp/route.ts's withMcpAuth (COWORK_AGENT_TOKEN as a bearer
+// header) — a 307 redirect here instead of a real 401 would break MCP's
+// own auth handshake, not just look wrong.
+const TOKEN_AUTHENTICATED_API_PREFIXES = ["/api/cron/", "/api/cowork-agent/", "/api/mcp"];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
