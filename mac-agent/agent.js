@@ -174,10 +174,16 @@ async function driveCowork(executionId, prompt) {
     `igual à sua resposta final completa (sem comentário adicional). Se a tarefa gerou algum ` +
     `arquivo real (planilha, PDF, etc.), NÃO chame de "enviado" sem mais — inclua o conteúdo do ` +
     `arquivo em base64 no campo "files" dessa mesma chamada (name, mimeType e contentBase64); sem ` +
-    `isso o arquivo fica só nessa conversa e não chega no dashboard. Se a tarefa falhar ou ` +
-    `faltar alguma configuração pra completá-la, chame a mesma ferramenta com status "error" ` +
-    `(ou "needs_setup", se for falta de configuração) e error explicando o que aconteceu — ` +
-    `nunca deixe de chamar essa ferramenta ao final, mesmo em caso de falha.`;
+    `isso o arquivo fica só nessa conversa e não chega no dashboard. Se durante a tarefa você usou ` +
+    `o navegador e tirou prints de tela, inclua cada print também no campo "files" (mesma lógica: ` +
+    `name descritivo tipo "passo-2-resultados-busca.png", mimeType "image/png" ou "image/jpeg" e o ` +
+    `conteúdo em base64) — só valem os prints que você realmente tem como arquivo pra anexar, não ` +
+    `invente nem simule um se não tiver acesso a eles. Preencha também o campo "steps" com o passo ` +
+    `a passo do que você foi fazendo, em ordem (ex: "Abri a página X", "Cliquei em Y", "Extraí os ` +
+    `dados Z") — curto, um item por passo. Se a tarefa falhar ou faltar alguma configuração pra ` +
+    `completá-la, chame a mesma ferramenta com status "error" (ou "needs_setup", se for falta de ` +
+    `configuração) e error explicando o que aconteceu — nunca deixe de chamar essa ferramenta ao ` +
+    `final, mesmo em caso de falha.`;
 
   const promptFile = path.join(os.tmpdir(), `cowork-prompt-${executionId}.txt`);
   fs.writeFileSync(promptFile, fullPrompt, "utf8");

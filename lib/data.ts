@@ -75,6 +75,7 @@ function mapExecutionRow(row: Record<string, unknown>): Execution {
     result: (row.result as string | null) ?? null,
     error: (row.error as string | null) ?? null,
     files: (row.files as ExecutionFile[] | null) ?? null,
+    steps: (row.steps as string[] | null) ?? null,
     conversationState: (row.conversation_state as ConversationState | null) ?? null,
     usage: (row.usage as TokenUsage | null) ?? null,
     ranBy: (row.ran_by as string | null) ?? null,
@@ -868,6 +869,7 @@ export interface UpdateExecutionInput {
   result?: string | null;
   error?: string | null;
   files?: ExecutionFile[] | null;
+  steps?: string[] | null;
   conversationState?: ConversationState | null;
   usage?: TokenUsage | null;
   favorite?: boolean;
@@ -900,6 +902,7 @@ export async function updateExecution(
   if (patch.result !== undefined) row.result = patch.result;
   if (patch.error !== undefined) row.error = patch.error;
   if (patch.files !== undefined) row.files = patch.files;
+  if (patch.steps !== undefined) row.steps = patch.steps;
   if (patch.conversationState !== undefined) row.conversation_state = patch.conversationState;
   if (patch.usage !== undefined) row.usage = patch.usage;
   if (patch.favorite !== undefined) row.favorite = patch.favorite;

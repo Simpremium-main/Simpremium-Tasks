@@ -74,6 +74,13 @@ export interface DispatchResult {
   result?: string;
   error?: string;
   files?: ExecutionFile[];
+  /** A Cowork run's own account of what it did, in order (e.g. "Abri a
+   *  página do jogador no HLTV", "Cliquei na aba Stats") — separate from
+   *  `result`'s narrative summary so the dashboard can render it as a
+   *  distinct step list instead of folding it into the free-text result.
+   *  Only Cowork dispatch (report_cowork_result) ever sets this; direct
+   *  Claude/scheduled runs leave it undefined. */
+  steps?: string[];
   usage?: TokenUsage | null;
 }
 
@@ -164,6 +171,8 @@ export interface Execution {
   result: string | null;
   error: string | null;
   files: ExecutionFile[] | null;
+  /** See DispatchResult.steps — persisted the same way as files. */
+  steps: string[] | null;
   conversationState: ConversationState | null;
   usage: TokenUsage | null;
   ranBy: string | null;

@@ -73,11 +73,14 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const steps = Array.isArray(body.steps) ? body.steps.filter((s: unknown) => typeof s === "string") : undefined;
+
     const result = await finishExecution(skill, executionId, {
       status: dispatchStatus,
       result: typeof body.result === "string" ? body.result : undefined,
       error: typeof body.error === "string" ? body.error : undefined,
       files: executionFiles,
+      steps,
     });
     console.log(`[cowork-agent-server] report-result: execução ${executionId} finalizada com status "${dispatchStatus}"`);
     return NextResponse.json(result);

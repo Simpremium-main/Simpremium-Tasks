@@ -817,7 +817,31 @@ values ('execution-files', 'execution-files', false)
 on conflict (id) do nothing;
 ```
 
-Similarly, if you set this project up before the **archived** skill status existed, its `status`
+Same for a Cowork run's step-by-step (see "Step-by-step and browser screenshots" below):
+
+```sql
+alter table executions add column if not exists steps jsonb;
+```
+
+### Step-by-step and browser screenshots (Cowork only)
+
+`report_cowork_result` also accepts an optional `steps` array (each item one short, concrete
+thing Cowork did, in order — e.g. "Abri a página do jogador no HLTV.org", "Cliquei na aba Stats")
+stored as `Execution.steps` (`string[] | null`, `lib/types.ts`) and rendered as a numbered list in
+the execution detail modal (`components/ExecutionList.tsx`), separate from the free-text
+`result`. Browser screenshots Cowork took along the way piggyback on the same `files` array real
+generated files already use — there's no separate mechanism, just an `image/png`/`image/jpeg`
+entry per screenshot; a file whose MIME type starts with `image/` gets a thumbnail preview in that
+same modal instead of a plain download link.
+
+Both are best-effort and entirely up to the model driving Cowork actually filling them in — the
+prompt (`mac-agent/agent.js`'s `driveCowork()`) asks for both and is explicit that a screenshot
+only belongs there if Cowork genuinely has it as an attachable file, never simulated, matching this
+project's "never fake a result" rule. Whether Cowork's browser tool actually exposes its own
+screenshots to the model as attachable files (versus just showing them inline in its own
+conversation) isn't something confirmed from here — worth checking after a real run whether
+screenshots come through at all, and adjusting the prompt if Cowork needs to be told to explicitly
+save one instead. its `status`
 check constraint only allows `draft`/`active` — a fresh `supabase/schema.sql` already includes
 `archived`, but an existing project needs its constraint widened (Postgres can't alter a check
 constraint in place, so this drops and recreates it):

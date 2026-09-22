@@ -315,6 +315,7 @@ export async function finishExecution(skill: Skill, executionId: string, dispatc
     result: dispatch.result ?? null,
     error: dispatch.error ?? null,
     files: dispatch.files && dispatch.files.length ? dispatch.files : null,
+    steps: dispatch.steps && dispatch.steps.length ? dispatch.steps : null,
     conversationState: null,
     usage: dispatch.usage ?? null,
   });

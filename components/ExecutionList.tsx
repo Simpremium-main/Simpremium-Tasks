@@ -13,6 +13,7 @@ import {
   Eye,
   FileText,
   Hand,
+  ListOrdered,
   Loader2,
   Paperclip,
   RotateCcw,
@@ -51,6 +52,9 @@ export interface ExecutionItem {
   result: string | null;
   error: string | null;
   files: ExecutionFileItem[] | null;
+  /** A Cowork run's own step-by-step account of what it did, in order — see
+   *  lib/types.ts's DispatchResult.steps. Always null for other sources. */
+  steps: string[] | null;
   usage: ExecutionUsageItem | null;
   ranBy: string | null;
   favorite: boolean;
@@ -313,6 +317,15 @@ function ExecutionRow({
             >
               <Paperclip size={11} />
               {execution.files.length}
+            </span>
+          )}
+          {execution.steps && execution.steps.length > 0 && (
+            <span
+              className="hidden sm:inline-flex items-center gap-1 text-xs text-muted"
+              title={`${execution.steps.length} passo(s) registrado(s)`}
+            >
+              <ListOrdered size={11} />
+              {execution.steps.length}
             </span>
           )}
           {execution.usage && (
@@ -704,24 +717,58 @@ function ExecutionDetailsModal({
 
         <DetailBlock label="Prompt enviado" text={execution.promptSnapshot} tone="canvas" />
 
+        {execution.steps && execution.steps.length > 0 && (
+          <div className="mb-4">
+            <div className="text-xs uppercase tracking-wide text-muted mb-1.5">Passo a passo</div>
+            <ol className="space-y-1 rounded-md bg-canvas p-3 text-sm text-ink/80">
+              {execution.steps.map((step, i) => (
+                <li key={i} className="flex gap-2">
+                  <span className="shrink-0 text-muted">{i + 1}.</span>
+                  <span className="min-w-0 break-words">{step}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
+
         {execution.files && execution.files.length > 0 && (
           <div className="mb-4">
             <div className="text-xs uppercase tracking-wide text-muted mb-1.5">
               Arquivo{execution.files.length > 1 ? "s" : ""} gerado{execution.files.length > 1 ? "s" : ""}
             </div>
             <div className="space-y-1.5">
-              {execution.files.map((file, i) => (
-                <a
-                  key={i}
-                  href={`/api/executions/${execution.id}/files/${i}`}
-                  className="flex items-center gap-2 rounded-md border border-line bg-primary-soft/40 px-3 py-2 text-sm hover:border-primary/40 hover:bg-primary-soft transition-colors"
-                >
-                  <Paperclip size={14} className="text-primary shrink-0" />
-                  <span className="flex-1 truncate">{file.name}</span>
-                  <span className="text-xs text-muted shrink-0">{formatBytes(file.sizeBytes)}</span>
-                  <Download size={13} className="text-primary shrink-0" />
-                </a>
-              ))}
+              {execution.files.map((file, i) =>
+                file.mimeType.startsWith("image/") ? (
+                  <a
+                    key={i}
+                    href={`/api/executions/${execution.id}/files/${i}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-3 rounded-md border border-line bg-primary-soft/40 px-3 py-2 text-sm hover:border-primary/40 hover:bg-primary-soft transition-colors"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`/api/executions/${execution.id}/files/${i}`}
+                      alt={file.name}
+                      className="h-12 w-16 shrink-0 rounded object-cover border border-line/60"
+                    />
+                    <span className="flex-1 truncate">{file.name}</span>
+                    <span className="text-xs text-muted shrink-0">{formatBytes(file.sizeBytes)}</span>
+                    <Download size={13} className="text-primary shrink-0" />
+                  </a>
+                ) : (
+                  <a
+                    key={i}
+                    href={`/api/executions/${execution.id}/files/${i}`}
+                    className="flex items-center gap-2 rounded-md border border-line bg-primary-soft/40 px-3 py-2 text-sm hover:border-primary/40 hover:bg-primary-soft transition-colors"
+                  >
+                    <Paperclip size={14} className="text-primary shrink-0" />
+                    <span className="flex-1 truncate">{file.name}</span>
+                    <span className="text-xs text-muted shrink-0">{formatBytes(file.sizeBytes)}</span>
+                    <Download size={13} className="text-primary shrink-0" />
+                  </a>
+                )
+              )}
             </div>
           </div>
         )}

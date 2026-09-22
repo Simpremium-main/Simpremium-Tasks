@@ -48,6 +48,7 @@ create table if not exists executions (
   result          text,
   error           text,
   files           jsonb, -- ExecutionFile[] | null, see lib/types.ts — real generated files in Supabase Storage
+  steps           jsonb, -- string[] | null — a Cowork run's own step-by-step account of what it did (e.g. browser navigation), see lib/types.ts
   conversation_state jsonb, -- ConversationState | null — saved mid-flight state for a run split across multiple requests
   usage           jsonb, -- TokenUsage | null — {inputTokens, outputTokens}, null for Cowork/heuristic dispatch (no Claude API call to report on)
   ran_by          text, -- display name of the logged-in user who triggered this run

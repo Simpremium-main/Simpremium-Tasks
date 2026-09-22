@@ -52,7 +52,19 @@ const ReportResultSchema = z.object({
     .optional()
     .describe(
       "Se a tarefa gerou algum arquivo real (planilha, PDF, etc.), inclua aqui — o dashboard só " +
-        "guarda o arquivo se ele vier nesse campo, não basta descrevê-lo no texto do result."
+        "guarda o arquivo se ele vier nesse campo, não basta descrevê-lo no texto do result. " +
+        "Também é aqui que vão prints de tela do navegador que você tirou durante a tarefa, se " +
+        "tiver acesso a eles como arquivo (mimeType 'image/png' ou 'image/jpeg') — inclua um por " +
+        "print, com um name descritivo tipo 'passo-2-resultados-busca.png'."
+    ),
+  steps: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "O passo a passo do que você foi fazendo pra completar a tarefa, em ordem (ex: 'Abri a " +
+        "página do jogador no HLTV.org', 'Cliquei na aba Stats', 'Copiei os números da tabela') — " +
+        "cada item é um passo, curto e concreto. Separado do 'result' pra aparecer como uma lista " +
+        "no dashboard, não misturado no texto."
     ),
 });
 
@@ -64,13 +76,14 @@ const handler = createMcpHandler((server) => {
       description:
         "Chame essa ferramenta UMA ÚNICA VEZ, como último passo da tarefa, pra entregar o resultado " +
         "final direto pro dashboard Skills Hub. Use o executionId exatamente como foi informado no " +
-        "início do prompt. Se a tarefa gerou um arquivo real (planilha, PDF, etc.), inclua seu " +
-        "conteúdo em base64 no campo 'files' — só descrever o arquivo no texto do result não é " +
-        "suficiente pra ele aparecer no dashboard.",
+        "início do prompt. Se a tarefa gerou um arquivo real (planilha, PDF, prints de tela, etc.), " +
+        "inclua seu conteúdo em base64 no campo 'files' — só descrever o arquivo no texto do " +
+        "result não é suficiente pra ele aparecer no dashboard. Preencha também 'steps' com o " +
+        "passo a passo do que foi feito, em ordem.",
       inputSchema: ReportResultSchema,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     },
-    async ({ executionId, status, result, error, files }) => {
+    async ({ executionId, status, result, error, files, steps }) => {
       console.log(
         `[cowork-agent-server] mcp report_cowork_result chamado — executionId=${executionId}, status=${status}, files=${files?.length ?? 0}`
       );
@@ -102,7 +115,13 @@ const handler = createMcpHandler((server) => {
         }
 
         const dispatchStatus = status as DispatchStatus;
-        await finishExecution(skill, executionId, { status: dispatchStatus, result, error, files: executionFiles });
+        await finishExecution(skill, executionId, {
+          status: dispatchStatus,
+          result,
+          error,
+          files: executionFiles,
+          steps,
+        });
         console.log(
           `[cowork-agent-server] mcp: execução ${executionId} finalizada com status "${dispatchStatus}"` +
             (executionFiles?.length ? ` (${executionFiles.length} arquivo(s) salvos)` : "")

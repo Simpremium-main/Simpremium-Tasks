@@ -59,7 +59,17 @@ const ReportResultSchema = z
       .optional()
       .describe(
         "Se a tarefa gerou algum arquivo real (planilha, PDF, etc.), inclua aqui — o dashboard só " +
-          "guarda o arquivo se ele vier nesse campo, não basta descrevê-lo no texto do result."
+          "guarda o arquivo se ele vier nesse campo, não basta descrevê-lo no texto do result. " +
+          "Também é aqui que vão prints de tela do navegador que você tirou durante a tarefa, se " +
+          "tiver acesso a eles como arquivo (mimeType 'image/png' ou 'image/jpeg')."
+      ),
+    steps: z
+      .array(z.string())
+      .optional()
+      .describe(
+        "O passo a passo do que você foi fazendo pra completar a tarefa, em ordem — cada item é " +
+          "um passo, curto e concreto. Separado do 'result' pra aparecer como uma lista no " +
+          "dashboard, não misturado no texto."
       ),
   })
   .strict();
@@ -73,18 +83,19 @@ server.registerTool(
     description:
       "Chame essa ferramenta UMA ÚNICA VEZ, como último passo da tarefa, pra entregar o resultado " +
       "final direto pro dashboard Skills Hub. Use o executionId exatamente como foi informado no " +
-      "início do prompt. Se a tarefa gerou um arquivo real (planilha, PDF, etc.), inclua seu " +
-      "conteúdo em base64 no campo 'files' — só descrever o arquivo no texto do result não é " +
-      "suficiente pra ele aparecer no dashboard.",
+      "início do prompt. Se a tarefa gerou um arquivo real (planilha, PDF, prints de tela, etc.), " +
+      "inclua seu conteúdo em base64 no campo 'files' — só descrever o arquivo no texto do " +
+      "result não é suficiente pra ele aparecer no dashboard. Preencha também 'steps' com o " +
+      "passo a passo do que foi feito, em ordem.",
     inputSchema: ReportResultSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   },
-  async ({ executionId, status, result, error, files }) => {
+  async ({ executionId, status, result, error, files, steps }) => {
     try {
       const res = await fetch(`${DASHBOARD_URL}/api/cowork-agent/report-result`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${COWORK_AGENT_TOKEN}` },
-        body: JSON.stringify({ executionId, status, result, error, files }),
+        body: JSON.stringify({ executionId, status, result, error, files, steps }),
       });
       const text = await res.text();
       if (!res.ok) {
