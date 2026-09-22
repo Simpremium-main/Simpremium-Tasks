@@ -83,4 +83,34 @@ async function verifyToken(_req: Request, bearerToken?: string) {
 
 const authHandler = withMcpAuth(handler, verifyToken, { required: true });
 
-export { authHandler as GET, authHandler as POST, authHandler as DELETE };
+// mcp-handler doesn't set any CORS headers itself (confirmed against its
+// own docs) — without this, a remote MCP client running in a browser-like
+// context (Claude Desktop's connector UI, or claude.ai's web MCP client)
+// can fail to connect at all: a request carrying a custom Authorization
+// header triggers a CORS preflight (OPTIONS) first, and with no OPTIONS
+// handler here Next.js has nothing to answer it with, so the browser never
+// even sends the real request. `*` is fine here — this route requires its
+// own bearer token regardless of origin, so open CORS doesn't loosen
+// anything security-wise.
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, mcp-session-id, mcp-protocol-version",
+  "Access-Control-Expose-Headers": "mcp-session-id",
+};
+
+function withCors(res: Response): Response {
+  const headers = new Headers(res.headers);
+  for (const [key, value] of Object.entries(CORS_HEADERS)) headers.set(key, value);
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
+
+async function corsHandler(req: Request): Promise<Response> {
+  return withCors(await authHandler(req));
+}
+
+export async function OPTIONS(): Promise<Response> {
+  return new Response(null, { status: 204, headers: CORS_HEADERS });
+}
+
+export { corsHandler as GET, corsHandler as POST, corsHandler as DELETE };
