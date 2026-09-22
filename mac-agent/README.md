@@ -196,8 +196,13 @@ at.
   they don't match what's set in Vercel)? If it logs `Cowork disparado, aguardando o report via
   MCP...` and then never resolves, the MCP tool isn't reaching Cowork — see "How results get back"
   above. If the agent never even logged picking up the job, see "Testar o AppleScript".
-- **"HTTP 401" in the log.** `COWORK_AGENT_TOKEN` here doesn't match the one in Vercel's environment
-  variables, or `COWORK_AGENT_TOKEN` isn't set in Vercel at all.
+- **"HTTP 401" in the log, or Claude Desktop says it can't reach/authenticate the connector
+  (Option A).** `COWORK_AGENT_TOKEN` here doesn't match the one in Vercel's environment variables,
+  or `COWORK_AGENT_TOKEN` isn't set in Vercel at all — but if it's Option A specifically, check the
+  connector's header **Value** field first: Claude Desktop's "Custom Header" mode does **not**
+  prepend `Bearer ` for you, so the value must literally start with `Bearer ` followed by the
+  token (`Bearer <token>`, not just `<token>`). Pasting only the raw token is the single most
+  common cause of a 401 here — confirmed against a real setup.
 - **AppleScript errors mentioning permission/not authorized.** Accessibility permission isn't
   granted yet — see step 4 above.
 - **The agent process itself crashes or stops.** Each job is wrapped so a failure always reports

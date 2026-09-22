@@ -75,9 +75,44 @@ const handler = createMcpHandler((server) => {
   );
 });
 
+// A little forgiving on purpose: `mcp-handler` already strips one leading
+// "Bearer " from the Authorization header before calling this, but some
+// connector UIs' "Custom Header" mode adds that prefix themselves too,
+// so pasting the token with "Bearer " already typed in front ends up
+// sent as "Authorization: Bearer Bearer <token>" — stripping a second
+// possible prefix (and trimming whitespace on both sides of the
+// comparison) means that mismatch, or a stray newline from a copy-paste,
+// doesn't turn into a confusing 401 with no way to tell why.
+function normalizeToken(value: string): string {
+  return value.trim().replace(/^Bearer\s+/i, "").trim();
+}
+
+// Masks a secret for logging: first/last 4 chars + its length, enough to
+// compare two values without ever writing either one out in full — same
+// masking principle as everywhere else in this app secrets are involved.
+function maskForLog(value: string): string {
+  if (value.length <= 8) return `(${value.length} chars)`;
+  return `${value.slice(0, 4)}…${value.slice(-4)} (${value.length} chars)`;
+}
+
 async function verifyToken(_req: Request, bearerToken?: string) {
   const expected = process.env.COWORK_AGENT_TOKEN;
-  if (!expected || !bearerToken || bearerToken !== expected) return undefined;
+  if (!expected) {
+    console.log("[cowork-agent-server] mcp auth: COWORK_AGENT_TOKEN não está configurado no servidor");
+    return undefined;
+  }
+  if (!bearerToken) {
+    console.log("[cowork-agent-server] mcp auth: nenhum bearer token recebido na requisição");
+    return undefined;
+  }
+  const normalizedReceived = normalizeToken(bearerToken);
+  const normalizedExpected = normalizeToken(expected);
+  if (normalizedReceived !== normalizedExpected) {
+    console.log(
+      `[cowork-agent-server] mcp auth: token não bateu — recebido ${maskForLog(normalizedReceived)}, esperado ${maskForLog(normalizedExpected)}`
+    );
+    return undefined;
+  }
   return { token: bearerToken, scopes: [], clientId: "mac-agent" };
 }
 
