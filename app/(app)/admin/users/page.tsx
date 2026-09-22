@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { listUsers } from "@/lib/adminUsers";
 import PageHeader from "@/components/PageHeader";
 import UserAdminPanel from "@/components/UserAdminPanel";
+import PurgeCacheButton from "@/components/PurgeCacheButton";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,9 @@ export default async function AdminUsersPage() {
         subtitle={`${users.length} conta${users.length === 1 ? "" : "s"}`}
       />
       <UserAdminPanel initialUsers={users} currentUserId={user.id} />
+      <div className="mt-6">
+        <PurgeCacheButton />
+      </div>
     </div>
   );
 }

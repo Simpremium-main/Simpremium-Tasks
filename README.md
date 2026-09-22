@@ -112,6 +112,16 @@ Doesn't retroactively explain the raw-fetch-vs-SQL-Editor mismatch documented ab
 did point at PostgREST specifically) — but if a "dashboard shows stale data" report comes up again,
 check for a route missing this export before assuming it's Supabase's REST layer again.
 
+**Purging the cache from inside the app.** Besides Vercel Dashboard → Settings → Data Cache →
+"Purge Everything", an admin can trigger the same thing from the "Usuários" page (`/admin/users`,
+`components/PurgeCacheButton.tsx` → `POST /api/admin/purge-cache`), which calls Next.js's
+`revalidatePath("/", "layout")`. Invalidating the root layout cascades to every nested route under
+it — the whole app, not just skills/executions — and Vercel's Next.js integration propagates that
+to the Edge Network cache too, not just the in-process one, so it actually clears what shows up as
+CDN staleness. Since the six routes above no longer get cached at all, this button is mostly for
+clearing out whatever was already cached before that fix went live, or as a general escape hatch if
+some other route ever regresses the same way.
+
 **Known gap:** this codebase was built in a sandboxed environment whose network policy blocks
 the Supabase host, so the Supabase wiring was verified by unit-testing the client against the
 real project (confirmed the exact failure is the sandbox's own 403, not a code or schema issue)
