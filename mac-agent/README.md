@@ -120,7 +120,13 @@ if a Cowork task can't reach the tool, the job has no way to report its result a
 still "running".
 
 `driveCowork()`'s prompt instruction just says "call a tool named report_cowork_result" — it
-doesn't know or care which of the two servers below actually answers that call. Pick one:
+doesn't know or care which of the two servers below actually answers that call. Pick one.
+
+**If the task generates a real file** (spreadsheet, PDF, ...), the prompt also tells Cowork to
+attach that file's content, base64-encoded, in the same tool call's `files` field — saying "sent
+the file to you" in its own chat isn't enough, the dashboard only ever sees what's actually in the
+tool call. Both servers below forward that into the same Supabase Storage bucket direct-Claude
+runs already use, so it shows up in the execution's history like any other generated file.
 
 ### Option A: remote connector (recommended)
 

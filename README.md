@@ -793,10 +793,18 @@ uploads it into this project's own Supabase Storage bucket (`execution-files`) s
 whatever retention Anthropic applies on its side — the execution row stores each file's name,
 size, MIME type, and storage path (`ExecutionFile` in `lib/types.ts`), and
 `GET /api/executions/[id]/files/[index]` streams it back as a real download, authenticated same as
-everything else in this app. Cowork-dependent skills are unaffected — that path is still the
-pluggable webhook adapter in `lib/cowork.ts`, `needs_setup` until `COWORK_DISPATCH_WEBHOOK_URL` is
-configured, per the project's "never simulate a result" rule; when it's wired up, the same
-`ExecutionFile` shape is there for it to fill in too, if Cowork's response includes files.
+everything else in this app.
+
+Cowork-dependent skills get the same `ExecutionFile` treatment now too: the `report_cowork_result`
+MCP tool (`app/api/mcp/route.ts`, and its local-stdio twin in
+`mac-agent/mcp-report-result/index.mjs`) accepts an optional `files` array — each one's bytes sent
+base64-encoded as a plain tool-call argument — uploaded into the same `execution-files` bucket the
+moment the tool is called. `mac-agent/agent.js`'s prompt instruction tells Cowork explicitly that
+"I sent the file to you" in its own chat isn't enough — it has to attach the file's content to that
+same tool call, or the dashboard never sees it (this was the actual cause the first time a Cowork
+skill returned only a text description of a spreadsheet it had generated). Fine for
+report/spreadsheet-sized files; Vercel's default ~4.5MB request-body limit is the practical ceiling
+for anything bigger, since base64 isn't chunked/streamed here.
 
 Needs two things added to your Supabase project that a fresh `supabase/schema.sql` already
 includes — if you set this project up before this feature existed, run in the SQL Editor:

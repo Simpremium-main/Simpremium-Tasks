@@ -1,8 +1,8 @@
 import { createMcpHandler, withMcpAuth } from "mcp-handler";
 import { z } from "zod";
-import { getExecution, getSkill } from "@/lib/data";
+import { getExecution, getSkill, uploadExecutionFile } from "@/lib/data";
 import { finishExecution } from "@/lib/runSkill";
-import type { DispatchStatus } from "@/lib/types";
+import type { DispatchStatus, ExecutionFile } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +22,24 @@ export const dynamic = "force-dynamic";
  * POST /api/cowork-agent/report-result over HTTP — this route already IS
  * the server, so there's no reason to call itself.
  */
+// Lets Cowork attach a real generated file (a spreadsheet, a PDF, ...) to
+// the execution instead of only a text summary — before this, a Cowork
+// task that produced a file (e.g. an .xlsx) only ever delivered it inside
+// Cowork's own Claude Desktop conversation, invisible to the dashboard,
+// because this tool had nowhere to put file bytes. base64 keeps it a plain
+// JSON tool-call argument (no second upload endpoint/step for Cowork to
+// juggle) — fine for the report/spreadsheet-sized files these skills
+// produce; genuinely large files would need a different approach.
+const ReportFileSchema = z.object({
+  name: z.string().describe("Nome do arquivo, com extensão (ex: 'estatisticas-donk.xlsx')"),
+  mimeType: z
+    .string()
+    .describe(
+      "MIME type do arquivo (ex: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' para .xlsx, 'application/pdf' para PDF)"
+    ),
+  contentBase64: z.string().describe("O conteúdo binário do arquivo, codificado em base64"),
+});
+
 const ReportResultSchema = z.object({
   executionId: z.string().describe("O ID da execução, exatamente como foi informado no início do prompt da tarefa"),
   status: z
@@ -29,6 +47,13 @@ const ReportResultSchema = z.object({
     .describe("Resultado final da tarefa: success (terminou), error (falhou), needs_setup (faltou configuração)"),
   result: z.string().optional().describe("A resposta final completa — obrigatório quando status é 'success'"),
   error: z.string().optional().describe("O que deu errado, em detalhe — obrigatório quando status é 'error' ou 'needs_setup'"),
+  files: z
+    .array(ReportFileSchema)
+    .optional()
+    .describe(
+      "Se a tarefa gerou algum arquivo real (planilha, PDF, etc.), inclua aqui — o dashboard só " +
+        "guarda o arquivo se ele vier nesse campo, não basta descrevê-lo no texto do result."
+    ),
 });
 
 const handler = createMcpHandler((server) => {
@@ -39,13 +64,15 @@ const handler = createMcpHandler((server) => {
       description:
         "Chame essa ferramenta UMA ÚNICA VEZ, como último passo da tarefa, pra entregar o resultado " +
         "final direto pro dashboard Skills Hub. Use o executionId exatamente como foi informado no " +
-        "início do prompt.",
+        "início do prompt. Se a tarefa gerou um arquivo real (planilha, PDF, etc.), inclua seu " +
+        "conteúdo em base64 no campo 'files' — só descrever o arquivo no texto do result não é " +
+        "suficiente pra ele aparecer no dashboard.",
       inputSchema: ReportResultSchema,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     },
-    async ({ executionId, status, result, error }) => {
+    async ({ executionId, status, result, error, files }) => {
       console.log(
-        `[cowork-agent-server] mcp report_cowork_result chamado — executionId=${executionId}, status=${status}`
+        `[cowork-agent-server] mcp report_cowork_result chamado — executionId=${executionId}, status=${status}, files=${files?.length ?? 0}`
       );
       try {
         const execution = await getExecution(executionId);
@@ -62,9 +89,24 @@ const handler = createMcpHandler((server) => {
           return { content: [{ type: "text", text: msg }], isError: true };
         }
 
+        let executionFiles: ExecutionFile[] | undefined;
+        if (files && files.length) {
+          executionFiles = [];
+          for (const file of files) {
+            const safeName = file.name.replace(/[/\\]/g, "_");
+            const bytes = Buffer.from(file.contentBase64, "base64");
+            const storagePath = `${executionId}/${safeName}`;
+            await uploadExecutionFile(storagePath, bytes, file.mimeType);
+            executionFiles.push({ name: safeName, storagePath, mimeType: file.mimeType, sizeBytes: bytes.length });
+          }
+        }
+
         const dispatchStatus = status as DispatchStatus;
-        await finishExecution(skill, executionId, { status: dispatchStatus, result, error });
-        console.log(`[cowork-agent-server] mcp: execução ${executionId} finalizada com status "${dispatchStatus}"`);
+        await finishExecution(skill, executionId, { status: dispatchStatus, result, error, files: executionFiles });
+        console.log(
+          `[cowork-agent-server] mcp: execução ${executionId} finalizada com status "${dispatchStatus}"` +
+            (executionFiles?.length ? ` (${executionFiles.length} arquivo(s) salvos)` : "")
+        );
         return { content: [{ type: "text", text: "Resultado reportado com sucesso pro Skills Hub." }] };
       } catch (err) {
         const msg = `Erro ao reportar resultado: ${err instanceof Error ? err.message : String(err)}`;

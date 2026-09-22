@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getExecution, getSkill } from "@/lib/data";
+import { getExecution, getSkill, uploadExecutionFile } from "@/lib/data";
 import { finishExecution } from "@/lib/runSkill";
-import type { DispatchStatus } from "@/lib/types";
+import type { DispatchStatus, ExecutionFile } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -58,10 +58,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Skill not found for this execution" }, { status: 404 });
     }
 
+    let executionFiles: ExecutionFile[] | undefined;
+    if (Array.isArray(body.files) && body.files.length) {
+      executionFiles = [];
+      for (const file of body.files) {
+        if (typeof file?.name !== "string" || typeof file?.mimeType !== "string" || typeof file?.contentBase64 !== "string") {
+          continue;
+        }
+        const safeName = file.name.replace(/[/\\]/g, "_");
+        const bytes = Buffer.from(file.contentBase64, "base64");
+        const storagePath = `${executionId}/${safeName}`;
+        await uploadExecutionFile(storagePath, bytes, file.mimeType);
+        executionFiles.push({ name: safeName, storagePath, mimeType: file.mimeType, sizeBytes: bytes.length });
+      }
+    }
+
     const result = await finishExecution(skill, executionId, {
       status: dispatchStatus,
       result: typeof body.result === "string" ? body.result : undefined,
       error: typeof body.error === "string" ? body.error : undefined,
+      files: executionFiles,
     });
     console.log(`[cowork-agent-server] report-result: execução ${executionId} finalizada com status "${dispatchStatus}"`);
     return NextResponse.json(result);

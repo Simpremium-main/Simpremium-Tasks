@@ -48,6 +48,19 @@ const ReportResultSchema = z
       .string()
       .optional()
       .describe("O que deu errado, em detalhe — obrigatório quando status é 'error' ou 'needs_setup'"),
+    files: z
+      .array(
+        z.object({
+          name: z.string().describe("Nome do arquivo, com extensão (ex: 'estatisticas-donk.xlsx')"),
+          mimeType: z.string().describe("MIME type do arquivo"),
+          contentBase64: z.string().describe("O conteúdo binário do arquivo, codificado em base64"),
+        })
+      )
+      .optional()
+      .describe(
+        "Se a tarefa gerou algum arquivo real (planilha, PDF, etc.), inclua aqui — o dashboard só " +
+          "guarda o arquivo se ele vier nesse campo, não basta descrevê-lo no texto do result."
+      ),
   })
   .strict();
 
@@ -60,16 +73,18 @@ server.registerTool(
     description:
       "Chame essa ferramenta UMA ÚNICA VEZ, como último passo da tarefa, pra entregar o resultado " +
       "final direto pro dashboard Skills Hub. Use o executionId exatamente como foi informado no " +
-      "início do prompt.",
+      "início do prompt. Se a tarefa gerou um arquivo real (planilha, PDF, etc.), inclua seu " +
+      "conteúdo em base64 no campo 'files' — só descrever o arquivo no texto do result não é " +
+      "suficiente pra ele aparecer no dashboard.",
     inputSchema: ReportResultSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   },
-  async ({ executionId, status, result, error }) => {
+  async ({ executionId, status, result, error, files }) => {
     try {
       const res = await fetch(`${DASHBOARD_URL}/api/cowork-agent/report-result`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${COWORK_AGENT_TOKEN}` },
-        body: JSON.stringify({ executionId, status, result, error }),
+        body: JSON.stringify({ executionId, status, result, error, files }),
       });
       const text = await res.text();
       if (!res.ok) {

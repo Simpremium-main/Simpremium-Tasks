@@ -171,7 +171,10 @@ async function driveCowork(executionId, prompt) {
   const fullPrompt =
     `${prompt}\n\n---\nQuando terminar essa tarefa, chame a ferramenta MCP ` +
     `"report_cowork_result" com executionId "${executionId}", status "success" e result ` +
-    `igual à sua resposta final completa (sem comentário adicional). Se a tarefa falhar ou ` +
+    `igual à sua resposta final completa (sem comentário adicional). Se a tarefa gerou algum ` +
+    `arquivo real (planilha, PDF, etc.), NÃO chame de "enviado" sem mais — inclua o conteúdo do ` +
+    `arquivo em base64 no campo "files" dessa mesma chamada (name, mimeType e contentBase64); sem ` +
+    `isso o arquivo fica só nessa conversa e não chega no dashboard. Se a tarefa falhar ou ` +
     `faltar alguma configuração pra completá-la, chame a mesma ferramenta com status "error" ` +
     `(ou "needs_setup", se for falta de configuração) e error explicando o que aconteceu — ` +
     `nunca deixe de chamar essa ferramenta ao final, mesmo em caso de falha.`;
