@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { AlertTriangle, Bot, CalendarClock, Sparkles } from "lucide-react";
 import { listScheduledSkillsOverview } from "@/lib/data";
-import { describeSchedule, nextDueAt } from "@/lib/schedule";
+import { describeSchedule, hasUnschedulableSecret, nextDueAt } from "@/lib/schedule";
 import PageHeader from "@/components/PageHeader";
 import StatusBadge from "@/components/StatusBadge";
+import ScheduleButton from "@/components/ScheduleButton";
 
 export const dynamic = "force-dynamic";
 
@@ -76,7 +77,7 @@ export default async function SchedulesPage() {
                       UTC
                     </p>
                   </div>
-                  <div className="flex flex-col items-end gap-1 shrink-0 text-right">
+                  <div className="flex flex-col items-end gap-2 shrink-0 text-right">
                     {skill.lastScheduledRun ? (
                       <>
                         <StatusBadge status={skill.lastScheduledRun.status} />
@@ -87,6 +88,16 @@ export default async function SchedulesPage() {
                     ) : (
                       <span className="text-xs text-muted">Ainda não rodou pelo agendamento</span>
                     )}
+                    <ScheduleButton
+                      skillId={skill.id}
+                      skillName={skill.name}
+                      inputSchema={skill.inputSchema ?? []}
+                      schedule={skill.schedule}
+                      scheduleInputValues={skill.scheduleInputValues}
+                      scheduleApiSources={skill.scheduleApiSources}
+                      scheduleLastRunAt={skill.scheduleLastRunAt?.toISOString() ?? null}
+                      hasUnschedulableSecret={hasUnschedulableSecret(skill.inputSchema ?? [])}
+                    />
                   </div>
                 </div>
               </div>
