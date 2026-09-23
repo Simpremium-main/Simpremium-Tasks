@@ -62,6 +62,7 @@ function mapSkillRow(row: Record<string, unknown>): Skill {
     outputCallback: (row.output_callback as OutputCallback | null) ?? null,
     pinned: Boolean(row.pinned),
     shareToken: (row.share_token as string | null) ?? null,
+    systemSecrets: (row.system_secrets as string[] | null) ?? null,
     position: Number(row.position ?? 0),
     createdAt: new Date(row.created_at as string),
     updatedAt: new Date(row.updated_at as string),
@@ -342,6 +343,7 @@ export interface UpdateSkillInput {
   scheduleLastRunAt?: Date;
   pinned?: boolean;
   position?: number;
+  systemSecrets?: string[] | null;
 }
 
 /**
@@ -393,6 +395,7 @@ export async function updateSkill(
   if (patch.scheduleLastRunAt !== undefined) row.schedule_last_run_at = patch.scheduleLastRunAt.toISOString();
   if (patch.pinned !== undefined) row.pinned = patch.pinned;
   if (patch.position !== undefined) row.position = patch.position;
+  if (patch.systemSecrets !== undefined) row.system_secrets = patch.systemSecrets;
 
   const { data, error, status, statusText } = await supabase
     .from("skills")

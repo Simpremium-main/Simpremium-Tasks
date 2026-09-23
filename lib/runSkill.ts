@@ -6,6 +6,7 @@ import type { ClaudeChunkResult } from "./claude";
 import { sumTokenUsage } from "./cost";
 import { transcribeVideoUrl } from "./transcribe";
 import { buildCallbackBody, sendOutputCallback } from "./outputCallback";
+import { resolveSystemSecrets } from "./systemSecrets";
 import type {
   ConversationState,
   DispatchResult,
@@ -243,23 +244,29 @@ async function advance(
 }
 
 /**
- * Resolves every "video"-typed input field's raw URL into its transcript
- * before the prompt gets built — the skill's `{{campo}}` placeholder ends
- * up filled with transcript text, never the link itself. Runs after
- * startExecution (so the "running" row already exists — the security
- * baseline that even a failed attempt gets recorded holds here too) but
- * before any dispatch, so a transcription failure finishes the row
- * immediately with a clear reason instead of ever reaching Claude/Cowork.
- * A no-op (returns inputValues unchanged) for skills with no video field.
+ * Resolves everything that needs to happen between "what the person typed"
+ * and "what actually goes in the prompt": every "video"-typed field's raw
+ * URL swapped for its transcript, and any Skill.systemSecrets merged in
+ * from their server env vars (lib/systemSecrets.ts) — a fixed, hardcoded
+ * credential the skill's prompt references by placeholder, never typed by
+ * the person and never touching the database (the "running" row's
+ * promptSnapshot was already written by startExecution *before* this runs,
+ * from the raw, unresolved inputValues, so those placeholders are simply
+ * still unfilled text there — never the real secret value).
+ *
+ * Runs after startExecution (so the "running" row already exists — the
+ * security baseline that even a failed attempt gets recorded holds here
+ * too) but before any dispatch, so a resolution failure (transcription, or
+ * a system secret's env var not actually set) finishes the row immediately
+ * with a clear reason instead of ever reaching Claude/Cowork.
  */
 async function resolveInputValues(
   skill: Skill,
   inputValues: Record<string, string>
 ): Promise<{ values: Record<string, string> } | { error: DispatchResult }> {
-  const videoFields = (skill.inputSchema ?? []).filter((f) => f.type === "video");
-  if (videoFields.length === 0) return { values: inputValues };
+  let resolved = { ...inputValues };
 
-  const resolved = { ...inputValues };
+  const videoFields = (skill.inputSchema ?? []).filter((f) => f.type === "video");
   for (const field of videoFields) {
     const url = inputValues[field.key]?.trim();
     if (!url) continue; // optional field left blank, or already validated as required upstream
@@ -275,6 +282,13 @@ async function resolveInputValues(
     }
     resolved[field.key] = result.transcript;
   }
+
+  const secrets = resolveSystemSecrets(skill.systemSecrets);
+  if ("error" in secrets) {
+    return { error: { status: "needs_setup", error: secrets.error } };
+  }
+  resolved = { ...resolved, ...secrets.values };
+
   return { values: resolved };
 }
 

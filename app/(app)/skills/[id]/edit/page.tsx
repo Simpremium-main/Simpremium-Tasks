@@ -24,6 +24,7 @@ export default async function EditSkillPage({ params }: { params: { id: string }
           inputSchema: skill.inputSchema ?? [],
           group: skill.group,
           tags: skill.tags,
+          systemSecrets: skill.systemSecrets,
         }}
       />
     </div>

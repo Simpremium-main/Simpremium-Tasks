@@ -49,6 +49,10 @@ export default async function SkillDetailPage({ params }: { params: { id: string
                 inputSchema: skill.inputSchema ?? [],
                 group: skill.group,
                 tags: skill.tags,
+                // Deliberately not carried over — access to a hardcoded
+                // system secret is an opt-in per skill, not something a
+                // duplicate should inherit automatically.
+                systemSecrets: null,
               }}
               sourcePost={skill.sourcePost}
             />

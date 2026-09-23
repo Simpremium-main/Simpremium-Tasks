@@ -34,6 +34,7 @@ create table if not exists skills (
   pinned          boolean not null default false, -- personal dashboard preference, not part of the skill's definition (not carried by export/import)
   share_token     text unique, -- null means not shared; set means /share/<token> shows a read-only public view of this skill
   position        double precision not null default 0, -- drag-and-drop order on the dashboard, ascending — see lib/data.ts's createSkill/updateSkill. Personal ordering, like pinned: not part of the skill's definition, not carried by export/import
+  system_secrets  text[], -- names of server env vars (SKILL_SECRET_ prefix only, enforced in code) this skill's prompt can reference by {{placeholder}} — resolved fresh at dispatch time, never persisted as a real value; see lib/systemSecrets.ts
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );

@@ -667,6 +667,58 @@ Needs one more column, also in a fresh `supabase/schema.sql`:
 alter table cowork_agent_status add column if not exists queue_paused boolean not null default false;
 ```
 
+### A hardcoded credential for a skill that has to log in itself
+
+Some Cowork skills genuinely need to authenticate on their own — the original design for the first
+of these (registering TIM chip activations on the Meu TIM Empresas portal) instead assumed the
+person had already logged into the target site by hand in that browser, and told Cowork to stop
+and refuse the moment it saw a login screen. That's the right default for a skill running against
+a session the person is already in, but it stopped being workable once the same skill needed to
+switch between two different business accounts mid-run and actually drive the login itself.
+
+The tempting fix — paste the real username/password straight into the skill's prompt template —
+was rejected: a prompt template's literal text isn't run through `lib/mask.ts`'s masking at all
+(that only masks values coming from a *typed* secret input field), so a hardcoded credential would
+show up in plain text forever in every run's `promptSnapshot` (the "Prompt enviado" block in every
+execution's details, and in `GET /api/skills/export`'s backup), and — worse — in the `cowork_payload`
+column itself, in the window between a Cowork job being queued and the Mac mini agent picking it
+up. Both are exactly what this project's own security baseline forbids ("No skill credential or
+token should ever appear in plain text in execution history or logs").
+
+`Skill.systemSecrets` (`lib/systemSecrets.ts`) is the safe version of the same idea: a skill
+declares a list of *server environment variable names* (Vercel) its prompt can reference by
+`{{placeholder}}` — never the credential value itself, and never something a run's input form asks
+for. At dispatch time, `lib/runSkill.ts`'s `resolveInputValues` reads each one fresh from
+`process.env` and merges it into the values used to build the *raw* prompt (the one actually sent
+to Claude/Cowork for that one dispatch) — the same "real value only ever held in memory for the
+single dispatch call, never written to the database" rule `buildRawPrompt` already documents for
+ordinary secret input fields. The execution's stored `promptSnapshot` is written *before* this
+resolution runs (`startExecution`, from the raw unresolved input), so the placeholder simply sits
+there unfilled (`{{tim_login_mundo}}`) rather than masked — there's nothing to mask because the
+real value was never in scope yet.
+
+Every name in `systemSecrets` must start with `SKILL_SECRET_` — enforced twice, once in
+`PATCH /api/skills/[id]` (rejects the save with a 400 otherwise) and again in
+`resolveSystemSecrets` itself (silently ignores anything outside the namespace rather than trusting
+it). A skill's own definition (prompt template included) is already fully editable by anyone with
+dashboard access, so without this guard `systemSecrets` would be a way to point a skill's prompt at
+*any* other server env var — `ANTHROPIC_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
+`COWORK_AGENT_TOKEN` — instead of just a credential meant for this purpose. Set the list from the
+skill's edit page (`components/SkillFieldsEditor.tsx`'s "Segredos do sistema (avançado)" — one env
+var name per line) — never inferred from a pasted post, and never carried over by "Duplicar" (each
+duplicate starts with none, so access to a hardcoded credential is always a conscious, one-skill-
+at-a-time opt-in).
+
+A skill that expects `SKILL_SECRET_TIM_LOGIN_MUNDO` but the env var isn't actually set in Vercel
+gets a `needs_setup` execution with a clear message naming the missing variable — never a blank
+value silently typed into a real login form.
+
+Needs one more column, also in a fresh `supabase/schema.sql`:
+
+```sql
+alter table skills add column if not exists system_secrets text[];
+```
+
 ## Login — real Supabase Auth
 
 `middleware.ts` gates every page behind `/login`, backed by real Supabase Auth (email +

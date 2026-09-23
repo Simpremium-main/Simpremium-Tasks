@@ -346,6 +346,7 @@ function videoLinkFailureDraft(url: string, result: TranscribeResult): SkillDraf
     inputSchema: [],
     group: null,
     tags: [],
+    systemSecrets: null,
     needsReview: true,
     reviewNote: pendingSetup
       ? "Pendente de configuração — adicione OPENAI_API_KEY nas variáveis de ambiente pra habilitar a transcrição automática de vídeos, depois cole o link de novo."
@@ -403,6 +404,7 @@ async function parseWithClaude(
     inputSchema: normalizeInputSchema(parsed.inputSchema),
     group: typeof parsed.group === "string" && parsed.group.trim() ? parsed.group.trim() : null,
     tags: normalizeTags(parsed.tags),
+    systemSecrets: null,
     needsReview: false,
   };
 }
@@ -476,6 +478,7 @@ function heuristicParse(postContent: string): SkillDraftProposal {
     inputSchema,
     group: null,
     tags: [],
+    systemSecrets: null,
     needsReview: true,
     reviewNote:
       "ANTHROPIC_API_KEY isn't configured, so this draft was built with a simple " +

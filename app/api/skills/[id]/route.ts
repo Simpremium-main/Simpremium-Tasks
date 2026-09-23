@@ -103,6 +103,32 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       body.outputCallback && typeof body.outputCallback === "object" ? body.outputCallback : null;
   }
 
+  if ("systemSecrets" in body) {
+    if (body.systemSecrets === null) {
+      patch.systemSecrets = null;
+    } else if (Array.isArray(body.systemSecrets)) {
+      const names: string[] = body.systemSecrets.filter(
+        (n: unknown): n is string => typeof n === "string" && n.trim().length > 0
+      );
+      // Every name must live in the SKILL_SECRET_ namespace — a skill's
+      // own definition is editable by anyone with dashboard access, so
+      // without this the field would be a way to point a prompt at any
+      // other server env var (ANTHROPIC_API_KEY, SUPABASE_SERVICE_ROLE_KEY,
+      // ...) instead of just the credentials meant for this purpose. See
+      // lib/systemSecrets.ts, which enforces the same rule again on resolve.
+      const invalid = names.filter((n) => !/^SKILL_SECRET_[A-Z0-9_]+$/.test(n));
+      if (invalid.length > 0) {
+        return NextResponse.json(
+          { error: `Nome(s) de variável inválido(s) — precisa começar com SKILL_SECRET_: ${invalid.join(", ")}` },
+          { status: 400 }
+        );
+      }
+      patch.systemSecrets = names.length ? names : null;
+    } else {
+      return NextResponse.json({ error: "systemSecrets must be an array of strings or null" }, { status: 400 });
+    }
+  }
+
   try {
     const user = await getCurrentUser();
     const skill = await updateSkill(params.id, patch, user?.displayName ?? null);

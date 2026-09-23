@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Bot, Folder, PenLine, Plus, Tag, Trash2, X } from "lucide-react";
+import { Bot, Folder, KeyRound, PenLine, Plus, Tag, Trash2, X } from "lucide-react";
 import type { EditableSkillFields, InputField, InputFieldType } from "@/lib/types";
 
 const FIELD_TYPES: InputFieldType[] = ["text", "textarea", "secret", "url", "number", "file", "video"];
@@ -20,6 +20,12 @@ export default function SkillFieldsEditor({
   onChange: (patch: Partial<EditableSkillFields>) => void;
 }) {
   const [tagDraft, setTagDraft] = useState("");
+  // Raw multi-line draft (one env var name per line) instead of syncing
+  // value.systemSecrets directly to the textarea — a controlled textarea
+  // that re-joins/re-splits on every keystroke fights typing a trailing
+  // newline or a blank line mid-edit. Only ever re-initialized on mount
+  // (editing a different skill remounts this component via its key).
+  const [secretsDraft, setSecretsDraft] = useState(() => (value.systemSecrets ?? []).join("\n"));
 
   function updateInputField(index: number, patch: Partial<InputField>) {
     onChange({ inputSchema: value.inputSchema.map((f, i) => (i === index ? { ...f, ...patch } : f)) });
@@ -220,6 +226,45 @@ export default function SkillFieldsEditor({
           </div>
         </div>
       )}
+
+      <details className="rounded-md border border-line p-3">
+        <summary className="cursor-pointer text-sm font-medium text-ink flex items-center gap-1.5">
+          <KeyRound size={14} className="text-muted" />
+          Segredos do sistema (avançado)
+        </summary>
+        <p className="mt-2 text-xs text-muted">
+          Pra um login/senha fixo que essa skill sempre usa, sem pedir de novo a cada execução — nunca fica
+          salvo aqui nem aparece no histórico. Configure a variável no Vercel (o nome precisa começar com{" "}
+          <code className="font-mono">SKILL_SECRET_</code>) e liste o nome dela abaixo, uma por linha. No
+          prompt, referencie pelo nome em minúsculo sem o prefixo — ex:{" "}
+          <code className="font-mono">SKILL_SECRET_TIM_LOGIN_MUNDO</code> vira{" "}
+          <code className="font-mono">{"{{tim_login_mundo}}"}</code>.
+        </p>
+        <textarea
+          value={secretsDraft}
+          onChange={(e) => {
+            setSecretsDraft(e.target.value);
+            const names = e.target.value
+              .split("\n")
+              .map((line) => line.trim())
+              .filter(Boolean);
+            onChange({ systemSecrets: names.length ? names : null });
+          }}
+          rows={3}
+          placeholder={"SKILL_SECRET_TIM_LOGIN_MUNDO\nSKILL_SECRET_TIM_SENHA_MUNDO"}
+          className="mt-2 w-full rounded-md border border-line px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-shadow"
+        />
+        {secretsDraft
+          .split("\n")
+          .map((l) => l.trim())
+          .filter(Boolean)
+          .some((n) => !/^SKILL_SECRET_[A-Z0-9_]+$/.test(n)) && (
+          <p className="mt-1.5 text-xs text-red-600">
+            Todo nome precisa começar com SKILL_SECRET_ e usar só maiúsculas/números/underscore — o que não
+            seguir esse formato é ignorado ao rodar.
+          </p>
+        )}
+      </details>
     </div>
   );
 }

@@ -34,6 +34,11 @@ export interface EditableSkillFields {
   inputSchema: InputField[];
   group: string | null;
   tags: string[];
+  /** See Skill.systemSecrets — optional, defaults to none for a freshly
+   *  parsed draft (never inferred from a pasted post; only ever set by hand
+   *  afterward, for the rare skill that needs a fixed, non-retyped
+   *  credential). */
+  systemSecrets: string[] | null;
 }
 
 export interface SkillDraftProposal extends EditableSkillFields {
@@ -230,6 +235,20 @@ export interface Skill {
    *  pinned, not part of the skill's definition — left out of
    *  export/import. */
   position: number;
+  /** Names of server-side environment variables (Vercel) this skill's
+   *  prompt template can reference by {{placeholder}} — resolved fresh at
+   *  dispatch time (lib/systemSecrets.ts), merged into the run's input
+   *  values as synthetic secret-typed fields so they're masked in
+   *  promptSnapshot/history exactly like any other secret input, and never
+   *  written to the database in plain text. For a fixed credential the
+   *  person genuinely doesn't want to retype every run (a shared login,
+   *  say) — not a substitute for the normal per-run inputSchema. Every name
+   *  here must start with SKILL_SECRET_ (enforced on resolve, not just on
+   *  save): a skill definition is editable by anyone with dashboard access,
+   *  so without that namespace guard this would be a way to smuggle any
+   *  other env var (ANTHROPIC_API_KEY, SUPABASE_SERVICE_ROLE_KEY, ...) into
+   *  a prompt Cowork/Claude then acts on. */
+  systemSecrets: string[] | null;
   createdAt: Date;
   updatedAt: Date;
 }
