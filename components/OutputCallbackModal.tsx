@@ -28,6 +28,10 @@ export default function OutputCallbackModal({
   const [previewBody, setPreviewBody] = useState<string>("");
   const [testing, setTesting] = useState(false);
   const [testError, setTestError] = useState<string | null>(null);
+  // True when the mapping (or the saved config's preview) had no real
+  // execution to check against yet — expected/benign, not an error, see
+  // .../output-callback/preview's noSample fallback.
+  const [noSample, setNoSample] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadingSavedPreview, setLoadingSavedPreview] = useState(Boolean(outputCallback));
@@ -47,8 +51,12 @@ export default function OutputCallbackModal({
       .then((res) => res.json().catch(() => ({})).then((body) => ({ ok: res.ok, body })))
       .then(({ ok, body }) => {
         if (cancelled) return;
-        if (ok) setPreviewBody(JSON.stringify(body.previewBody, null, 2));
-        else setTestError(body.error ?? "Falha ao atualizar prévia");
+        if (ok) {
+          setPreviewBody(body.previewBody ? JSON.stringify(body.previewBody, null, 2) : "");
+          setNoSample(Boolean(body.noSample));
+        } else {
+          setTestError(body.error ?? "Falha ao atualizar prévia");
+        }
       })
       .catch(() => {
         // Best-effort — the saved config still shows, just without a fresh preview.
@@ -65,6 +73,7 @@ export default function OutputCallbackModal({
   function clearMapping() {
     setMapping(null);
     setPreviewBody("");
+    setNoSample(false);
   }
 
   async function testMapping() {
@@ -79,7 +88,8 @@ export default function OutputCallbackModal({
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? `Falha ao testar (HTTP ${res.status})`);
       setMapping({ itemFieldMap: body.itemFieldMap, itemsPath: body.itemsPath });
-      setPreviewBody(JSON.stringify(body.previewBody, null, 2));
+      setPreviewBody(body.previewBody ? JSON.stringify(body.previewBody, null, 2) : "");
+      setNoSample(Boolean(body.noSample));
     } catch (err) {
       setTestError(err instanceof Error ? err.message : "Falha ao testar");
     } finally {
@@ -193,6 +203,12 @@ export default function OutputCallbackModal({
                 </p>
               )}
               {testError && !loadingSavedPreview && <p className="mt-2 text-xs text-red-600">{testError}</p>}
+              {noSample && !loadingSavedPreview && (
+                <p className="mt-2 text-xs text-amber-700 bg-amber-50 rounded-md px-2.5 py-1.5">
+                  Ainda sem execução com tabela pra conferir — o mapeamento foi um palpite a partir só da
+                  descrição da API. Depois da primeira execução com sucesso, reabra aqui pra ver a prévia real.
+                </p>
+              )}
               {previewBody && !loadingSavedPreview && (
                 <div className="mt-2">
                   <p className="text-[10px] uppercase tracking-wide text-muted mb-1">
@@ -293,10 +309,19 @@ export default function OutputCallbackModal({
               </button>
               <p className="text-[11px] text-muted -mt-1.5">
                 Usa a execução com sucesso mais recente dessa skill como amostra — nunca envia nada de verdade
-                pra API de destino, só monta e mostra o corpo da requisição.
+                pra API de destino, só monta e mostra o corpo da requisição. Sem uma execução com tabela ainda,
+                gera um palpite só a partir da descrição da API, marcado como não conferido.
               </p>
 
               {testError && <p className="text-xs text-red-600">{testError}</p>}
+
+              {noSample && mapping && (
+                <p className="text-xs text-amber-700 bg-amber-50 rounded-md px-2.5 py-1.5">
+                  Essa skill ainda não tem uma execução com tabela — o mapeamento acima é um palpite a partir só
+                  da descrição da API, não conferido contra um resultado real. Pode salvar assim mesmo; depois da
+                  primeira execução com sucesso, reabra e clique em "Gerar de novo" pra confirmar que bate.
+                </p>
+              )}
 
               {previewBody && (
                 <div>

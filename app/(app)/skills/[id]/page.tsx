@@ -149,6 +149,7 @@ export default async function SkillDetailPage({ params }: { params: { id: string
             inputSchema: skill.inputSchema,
             confirmedOnce: skill.confirmedOnce,
             hasOutputCallback: Boolean(skill.outputCallback),
+            scheduleApiSources: skill.scheduleApiSources,
           }}
           initialExecutions={executions}
         />

@@ -1159,6 +1159,18 @@ genuinely needs it to keep working unattended — but it's masked (`lib/mask.ts`
 `GET /api/skills/export`'s backup output, since a downloaded file can end up in more places than the
 live dashboard.
 
+**Also usable from a manual run, not just a schedule.** Originally the only way to trigger this
+fetch was the cron job or "Testar agora" inside `ScheduleModal` — both of which run the skill
+immediately. Asked for a lighter option: a **"Buscar dados da API"** button right on the normal run
+panel (`RunSkillPanel.tsx`) that fetches every `scheduleApiSources`-configured field fresh and fills
+the form, without running anything — the person still reviews (and can still edit) before clicking
+Rodar. Reuses the exact same `POST /api/skills/[id]/schedule/resolve-values` endpoint; no new
+backend code needed, since `resolveScheduledInputValues` never actually looks at whether the skill
+has an active `schedule` — it just resolves `scheduleInputValues`/`scheduleApiSources`, which works
+identically whether or not a recurring schedule is turned on. The field still has to be configured
+once through `ScheduleModal` (that's still where the AI-assisted mapping gets generated and tested)
+— this just adds a second, faster place to actually use it.
+
 ### Sending a skill's result to another API when it finishes
 
 The mirror image of API-sourced scheduled inputs: instead of pulling a value in before a run,
@@ -1205,6 +1217,20 @@ alter table executions add column if not exists output_callback_status text
   check (output_callback_status in ('sent', 'failed'));
 alter table executions add column if not exists output_callback_error text;
 ```
+
+**Configuring a callback before the skill has ever run.** "Testar e gerar mapeamento" originally
+required a real sample — a successful execution whose result had a table — to read real column
+names from, and hard-blocked setup entirely without one. That's a real chicken-and-egg gap for a
+brand-new skill: you can't configure its output callback until after its first real run, even
+though you often already know what the mapping *should* be. Now, when there's no qualifying
+execution yet, `lib/proposeOutputCallback.ts` falls back to a best-effort guess from the target
+API's description alone (asked to assume ordinary naming conventions — a target field like `iccid`
+very likely comes from a column literally called `iccid`), and the route returns `noSample: true`
+instead of a 400. The modal still lets you save that guess (flagged with an amber "não conferido"
+note, both right after generating it and every time the modal reopens afterward via
+`.../output-callback/current-preview`, which now also returns 200 + `noSample: true` instead of an
+error in the same situation) — then once the skill actually has a real result, reopen and click
+"Gerar de novo" to confirm the guess against the real table and get an actual preview.
 
 ### Reopening a saved mapping, badges, callback-body debugging, and a dry-run test mode
 

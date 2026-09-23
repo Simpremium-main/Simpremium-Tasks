@@ -7,6 +7,7 @@ import {
   Bot,
   ChevronDown,
   Coins,
+  Download,
   FileText,
   History,
   Loader2,
@@ -21,7 +22,7 @@ import { CHAIN_INPUT_STORAGE_KEY } from "./ChainResultButton";
 import { buildPromptSnapshot, looksLikeSecretKey } from "@/lib/mask";
 import { estimateCostUsd, formatCostUsd } from "@/lib/cost";
 import { executionDurationMs, formatDuration } from "@/lib/duration";
-import type { InputField } from "@/lib/types";
+import type { ApiFieldSource, InputField } from "@/lib/types";
 
 interface Skill {
   id: string;
@@ -35,6 +36,14 @@ interface Skill {
    *  show the "modo teste" checkbox below; the run itself works the same
    *  either way. */
   hasOutputCallback: boolean;
+  /** Per-field API sources configured for scheduled runs (lib/types.ts) —
+   *  reused here so a manual run can fetch the same fields fresh with one
+   *  click too, instead of that only being available through "Testar
+   *  agora" inside the schedule modal. Works regardless of whether the
+   *  skill actually has an active recurring schedule — see
+   *  lib/schedule.ts's resolveScheduledInputValues, which never looks at
+   *  Skill.schedule at all. */
+  scheduleApiSources: Record<string, ApiFieldSource> | null;
 }
 
 export default function RunSkillPanel({
@@ -69,6 +78,9 @@ export default function RunSkillPanel({
   const [values, setValues] = useState<Record<string, string>>(() =>
     initialFromChain ? { [initialFromChain.key]: initialFromChain.text } : {}
   );
+  const hasApiSources = Object.keys(skill.scheduleApiSources ?? {}).length > 0;
+  const [fetchingApi, setFetchingApi] = useState(false);
+  const [apiFetchError, setApiFetchError] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
   // Only meaningful when skill.hasOutputCallback — the skill still runs for
   // real either way, this only decides whether finishExecution actually
@@ -140,6 +152,28 @@ export default function RunSkillPanel({
         ? "Reaproveitei os campos dessa execução — só os de senha/token ficaram em branco, preenche de novo antes de rodar."
         : "Reaproveitei os campos dessa execução — confira antes de rodar."
     );
+  }
+
+  // Fetches every scheduleApiSources-configured field fresh, right now, and
+  // fills the form with it — the same resolver "Testar agora" (inside the
+  // schedule modal) already uses, just without also running the skill:
+  // this only prefills, so the person still reviews/edits before clicking
+  // Rodar. Overwrites whatever those fields currently hold; anything typed
+  // into a non-API field is left alone.
+  async function fetchFromApi() {
+    setFetchingApi(true);
+    setApiFetchError(null);
+    try {
+      const res = await fetch(`/api/skills/${skill.id}/schedule/resolve-values`, { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? `Falha ao buscar da API (HTTP ${res.status})`);
+      setValues((prev) => ({ ...prev, ...body.values }));
+      setFormError(null);
+    } catch (err) {
+      setApiFetchError(err instanceof Error ? err.message : "Falha ao buscar da API");
+    } finally {
+      setFetchingApi(false);
+    }
   }
 
   function handleRunClick() {
@@ -281,6 +315,24 @@ export default function RunSkillPanel({
           <Play size={15} className="text-primary" />
           Rodar essa skill
         </h2>
+        {hasApiSources && (
+          <div className="mb-3">
+            <button
+              type="button"
+              onClick={fetchFromApi}
+              disabled={fetchingApi}
+              className="inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-xs font-medium text-ink/80 hover:border-primary/30 hover:text-primary hover:bg-primary-soft transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {fetchingApi ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+              {fetchingApi ? "Buscando…" : "Buscar dados da API"}
+            </button>
+            <p className="mt-1 text-[11px] text-muted">
+              Preenche os campos configurados com fonte de API (mesma configuração do agendamento) com o
+              valor atual — confira antes de rodar.
+            </p>
+            {apiFetchError && <p className="mt-1 text-xs text-red-600">{apiFetchError}</p>}
+          </div>
+        )}
         <DynamicForm schema={schema} values={values} onChange={(k, v) => setValues((p) => ({ ...p, [k]: v }))} />
         {retryNote && <p className="mt-2 text-sm text-primary">{retryNote}</p>}
         {formError && <p className="mt-2 text-sm text-red-600">{formError}</p>}

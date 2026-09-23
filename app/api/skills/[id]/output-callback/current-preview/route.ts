@@ -24,15 +24,16 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
 
     const recentSuccesses = await listExecutions({ skillId: skill.id, status: "success" });
     const sample = recentSuccesses.find((e) => e.result && parseMarkdownTable(e.result));
+    // No qualifying execution yet is an expected, steady state for a
+    // callback configured ahead of the skill's first real run (see
+    // .../preview's noSample fallback) — not an error, so this stays a 200
+    // with previewBody: null instead of a 400 the modal would show in red.
     if (!sample || !sample.result) {
-      return NextResponse.json(
-        { error: "Nenhuma execução com sucesso com tabela no resultado ainda — sem amostra pra mostrar." },
-        { status: 400 }
-      );
+      return NextResponse.json({ previewBody: null, sampleExecutionId: null, noSample: true });
     }
 
     const previewBody = buildCallbackBody(skill.outputCallback, sample.result);
-    return NextResponse.json({ previewBody, sampleExecutionId: sample.id });
+    return NextResponse.json({ previewBody, sampleExecutionId: sample.id, noSample: false });
   } catch (err) {
     console.error(`POST /api/skills/${params.id}/output-callback/current-preview failed:`, err);
     return NextResponse.json(
