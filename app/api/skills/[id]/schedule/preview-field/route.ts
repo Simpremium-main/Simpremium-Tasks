@@ -7,7 +7,31 @@ export const dynamic = "force-dynamic";
 
 // A sample response is only ever used to generate the mapping, never
 // stored — this just bounds how much a single test call can pull in.
+// Applied in two stages: a generous hard ceiling on the raw fetch (protects
+// against trying to JSON.parse a pathologically huge or non-JSON body), and
+// a much smaller one on the *shape-preserving, array-truncated* sample
+// actually sent to Claude — a real endpoint (e.g. "every pending
+// activation") can legitimately return hundreds of records where the
+// mapping only needs to see a handful to learn the shape.
+const MAX_RAW_FETCH_CHARS = 5_000_000;
 const MAX_SAMPLE_CHARS = 500_000;
+const MAX_ARRAY_SAMPLE_ITEMS = 20;
+
+/** Recursively caps every array in a parsed JSON value to its first N items
+ *  — keeps the overall shape (so the mapping AI still sees real field names
+ *  and nesting) while cutting a large list-of-records response down to a
+ *  genuine "sample" instead of the whole dataset. */
+function truncateArraysDeep(value: unknown, maxItems: number): unknown {
+  if (Array.isArray(value)) {
+    return value.slice(0, maxItems).map((item) => truncateArraysDeep(item, maxItems));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, v]) => [key, truncateArraysDeep(v, maxItems)])
+    );
+  }
+  return value;
+}
 
 /**
  * Fetches a live sample from the API URL the person just typed into
@@ -52,10 +76,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       const res = await fetch(url, { headers: stringHeaders, cache: "no-store" });
       if (!res.ok) throw new Error(`A API respondeu HTTP ${res.status}`);
       const text = await res.text();
-      if (text.length > MAX_SAMPLE_CHARS) {
-        throw new Error(`Resposta muito grande (${(text.length / 1024).toFixed(0)}KB) pra usar como amostra`);
+      if (text.length > MAX_RAW_FETCH_CHARS) {
+        throw new Error(`Resposta muito grande (${(text.length / 1024).toFixed(0)}KB) pra sequer processar`);
       }
-      sampleJson = JSON.parse(text);
+      const parsed = JSON.parse(text);
+      sampleJson = truncateArraysDeep(parsed, MAX_ARRAY_SAMPLE_ITEMS);
+      const sampleText = JSON.stringify(sampleJson);
+      if (sampleText.length > MAX_SAMPLE_CHARS) {
+        throw new Error(
+          `Resposta muito grande (${(sampleText.length / 1024).toFixed(0)}KB) pra usar como amostra, mesmo só ` +
+            `com os primeiros ${MAX_ARRAY_SAMPLE_ITEMS} itens de cada lista — os objetos individuais são grandes demais`
+        );
+      }
     } catch (err) {
       return NextResponse.json(
         { error: `Falha ao buscar amostra da API: ${err instanceof Error ? err.message : "erro desconhecido"}` },
