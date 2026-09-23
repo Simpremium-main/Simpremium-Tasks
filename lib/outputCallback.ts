@@ -1,3 +1,4 @@
+import { logApiCall } from "./apiCallLog";
 import { parseMarkdownTable } from "./resultTable";
 import type { OutputCallback } from "./types";
 
@@ -59,24 +60,65 @@ export function describeOutputCallback(callback: OutputCallback): string[] {
  *  accidentally create real records in the target system. */
 export async function sendOutputCallback(
   callback: OutputCallback,
-  resultText: string
+  resultText: string,
+  // Only for app/(app)/api-logs — logs every real send against the skill
+  // that triggered it, success or failure.
+  skillId: string | null
 ): Promise<{ status: number; body: string }> {
   const body = buildCallbackBody(callback, resultText);
+  const bodyText = JSON.stringify(body);
 
   let res: Response;
   try {
     res = await fetch(callback.url, {
       method: callback.method,
       headers: { "Content-Type": "application/json", ...(callback.headers ?? {}) },
-      body: JSON.stringify(body),
+      body: bodyText,
     });
   } catch (err) {
-    throw new Error(`Falha ao conectar em "${callback.url}": ${err instanceof Error ? err.message : "erro desconhecido"}`);
+    const message = `Falha ao conectar em "${callback.url}": ${err instanceof Error ? err.message : "erro desconhecido"}`;
+    await logApiCall({
+      skillId,
+      direction: "output",
+      kind: "send",
+      url: callback.url,
+      method: callback.method,
+      requestHeaders: callback.headers,
+      requestBody: bodyText,
+      error: message,
+    });
+    throw new Error(message);
   }
 
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(`"${callback.url}" respondeu HTTP ${res.status}: ${text.slice(0, 300)}`);
+    const message = `"${callback.url}" respondeu HTTP ${res.status}: ${text.slice(0, 300)}`;
+    await logApiCall({
+      skillId,
+      direction: "output",
+      kind: "send",
+      url: callback.url,
+      method: callback.method,
+      requestHeaders: callback.headers,
+      requestBody: bodyText,
+      responseStatus: res.status,
+      responseBody: text,
+      error: message,
+    });
+    throw new Error(message);
   }
+
+  await logApiCall({
+    skillId,
+    direction: "output",
+    kind: "send",
+    url: callback.url,
+    method: callback.method,
+    requestHeaders: callback.headers,
+    requestBody: bodyText,
+    responseStatus: res.status,
+    responseBody: text,
+  });
+
   return { status: res.status, body: text };
 }

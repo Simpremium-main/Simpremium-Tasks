@@ -3,6 +3,7 @@ import type { PostgrestError } from "@supabase/supabase-js";
 import { getSupabase } from "./supabaseClient";
 import { sumTokenUsage } from "./cost";
 import type {
+  ApiCallLog,
   ApiFieldSource,
   ConversationState,
   Execution,
@@ -457,6 +458,50 @@ export async function listExecutions(
     return {
       ...mapExecutionRow(row),
       skill: { id: skill?.id ?? (row.skill_id as string), name: skill?.name ?? "Deleted skill" },
+    };
+  });
+}
+
+/**
+ * Every outbound API call this app itself has made (lib/apiCallLog.ts) —
+ * app/(app)/api-logs's data source, "what did the external API actually
+ * send back" without needing server log access. Capped at 200, most recent
+ * first, same reasoning as listExecutions above: a live-history view, not a
+ * full export.
+ */
+export async function listApiCallLogs(filter: {
+  skillId?: string;
+  direction?: "input" | "output";
+} = {}): Promise<ApiCallLog[]> {
+  const supabase = getSupabase();
+  let query = supabase
+    .from("api_call_logs")
+    .select("*, skill:skills(id, name)")
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (filter.skillId) query = query.eq("skill_id", filter.skillId);
+  if (filter.direction) query = query.eq("direction", filter.direction);
+
+  const { data, error, status, statusText } = await query;
+  if (error) throw describeError("listApiCallLogs", error, status, statusText);
+
+  return (data ?? []).map((row) => {
+    const skill = row.skill as { id: string; name: string } | null;
+    return {
+      id: row.id as string,
+      skillId: (row.skill_id as string | null) ?? null,
+      skillName: skill?.name ?? null,
+      fieldKey: (row.field_key as string | null) ?? null,
+      direction: row.direction as ApiCallLog["direction"],
+      kind: row.kind as ApiCallLog["kind"],
+      url: row.url as string,
+      method: row.method as string,
+      requestHeaders: (row.request_headers as Record<string, string> | null) ?? null,
+      requestBody: (row.request_body as string | null) ?? null,
+      responseStatus: (row.response_status as number | null) ?? null,
+      responseBody: (row.response_body as string | null) ?? null,
+      error: (row.error as string | null) ?? null,
+      createdAt: new Date(row.created_at as string),
     };
   });
 }

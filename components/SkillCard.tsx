@@ -75,6 +75,11 @@ export default function SkillCard({
 }: SkillCardProps) {
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [pinWorking, setPinWorking] = useState(false);
+  // Values/API sources can be configured (for the manual "Buscar dados da
+  // API" button on RunSkillPanel) without an active recurring schedule.
+  const hasConfiguredScheduleValues =
+    Boolean(scheduleInputValues && Object.keys(scheduleInputValues).length) ||
+    Boolean(scheduleApiSources && Object.keys(scheduleApiSources).length);
 
   async function togglePin(e: React.MouseEvent) {
     e.preventDefault();
@@ -213,15 +218,21 @@ export default function SkillCard({
                 e.stopPropagation();
                 setScheduleOpen(true);
               }}
-              title={schedule ? "Editar agendamento" : "Agendar essa skill"}
-              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 transition-colors ${
+              title={
                 schedule
+                  ? "Editar agendamento"
+                  : hasConfiguredScheduleValues
+                    ? "Valores/fontes de API configurados, sem agendamento automático ativo"
+                    : "Agendar essa skill"
+              }
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 transition-colors ${
+                schedule || hasConfiguredScheduleValues
                   ? "bg-primary-soft text-primary"
                   : "bg-slate-100 text-muted hover:text-primary hover:bg-primary-soft"
               }`}
             >
               <CalendarClock size={11} />
-              {schedule ? "Agendada" : "Agendar"}
+              {schedule ? "Agendada" : hasConfiguredScheduleValues ? "Configurada" : "Agendar"}
             </button>
           )}
           <span className="ml-auto inline-flex items-center gap-1 shrink-0">

@@ -53,7 +53,7 @@ export async function resolveScheduledInputValues(
   const values: Record<string, string> = { ...(skill.scheduleInputValues ?? {}) };
   for (const [key, source] of Object.entries(skill.scheduleApiSources ?? {})) {
     try {
-      values[key] = await fetchApiFieldValue(source);
+      values[key] = await fetchApiFieldValue(source, { skillId: skill.id, fieldKey: key });
     } catch (err) {
       return {
         error: `Falha ao buscar "${key}" da API (${source.url}): ${

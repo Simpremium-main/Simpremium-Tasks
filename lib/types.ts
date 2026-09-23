@@ -313,3 +313,30 @@ export interface PromptVersion {
   changedBy: string | null;
   createdAt: Date;
 }
+
+export type ApiCallDirection = "input" | "output";
+/** fetch = a real scheduled/manual-button run resolving an API-sourced
+ *  field; test = the live sample fetch inside "Testar e gerar mapeamento";
+ *  raw = the "Ver resposta bruta" button; send = a real output callback
+ *  POST (lib/outputCallback.ts's sendOutputCallback). */
+export type ApiCallKind = "fetch" | "test" | "raw" | "send";
+
+/** Every outbound HTTP request this app itself makes to an external system
+ *  — see lib/apiCallLog.ts. Purely a debugging/audit trail (app/(app)/api-logs),
+ *  never read by any runtime logic. */
+export interface ApiCallLog {
+  id: string;
+  skillId: string | null;
+  skillName: string | null;
+  fieldKey: string | null;
+  direction: ApiCallDirection;
+  kind: ApiCallKind;
+  url: string;
+  method: string;
+  requestHeaders: Record<string, string> | null;
+  requestBody: string | null;
+  responseStatus: number | null;
+  responseBody: string | null;
+  error: string | null;
+  createdAt: Date;
+}

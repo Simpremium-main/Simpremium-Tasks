@@ -14,6 +14,7 @@ import {
   PanelLeftOpen,
   Pencil,
   Plus,
+  ScrollText,
   Search,
   Shield,
   Sparkles,
@@ -221,6 +222,13 @@ export default function Sidebar({
           active={pathname === "/schedules"}
           icon={<CalendarClock size={16} />}
           label="Agendamentos"
+          collapsed={effectiveCollapsed}
+        />
+        <NavLink
+          href="/api-logs"
+          active={pathname === "/api-logs"}
+          icon={<ScrollText size={16} />}
+          label="Logs de API"
           collapsed={effectiveCollapsed}
         />
         {isAdmin && (

@@ -102,10 +102,36 @@ create table if not exists cowork_agent_status (
   constraint cowork_agent_status_singleton check (id = 1)
 );
 
+-- Every outbound HTTP request this app itself makes to an external system —
+-- an API-sourced input field fetch (real or test), the raw-response viewer,
+-- or an output callback send — logged here for debugging "what did the
+-- external API actually return" without needing server log access. See
+-- lib/apiCallLog.ts. Headers are masked before insert (lib/mask.ts), same
+-- as every other credential this app writes anywhere.
+create table if not exists api_call_logs (
+  id              uuid primary key default gen_random_uuid(),
+  skill_id        uuid references skills(id) on delete set null,
+  field_key       text, -- which input field (direction = 'input') — null for an output callback send
+  direction       text not null check (direction in ('input', 'output')),
+  kind            text not null check (kind in ('fetch', 'test', 'raw', 'send')), -- fetch = real scheduled/manual run, test = "Testar e gerar mapeamento"'s live sample, raw = the "Ver resposta bruta" button, send = a real output callback POST
+  url             text not null,
+  method          text not null default 'GET',
+  request_headers jsonb, -- masked
+  request_body    text,
+  response_status integer,
+  response_body   text, -- truncated to a few KB, see lib/apiCallLog.ts's MAX_LOGGED_BODY_CHARS
+  error           text,
+  created_at      timestamptz not null default now()
+);
+
+create index if not exists api_call_logs_created_at_idx on api_call_logs (created_at desc);
+create index if not exists api_call_logs_skill_id_idx on api_call_logs (skill_id);
+
 alter table skills enable row level security;
 alter table executions enable row level security;
 alter table skill_prompt_versions enable row level security;
 alter table cowork_agent_status enable row level security;
+alter table api_call_logs enable row level security;
 -- No policies added — see the note at the top of this file for why.
 
 -- Secrets are masked in lib/mask.ts before a row is ever written here — this

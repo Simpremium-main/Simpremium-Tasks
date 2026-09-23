@@ -396,7 +396,7 @@ export async function finishExecution(skill: Skill, executionId: string, dispatc
     }
 
     try {
-      await sendOutputCallback(skill.outputCallback, execution.result);
+      await sendOutputCallback(skill.outputCallback, execution.result, skill.id);
       return (
         (await updateExecution(executionId, {
           outputCallbackStatus: "sent",

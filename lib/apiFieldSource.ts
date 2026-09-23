@@ -1,3 +1,4 @@
+import { logApiCall } from "./apiCallLog";
 import type { ApiFieldMapping, ApiFieldSource } from "./types";
 
 /**
@@ -80,21 +81,91 @@ export function describeApiFieldMapping(mapping: ApiFieldMapping): string {
  *  value). `cache: "no-store"` for the same reason every dynamic route in
  *  this app avoids Next's Data Cache — a stale fetch here would defeat the
  *  feature. */
-export async function fetchApiFieldValue(source: ApiFieldSource): Promise<string> {
+export async function fetchApiFieldValue(
+  source: ApiFieldSource,
+  // Only present for a real dispatch (the cron job, "Testar agora", or the
+  // manual "Buscar dados da API" button) — logged against the skill so
+  // app/(app)/api-logs can show it; omitted from an AI-mapping-preview call
+  // (lib/proposeApiFieldMapping.ts's caller fetches the sample itself and
+  // logs it separately, kind: "test").
+  context?: { skillId: string; fieldKey: string }
+): Promise<string> {
   let res: Response;
   try {
     res = await fetch(source.url, { headers: source.headers ?? undefined, cache: "no-store" });
   } catch (err) {
-    throw new Error(`Falha ao conectar em "${source.url}": ${err instanceof Error ? err.message : "erro desconhecido"}`);
+    const message = `Falha ao conectar em "${source.url}": ${err instanceof Error ? err.message : "erro desconhecido"}`;
+    if (context) {
+      await logApiCall({
+        skillId: context.skillId,
+        fieldKey: context.fieldKey,
+        direction: "input",
+        kind: "fetch",
+        url: source.url,
+        method: "GET",
+        requestHeaders: source.headers,
+        error: message,
+      });
+    }
+    throw new Error(message);
   }
+
+  const text = await res.text();
+
   if (!res.ok) {
-    throw new Error(`"${source.url}" respondeu HTTP ${res.status}`);
+    const message = `"${source.url}" respondeu HTTP ${res.status}`;
+    if (context) {
+      await logApiCall({
+        skillId: context.skillId,
+        fieldKey: context.fieldKey,
+        direction: "input",
+        kind: "fetch",
+        url: source.url,
+        method: "GET",
+        requestHeaders: source.headers,
+        responseStatus: res.status,
+        responseBody: text,
+        error: message,
+      });
+    }
+    throw new Error(message);
   }
+
   let data: unknown;
   try {
-    data = await res.json();
+    data = JSON.parse(text);
   } catch {
-    throw new Error(`"${source.url}" não retornou um JSON válido`);
+    const message = `"${source.url}" não retornou um JSON válido`;
+    if (context) {
+      await logApiCall({
+        skillId: context.skillId,
+        fieldKey: context.fieldKey,
+        direction: "input",
+        kind: "fetch",
+        url: source.url,
+        method: "GET",
+        requestHeaders: source.headers,
+        responseStatus: res.status,
+        responseBody: text,
+        error: message,
+      });
+    }
+    throw new Error(message);
   }
+
+  if (context) {
+    await logApiCall({
+      skillId: context.skillId,
+      fieldKey: context.fieldKey,
+      direction: "input",
+      kind: "fetch",
+      url: source.url,
+      method: "GET",
+      requestHeaders: source.headers,
+      responseStatus: res.status,
+      responseBody: text,
+    });
+  }
+
   return applyApiFieldMapping(source.mapping, data);
 }

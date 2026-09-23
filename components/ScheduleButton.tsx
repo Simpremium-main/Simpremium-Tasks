@@ -26,21 +26,34 @@ export default function ScheduleButton({
   hasUnschedulableSecret: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  // Values/API sources can be configured (for the manual "Buscar dados da
+  // API" button) without an active recurring schedule — the pill should
+  // still say something other than "Agendar" in that case, since there IS
+  // real config behind it, just not a cron trigger.
+  const hasConfiguredValues =
+    Boolean(scheduleInputValues && Object.keys(scheduleInputValues).length) ||
+    Boolean(scheduleApiSources && Object.keys(scheduleApiSources).length);
 
   return (
     <>
       <button
         type="button"
         onClick={() => setOpen(true)}
-        title={schedule ? `Agendamento: ${describeSchedule(schedule)}` : "Agendar essa skill"}
-        className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors ${
+        title={
           schedule
+            ? `Agendamento: ${describeSchedule(schedule)}`
+            : hasConfiguredValues
+              ? "Valores/fontes de API configurados, sem agendamento automático ativo"
+              : "Agendar essa skill"
+        }
+        className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors ${
+          schedule || hasConfiguredValues
             ? "border-primary/30 bg-primary-soft text-primary"
             : "border-line text-muted hover:border-primary/30 hover:text-primary hover:bg-primary-soft"
         }`}
       >
         <CalendarClock size={13} />
-        {schedule ? "Agendada" : "Agendar"}
+        {schedule ? "Agendada" : hasConfiguredValues ? "Configurada" : "Agendar"}
       </button>
 
       {open && (

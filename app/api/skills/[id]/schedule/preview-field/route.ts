@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSkill } from "@/lib/data";
 import { applyApiFieldMapping } from "@/lib/apiFieldSource";
 import { proposeApiFieldMapping } from "@/lib/proposeApiFieldMapping";
+import { logApiCall } from "@/lib/apiCallLog";
 
 export const dynamic = "force-dynamic";
 
@@ -72,10 +73,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       : undefined;
 
     let sampleJson: unknown;
+    let fetchedStatus: number | undefined;
+    let fetchedText: string | undefined;
     try {
       const res = await fetch(url, { headers: stringHeaders, cache: "no-store" });
+      fetchedStatus = res.status;
       if (!res.ok) throw new Error(`A API respondeu HTTP ${res.status}`);
       const text = await res.text();
+      fetchedText = text;
       if (text.length > MAX_RAW_FETCH_CHARS) {
         throw new Error(`Resposta muito grande (${(text.length / 1024).toFixed(0)}KB) pra sequer processar`);
       }
@@ -88,9 +93,33 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
             `com os primeiros ${MAX_ARRAY_SAMPLE_ITEMS} itens de cada lista — os objetos individuais são grandes demais`
         );
       }
+      await logApiCall({
+        skillId: skill.id,
+        fieldKey,
+        direction: "input",
+        kind: "test",
+        url,
+        method: "GET",
+        requestHeaders: stringHeaders,
+        responseStatus: fetchedStatus,
+        responseBody: fetchedText,
+      });
     } catch (err) {
+      const message = err instanceof Error ? err.message : "erro desconhecido";
+      await logApiCall({
+        skillId: skill.id,
+        fieldKey,
+        direction: "input",
+        kind: "test",
+        url,
+        method: "GET",
+        requestHeaders: stringHeaders,
+        responseStatus: fetchedStatus,
+        responseBody: fetchedText,
+        error: message,
+      });
       return NextResponse.json(
-        { error: `Falha ao buscar amostra da API: ${err instanceof Error ? err.message : "erro desconhecido"}` },
+        { error: `Falha ao buscar amostra da API: ${message}` },
         { status: 400 }
       );
     }

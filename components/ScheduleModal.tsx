@@ -32,6 +32,13 @@ export default function ScheduleModal({
   onClose: () => void;
 }) {
   const [editing, setEditing] = useState(!schedule);
+  // Whether to also turn on the recurring cron trigger, separate from just
+  // configuring the values/API sources below — those work for a manual run
+  // (RunSkillPanel's "Buscar dados da API") regardless of this. Defaults to
+  // on only when a real schedule already exists; a fresh config starts off,
+  // since opening this modal is now just as often "I want the manual button
+  // to work" as it is "I want this to run itself".
+  const [autoScheduleEnabled, setAutoScheduleEnabled] = useState(Boolean(schedule));
   const [frequency, setFrequency] = useState<SkillSchedule["frequency"]>(schedule?.frequency ?? "daily");
   const [time, setTime] = useState(schedule?.time ?? "09:00");
   const [dayOfWeek, setDayOfWeek] = useState(schedule?.dayOfWeek ?? 1);
@@ -65,6 +72,11 @@ export default function ScheduleModal({
   const [apiTesting, setApiTesting] = useState<Record<string, boolean>>({});
   const [apiFieldError, setApiFieldError] = useState<Record<string, string>>({});
   const [loadingSavedPreview, setLoadingSavedPreview] = useState(Boolean(scheduleApiSources));
+  // The API's own raw response, unmapped — for "what is this endpoint
+  // actually sending back", separate from apiPreview (the *mapped* value
+  // "Testar e gerar mapeamento" produces). No AI involved, just a fetch.
+  const [apiRawResponse, setApiRawResponse] = useState<Record<string, string>>({});
+  const [apiRawLoading, setApiRawLoading] = useState<Record<string, boolean>>({});
 
   // Shows what's already configured the moment the modal opens, instead of
   // making "Testar e gerar mapeamento" (which re-calls Claude) the only way
@@ -107,12 +119,45 @@ export default function ScheduleModal({
     setApiUrl((p) => ({ ...p, [key]: url }));
     setApiMapping((p) => ({ ...p, [key]: undefined }));
     setApiPreview((p) => ({ ...p, [key]: "" }));
+    setApiRawResponse((p) => ({ ...p, [key]: "" }));
   }
 
   function setApiAuthField(key: string, header: string) {
     setApiAuthHeader((p) => ({ ...p, [key]: header }));
     setApiMapping((p) => ({ ...p, [key]: undefined }));
     setApiPreview((p) => ({ ...p, [key]: "" }));
+    setApiRawResponse((p) => ({ ...p, [key]: "" }));
+  }
+
+  // No AI, no mapping — just fetches the URL and shows exactly what comes
+  // back, so a person can see the real field names/shape before deciding
+  // how to map them (or sanity-check why a mapping isn't producing what
+  // they expect).
+  async function viewRawResponse(field: InputField) {
+    setApiRawLoading((p) => ({ ...p, [field.key]: true }));
+    setApiFieldError((p) => ({ ...p, [field.key]: "" }));
+    try {
+      const authValue = apiAuthHeader[field.key]?.trim();
+      const res = await fetch(`/api/skills/${skillId}/schedule/raw-response`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fieldKey: field.key,
+          url: apiUrl[field.key]?.trim() ?? "",
+          headers: authValue ? { Authorization: authValue } : undefined,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? `Falha ao buscar (HTTP ${res.status})`);
+      setApiRawResponse((p) => ({ ...p, [field.key]: body.body }));
+    } catch (err) {
+      setApiFieldError((p) => ({
+        ...p,
+        [field.key]: err instanceof Error ? err.message : "Falha ao buscar resposta bruta",
+      }));
+    } finally {
+      setApiRawLoading((p) => ({ ...p, [field.key]: false }));
+    }
   }
 
   async function testApiField(field: InputField) {
@@ -174,7 +219,9 @@ export default function ScheduleModal({
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          schedule: { frequency, time, ...(frequency === "weekly" ? { dayOfWeek } : {}) },
+          schedule: autoScheduleEnabled
+            ? { frequency, time, ...(frequency === "weekly" ? { dayOfWeek } : {}) }
+            : null,
           scheduleInputValues: Object.keys(finalValues).length ? finalValues : null,
           scheduleApiSources: Object.keys(finalApiSources).length ? finalApiSources : null,
         }),
@@ -323,47 +370,71 @@ export default function ScheduleModal({
           ) : (
             <div className="space-y-3">
               <p className="text-xs text-muted">
-                Horário em UTC (não é o seu fuso local) — o servidor que roda isso não sabe seu
-                fuso.
+                Os valores e fontes de API configurados aqui embaixo ficam disponíveis tanto pro agendamento
+                automático (se ativar) quanto pro botão "Buscar dados da API" no painel de rodar manualmente —
+                não precisa ativar o agendamento só pra isso funcionar.
               </p>
-              <div className="flex flex-wrap gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-ink mb-1">Frequência</label>
-                  <select
-                    value={frequency}
-                    onChange={(e) => setFrequency(e.target.value as SkillSchedule["frequency"])}
-                    className="rounded-md border border-line px-2.5 py-1.5 text-sm"
-                  >
-                    <option value="daily">Diariamente</option>
-                    <option value="weekly">Semanalmente</option>
-                  </select>
-                </div>
-                {frequency === "weekly" && (
-                  <div>
-                    <label className="block text-xs font-medium text-ink mb-1">Dia da semana</label>
-                    <select
-                      value={dayOfWeek}
-                      onChange={(e) => setDayOfWeek(Number(e.target.value))}
-                      className="rounded-md border border-line px-2.5 py-1.5 text-sm"
-                    >
-                      {SCHEDULE_DAYS.map((day, i) => (
-                        <option key={day} value={i}>
-                          {day}
-                        </option>
-                      ))}
-                    </select>
+
+              <label className="flex items-start gap-2 text-sm text-ink cursor-pointer rounded-md border border-line p-2.5">
+                <input
+                  type="checkbox"
+                  checked={autoScheduleEnabled}
+                  onChange={(e) => setAutoScheduleEnabled(e.target.checked)}
+                  className="mt-0.5 accent-primary"
+                />
+                <span>
+                  <span className="font-medium">Também rodar automaticamente</span>
+                  <span className="block text-xs text-muted mt-0.5">
+                    Além de deixar os valores prontos, roda essa skill sozinha num horário fixo.
+                  </span>
+                </span>
+              </label>
+
+              {autoScheduleEnabled && (
+                <>
+                  <p className="text-xs text-muted">
+                    Horário em UTC (não é o seu fuso local) — o servidor que roda isso não sabe seu fuso.
+                  </p>
+                  <div className="flex flex-wrap gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-ink mb-1">Frequência</label>
+                      <select
+                        value={frequency}
+                        onChange={(e) => setFrequency(e.target.value as SkillSchedule["frequency"])}
+                        className="rounded-md border border-line px-2.5 py-1.5 text-sm"
+                      >
+                        <option value="daily">Diariamente</option>
+                        <option value="weekly">Semanalmente</option>
+                      </select>
+                    </div>
+                    {frequency === "weekly" && (
+                      <div>
+                        <label className="block text-xs font-medium text-ink mb-1">Dia da semana</label>
+                        <select
+                          value={dayOfWeek}
+                          onChange={(e) => setDayOfWeek(Number(e.target.value))}
+                          className="rounded-md border border-line px-2.5 py-1.5 text-sm"
+                        >
+                          {SCHEDULE_DAYS.map((day, i) => (
+                            <option key={day} value={i}>
+                              {day}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                    <div>
+                      <label className="block text-xs font-medium text-ink mb-1">Horário (UTC)</label>
+                      <input
+                        type="time"
+                        value={time}
+                        onChange={(e) => setTime(e.target.value)}
+                        className="rounded-md border border-line px-2.5 py-1.5 text-sm"
+                      />
+                    </div>
                   </div>
-                )}
-                <div>
-                  <label className="block text-xs font-medium text-ink mb-1">Horário (UTC)</label>
-                  <input
-                    type="time"
-                    value={time}
-                    onChange={(e) => setTime(e.target.value)}
-                    className="rounded-md border border-line px-2.5 py-1.5 text-sm"
-                  />
-                </div>
-              </div>
+                </>
+              )}
 
               {schedulableSchema.length > 0 && (
                 <div className="space-y-3">
@@ -425,7 +496,7 @@ export default function ScheduleModal({
                               {describeApiFieldMapping(apiMapping[field.key]!)}
                             </p>
                           )}
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <button
                               type="button"
                               onClick={() => testApiField(field)}
@@ -439,6 +510,16 @@ export default function ScheduleModal({
                               ) : null}
                               {apiMapping[field.key] ? "Gerar de novo" : "Testar e gerar mapeamento"}
                             </button>
+                            <button
+                              type="button"
+                              onClick={() => viewRawResponse(field)}
+                              disabled={!apiUrl[field.key]?.trim() || apiRawLoading[field.key]}
+                              title="Busca a URL e mostra a resposta exatamente como veio, sem mapear nada"
+                              className="inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-xs font-medium text-ink/80 hover:border-primary/30 hover:text-primary hover:bg-primary-soft transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {apiRawLoading[field.key] ? <Loader2 size={12} className="animate-spin" /> : null}
+                              Ver resposta bruta (JSON)
+                            </button>
                             {loadingSavedPreview && apiMapping[field.key] && (
                               <span className="inline-flex items-center gap-1 text-xs text-muted">
                                 <Loader2 size={11} className="animate-spin" />
@@ -448,6 +529,16 @@ export default function ScheduleModal({
                           </div>
                           {apiFieldError[field.key] && (
                             <p className="text-xs text-red-600">{apiFieldError[field.key]}</p>
+                          )}
+                          {apiRawResponse[field.key] && (
+                            <div>
+                              <p className="text-[10px] uppercase tracking-wide text-muted mb-1">
+                                Resposta bruta da API (sem mapear)
+                              </p>
+                              <pre className="whitespace-pre-wrap break-words rounded-md bg-canvas p-2 text-xs text-ink/80 max-h-48 overflow-y-auto">
+                                {apiRawResponse[field.key]}
+                              </pre>
+                            </div>
                           )}
                           {apiPreview[field.key] && (
                             <div>
@@ -488,7 +579,7 @@ export default function ScheduleModal({
                   className="inline-flex items-center gap-1.5 rounded-md bg-primary text-white px-3.5 py-1.5 text-sm font-medium hover:bg-primary-hover disabled:opacity-50 transition-colors"
                 >
                   {saving && <Loader2 size={13} className="animate-spin" />}
-                  {saving ? "Salvando…" : "Salvar agendamento"}
+                  {saving ? "Salvando…" : autoScheduleEnabled ? "Salvar agendamento" : "Salvar valores"}
                 </button>
                 <button
                   type="button"

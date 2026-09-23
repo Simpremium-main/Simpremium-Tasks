@@ -1164,12 +1164,64 @@ fetch was the cron job or "Testar agora" inside `ScheduleModal` — both of whic
 immediately. Asked for a lighter option: a **"Buscar dados da API"** button right on the normal run
 panel (`RunSkillPanel.tsx`) that fetches every `scheduleApiSources`-configured field fresh and fills
 the form, without running anything — the person still reviews (and can still edit) before clicking
-Rodar. Reuses the exact same `POST /api/skills/[id]/schedule/resolve-values` endpoint; no new
+Rodar. Shows exactly which URL each field is about to hit right next to the button, so it's never a
+guess. Reuses the exact same `POST /api/skills/[id]/schedule/resolve-values` endpoint; no new
 backend code needed, since `resolveScheduledInputValues` never actually looks at whether the skill
-has an active `schedule` — it just resolves `scheduleInputValues`/`scheduleApiSources`, which works
-identically whether or not a recurring schedule is turned on. The field still has to be configured
-once through `ScheduleModal` (that's still where the AI-assisted mapping gets generated and tested)
-— this just adds a second, faster place to actually use it.
+has an active `schedule` — it just resolves `scheduleInputValues`/`scheduleApiSources`.
+
+**Configuring a field's API source no longer requires turning on a recurring schedule.** The gap
+above (`resolveScheduledInputValues` doesn't care about `schedule`) used to be backend-only —
+`ScheduleModal`'s save button always sent a real `schedule` object, so the *only* way to reach the
+per-field "Buscar da API" config was through a modal that forced you to also pick a frequency/time,
+even for a skill you never wanted to run unattended. Fixed with an explicit **"Também rodar
+automaticamente"** checkbox: unchecked (the default for a fresh config), the frequency/time inputs
+stay hidden and `save()` sends `schedule: null` — the values/API sources still save and immediately
+work from the manual button. The skill card's/`ScheduleButton`'s pill now reads **"Configurada"**
+(not "Agendar") whenever values or API sources exist without an active schedule, so it doesn't look
+like nothing is set up.
+
+**"Ver resposta bruta (JSON)"** — a second button next to "Testar e gerar mapeamento", for seeing
+exactly what an endpoint returns before deciding how to map it (or debugging why a mapping produced
+an unexpected value). No AI call, no mapping — `POST /api/skills/[id]/schedule/raw-response` just
+fetches the URL and returns the body pretty-printed if it's valid JSON, as-is otherwise.
+
+### A log of every request this app makes to an external API
+
+`app/(app)/api-logs` (sidebar: **Logs de API**) — every outbound HTTP call the panel itself makes to
+an external system, both directions: an API-sourced input field being fetched (a real run, "Testar
+e gerar mapeamento"'s live sample, or "Ver resposta bruta"), and an output callback's real send.
+Built after realizing there was no way to see what an API actually sent back short of guessing from
+the mapped value — `lib/apiCallLog.ts`'s `logApiCall()` is called directly from every real fetch
+site (`lib/apiFieldSource.ts`'s `fetchApiFieldValue`, `lib/outputCallback.ts`'s
+`sendOutputCallback`, and the two schedule routes), recording the URL, method, masked headers, the
+request body (for a send), the response status/body, and any error — success or failure, same
+"every attempt leaves a trace" rule as execution history. Never throws: a logging failure can't ever
+break the real call it's describing. Response bodies are capped at 20KB (`MAX_LOGGED_BODY_CHARS`)
+— this is a debugging trail, not a data store, so a truncated tail is fine. Click a row for the full
+request/response, copyable.
+
+Needs one more table that a fresh `supabase/schema.sql` already includes:
+
+```sql
+create table if not exists api_call_logs (
+  id              uuid primary key default gen_random_uuid(),
+  skill_id        uuid references skills(id) on delete set null,
+  field_key       text,
+  direction       text not null check (direction in ('input', 'output')),
+  kind            text not null check (kind in ('fetch', 'test', 'raw', 'send')),
+  url             text not null,
+  method          text not null default 'GET',
+  request_headers jsonb,
+  request_body    text,
+  response_status integer,
+  response_body   text,
+  error           text,
+  created_at      timestamptz not null default now()
+);
+create index if not exists api_call_logs_created_at_idx on api_call_logs (created_at desc);
+create index if not exists api_call_logs_skill_id_idx on api_call_logs (skill_id);
+alter table api_call_logs enable row level security;
+```
 
 ### Sending a skill's result to another API when it finishes
 
