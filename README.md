@@ -713,6 +713,19 @@ A skill that expects `SKILL_SECRET_TIM_LOGIN_MUNDO` but the env var isn't actual
 gets a `needs_setup` execution with a clear message naming the missing variable — never a blank
 value silently typed into a real login form.
 
+**A second failure mode needed its own check.** The one above only fires once `systemSecrets`
+names the variable — but forgetting to actually save that list on the skill (having set the env var
+in Vercel, without adding its name under "Segredos do sistema") produced no error at all:
+`resolveSystemSecrets(null)` just returns `{}`, and `fillTemplate` (`lib/mask.ts`) silently leaves
+an unmatched `{{tim_login_mundo}}` as literal text — which is exactly what then got typed into a
+real form. `lib/systemSecrets.ts`'s `findUnconfiguredPlaceholders()` catches this: before resolving
+anything, it scans the prompt template for every `{{...}}` and flags any whose key is neither a
+real `inputSchema` field NOR a declared `systemSecrets` name, turning it into the same clear
+`needs_setup` error instead of a silent pass-through. Deliberately does *not* flag a known
+`inputSchema` field's placeholder just because it's currently blank (an untouched optional field
+staying literal is existing, expected behavior) — only a placeholder with no configured source at
+all, anywhere.
+
 Needs one more column, also in a fresh `supabase/schema.sql`:
 
 ```sql

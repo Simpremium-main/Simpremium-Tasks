@@ -60,3 +60,32 @@ export function resolveSystemSecrets(names: string[] | null): SystemSecretsResol
 
   return { values, schema };
 }
+
+/**
+ * Finds every {{placeholder}} in a prompt template that isn't backed by
+ * anything — not a real inputSchema field, and not a declared systemSecrets
+ * name either. Without this check, a typo (or forgetting to actually save
+ * the "Segredos do sistema" list after setting the env var in Vercel) fails
+ * silently: fillTemplate (lib/mask.ts) just leaves the placeholder as
+ * literal text, and that's exactly what ends up typed into whatever form
+ * it's meant to fill. Deliberately does NOT flag a known inputSchema
+ * field's placeholder just because it's currently blank — an untouched
+ * optional field staying literal is existing, expected behavior.
+ */
+export function findUnconfiguredPlaceholders(
+  template: string,
+  inputSchema: InputField[] | null,
+  systemSecretNames: string[] | null
+): string[] {
+  const matches = Array.from(template.matchAll(/\{\{\s*([\w.-]+)\s*\}\}/g)).map((m) => m[1]);
+  if (matches.length === 0) return [];
+
+  const schemaKeys = new Set((inputSchema ?? []).map((f) => f.key));
+  const secretKeys = new Set(
+    (systemSecretNames ?? [])
+      .filter((name) => name.startsWith(SYSTEM_SECRET_PREFIX))
+      .map((name) => name.slice(SYSTEM_SECRET_PREFIX.length).toLowerCase())
+  );
+
+  return Array.from(new Set(matches)).filter((key) => !schemaKeys.has(key) && !secretKeys.has(key));
+}

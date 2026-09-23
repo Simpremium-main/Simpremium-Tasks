@@ -6,7 +6,7 @@ import type { ClaudeChunkResult } from "./claude";
 import { sumTokenUsage } from "./cost";
 import { transcribeVideoUrl } from "./transcribe";
 import { buildCallbackBody, sendOutputCallback } from "./outputCallback";
-import { resolveSystemSecrets } from "./systemSecrets";
+import { findUnconfiguredPlaceholders, resolveSystemSecrets } from "./systemSecrets";
 import type {
   ConversationState,
   DispatchResult,
@@ -264,6 +264,28 @@ async function resolveInputValues(
   skill: Skill,
   inputValues: Record<string, string>
 ): Promise<{ values: Record<string, string> } | { error: DispatchResult }> {
+  // Catches the case that quietly broke a real run: a prompt referencing
+  // {{tim_login_mundo}}-style placeholder that isn't an inputSchema field
+  // AND isn't declared in systemSecrets either — a typo, or forgetting to
+  // actually save the "Segredos do sistema" list after setting the env var
+  // in Vercel. Without this, fillTemplate (lib/mask.ts) just leaves an
+  // unresolved {{...}} untouched — no error, nothing to notice — and that
+  // literal text is exactly what gets typed into whatever form it hits.
+  // A placeholder for a known inputSchema field left blank (optional field,
+  // never touched) is NOT flagged — that's existing, expected behavior.
+  const unconfigured = findUnconfiguredPlaceholders(skill.promptTemplate, skill.inputSchema, skill.systemSecrets);
+  if (unconfigured.length > 0) {
+    return {
+      error: {
+        status: "needs_setup",
+        error:
+          `O prompt usa ${unconfigured.map((k) => `{{${k}}}`).join(", ")}, que não é nem um campo de ` +
+          `input nem um segredo do sistema configurado nessa skill — adicione o campo em "Campos de ` +
+          `input", ou a variável em "Segredos do sistema" (Editar da skill), ou corrija o nome no prompt.`,
+      },
+    };
+  }
+
   let resolved = { ...inputValues };
 
   const videoFields = (skill.inputSchema ?? []).filter((f) => f.type === "video");
