@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import type { DragEvent } from "react";
 import { AlertTriangle, Archive, CheckSquare, Download, Loader2, Pin, Search, Trash2, X } from "lucide-react";
 import SkillCard from "./SkillCard";
-import type { InputField, SkillSchedule } from "@/lib/types";
+import type { ApiFieldSource, InputField, SkillSchedule } from "@/lib/types";
 
 export interface BoardSkill {
   id: string;
@@ -20,6 +20,7 @@ export interface BoardSkill {
   inputSchema: InputField[];
   schedule: SkillSchedule | null;
   scheduleInputValues: Record<string, string> | null;
+  scheduleApiSources: Record<string, ApiFieldSource> | null;
   scheduleLastRunAt: string | null;
   hasUnschedulableSecret: boolean;
   pinned: boolean;
@@ -253,6 +254,7 @@ export default function SkillsBoard({ skills: initialSkills }: { skills: BoardSk
           inputSchema={skill.inputSchema}
           schedule={skill.schedule}
           scheduleInputValues={skill.scheduleInputValues}
+          scheduleApiSources={skill.scheduleApiSources}
           scheduleLastRunAt={skill.scheduleLastRunAt}
           hasUnschedulableSecret={skill.hasUnschedulableSecret}
           pinned={skill.pinned}

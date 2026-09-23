@@ -1061,7 +1061,51 @@ alter table skills add column if not exists schedule_last_run_at timestamptz;
 alter table executions drop constraint executions_source_check;
 alter table executions add constraint executions_source_check check (source in ('cowork', 'claude', 'manual', 'scheduled'));
 alter table skills add column if not exists pinned boolean not null default false;
+alter table skills add column if not exists schedule_api_sources jsonb;
 ```
+
+### API-sourced scheduled inputs
+
+Each field in a schedule's "Valores pra cada execução agendada" is independently either a **Valor
+fixo** (the original saved-value behavior, `scheduleInputValues`) or **Buscar da API**
+(`scheduleApiSources`, `ApiFieldSource`/`ApiFieldMapping` in `lib/types.ts`) — fetched fresh, right
+before every scheduled run, instead of using a value saved once when the schedule was set up. Built
+for the case a field's real value lives in another system the person owns (e.g. "which lines still
+need activating") and shouldn't have to be copy-pasted in by hand each time.
+
+The mapping from a raw API response to the field's actual text value is AI-generated once, from a
+live sample, not hand-written as a template — mirroring the existing onboarding flow
+(`lib/parseSkillPost.ts`)'s "let Claude figure out the shape" approach, since every API's response
+shape is different. `components/ScheduleModal.tsx`'s **"Testar e gerar mapeamento"** button calls
+`POST /api/skills/[id]/schedule/preview-field`, which fetches a live sample from the URL server-side
+(avoiding CORS, and keeping any auth header off the client past that one call), asks
+`lib/proposeApiFieldMapping.ts` for a mapping (Claude, `output_config.format: json_schema`, same
+technique as skill-post extraction), and shows the resulting value as a preview before anything is
+saved — same "preview to confirm" pattern the onboarding flow itself uses. No `ANTHROPIC_API_KEY`
+configured means this step surfaces a clear "needs setup" error rather than guessing at a mapping,
+same as everywhere else in this app.
+
+The mapping itself (`ApiFieldMapping`) is a small, constrained JSON spec, not generated code — a
+`"single"` value at a dot/bracket path, or a `"list"` mapping that reads an array (optionally
+filtered by one field's exact value, e.g. only rows whose `status` is `"pendente"`) and formats each
+item through a `"{fieldName}, {fieldName}"`-style template into one line, joined with `\n` by
+default. `lib/apiFieldSource.ts`'s `applyApiFieldMapping()` applies it deterministically — the AI is
+only involved in generating the mapping once, never again on the actual scheduled runs that use it.
+
+`lib/schedule.ts`'s `resolveScheduledInputValues(skill)` is the one place that actually resolves a
+schedule's real input values (static + fresh API fetches merged together) — used by both the cron
+route and **Testar agora** (via `POST /api/skills/[id]/schedule/resolve-values`), so a manual test
+genuinely exercises the same API sources a real scheduled run would, not just the saved static
+values. A fetch/mapping failure there becomes a real `"error"` execution (`createExecution` called
+directly, since there's no prompt to dispatch yet) rather than a silent skip — same "every attempt
+gets recorded" rule as everywhere else.
+
+Only a single optional `Authorization` header is supported per API source (the common case — a
+bearer/API-key header), not a general headers editor. Its value is stored in full in the DB (unlike
+a skill's own `secret`-typed input fields, which are never persisted at all) since the cron job
+genuinely needs it to keep working unattended — but it's masked (`lib/mask.ts`'s `maskValue`) in
+`GET /api/skills/export`'s backup output, since a downloaded file can end up in more places than the
+live dashboard.
 
 ### Agendamentos overview page, and flagging a scheduled run that failed
 

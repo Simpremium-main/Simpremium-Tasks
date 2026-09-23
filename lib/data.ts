@@ -3,6 +3,7 @@ import type { PostgrestError } from "@supabase/supabase-js";
 import { getSupabase } from "./supabaseClient";
 import { sumTokenUsage } from "./cost";
 import type {
+  ApiFieldSource,
   ConversationState,
   Execution,
   ExecutionFile,
@@ -55,6 +56,7 @@ function mapSkillRow(row: Record<string, unknown>): Skill {
     tags: (row.tags as string[] | null) ?? [],
     schedule: (row.schedule as SkillSchedule | null) ?? null,
     scheduleInputValues: (row.schedule_input_values as Record<string, string> | null) ?? null,
+    scheduleApiSources: (row.schedule_api_sources as Record<string, ApiFieldSource> | null) ?? null,
     scheduleLastRunAt: row.schedule_last_run_at ? new Date(row.schedule_last_run_at as string) : null,
     pinned: Boolean(row.pinned),
     shareToken: (row.share_token as string | null) ?? null,
@@ -329,6 +331,7 @@ export interface UpdateSkillInput {
   tags?: string[];
   schedule?: SkillSchedule | null;
   scheduleInputValues?: Record<string, string> | null;
+  scheduleApiSources?: Record<string, ApiFieldSource> | null;
   scheduleLastRunAt?: Date;
   pinned?: boolean;
   position?: number;
@@ -378,6 +381,7 @@ export async function updateSkill(
   if (patch.tags !== undefined) row.tags = patch.tags;
   if (patch.schedule !== undefined) row.schedule = patch.schedule;
   if (patch.scheduleInputValues !== undefined) row.schedule_input_values = patch.scheduleInputValues;
+  if (patch.scheduleApiSources !== undefined) row.schedule_api_sources = patch.scheduleApiSources;
   if (patch.scheduleLastRunAt !== undefined) row.schedule_last_run_at = patch.scheduleLastRunAt.toISOString();
   if (patch.pinned !== undefined) row.pinned = patch.pinned;
   if (patch.position !== undefined) row.position = patch.position;

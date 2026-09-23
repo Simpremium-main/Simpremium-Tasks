@@ -1,4 +1,5 @@
-import type { InputField, SkillSchedule } from "./types";
+import { fetchApiFieldValue } from "./apiFieldSource";
+import type { InputField, Skill, SkillSchedule } from "./types";
 
 /**
  * Whether `schedule` should have already fired as of `now`, given it last
@@ -34,6 +35,34 @@ export function isDue(schedule: SkillSchedule, now: Date, lastRunAt: Date | null
  *  skipping an optional field. */
 export function hasUnschedulableSecret(schema: InputField[]): boolean {
   return schema.some((f) => f.type === "secret" && f.required);
+}
+
+/**
+ * The actual input values a scheduled run should use right now — static
+ * saved values (scheduleInputValues) plus any API-sourced fields
+ * (scheduleApiSources) fetched fresh, this instant. Shared by the cron
+ * route and "Testar agora" (via POST /api/skills/[id]/schedule/resolve-values)
+ * so both use identical logic — a manual test genuinely reflects what the
+ * real scheduled run would do, API sources included. On any API field
+ * failure, stops and returns the error rather than a partial result: same
+ * "never simulate a result" rule as everywhere else in this app.
+ */
+export async function resolveScheduledInputValues(
+  skill: Skill
+): Promise<{ values: Record<string, string> } | { error: string }> {
+  const values: Record<string, string> = { ...(skill.scheduleInputValues ?? {}) };
+  for (const [key, source] of Object.entries(skill.scheduleApiSources ?? {})) {
+    try {
+      values[key] = await fetchApiFieldValue(source);
+    } catch (err) {
+      return {
+        error: `Falha ao buscar "${key}" da API (${source.url}): ${
+          err instanceof Error ? err.message : "erro desconhecido"
+        }`,
+      };
+    }
+  }
+  return { values };
 }
 
 export const SCHEDULE_DAYS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];

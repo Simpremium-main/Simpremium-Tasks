@@ -91,6 +91,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         : null;
   }
 
+  if ("scheduleApiSources" in body) {
+    patch.scheduleApiSources =
+      body.scheduleApiSources && typeof body.scheduleApiSources === "object"
+        ? body.scheduleApiSources
+        : null;
+  }
+
   try {
     const user = await getCurrentUser();
     const skill = await updateSkill(params.id, patch, user?.displayName ?? null);

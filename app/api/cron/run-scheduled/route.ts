@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { listScheduledSkills, updateSkill } from "@/lib/data";
+import { createExecution, listScheduledSkills, updateSkill } from "@/lib/data";
 import { runSkill } from "@/lib/runSkill";
-import { isDue, hasUnschedulableSecret } from "@/lib/schedule";
+import { isDue, hasUnschedulableSecret, resolveScheduledInputValues } from "@/lib/schedule";
 import { notifyScheduleFailure } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
@@ -53,12 +53,34 @@ export async function GET(req: NextRequest) {
       await updateSkill(skill.id, { scheduleLastRunAt: now });
 
       try {
-        const execution = await runSkill(
-          skill,
-          skill.scheduleInputValues ?? {},
-          "Agendamento",
-          "scheduled"
-        );
+        // API-sourced fields (lib/apiFieldSource.ts) are resolved fresh
+        // right here, every time — never cached, never resolved ahead of
+        // time — so a scheduled run always reflects whatever the external
+        // system says right now. A fetch/mapping failure becomes a real
+        // "error" execution (via createExecution directly, bypassing
+        // runSkill/dispatch entirely since there's no real prompt to send
+        // yet) rather than a silent skip — this app's own rule that every
+        // attempt gets recorded applies here just as much as to a dispatch
+        // failure.
+        const resolved = await resolveScheduledInputValues(skill);
+        if ("error" in resolved) {
+          const execution = await createExecution({
+            skillId: skill.id,
+            status: "error",
+            source: "scheduled",
+            inputValues: skill.scheduleInputValues ?? null,
+            promptSnapshot: "(execução não chegou a montar o prompt — falhou buscando valores via API antes de rodar)",
+            result: null,
+            error: resolved.error,
+            files: null,
+            ranBy: "Agendamento",
+          });
+          results.push({ skillId: skill.id, name: skill.name, ran: true, status: "error" });
+          await notifyScheduleFailure(skill, execution);
+          continue;
+        }
+
+        const execution = await runSkill(skill, resolved.values, "Agendamento", "scheduled");
         results.push({ skillId: skill.id, name: skill.name, ran: true, status: execution.status });
         if (execution.status === "error" || execution.status === "needs_setup") {
           await notifyScheduleFailure(skill, execution);

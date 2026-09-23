@@ -82,6 +82,7 @@ export default async function DashboardPage() {
     inputSchema: s.inputSchema ?? [],
     schedule: s.schedule,
     scheduleInputValues: s.scheduleInputValues,
+    scheduleApiSources: s.scheduleApiSources,
     scheduleLastRunAt: s.scheduleLastRunAt?.toISOString() ?? null,
     hasUnschedulableSecret: hasUnschedulableSecret(s.inputSchema ?? []),
     pinned: s.pinned,

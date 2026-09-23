@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, CalendarClock, Loader2, PlayCircle, Trash2, X } from "lucide-react";
+import { AlertTriangle, CalendarClock, Check, Loader2, PlayCircle, Trash2, X } from "lucide-react";
 import DynamicForm from "./DynamicForm";
 import { SCHEDULE_DAYS, describeSchedule } from "@/lib/schedule";
-import type { InputField, SkillSchedule } from "@/lib/types";
+import type { ApiFieldMapping, ApiFieldSource, InputField, SkillSchedule } from "@/lib/types";
+
+type SourceMode = "static" | "api";
 
 export default function ScheduleModal({
   skillId,
@@ -13,6 +15,7 @@ export default function ScheduleModal({
   inputSchema,
   schedule,
   scheduleInputValues,
+  scheduleApiSources,
   scheduleLastRunAt,
   hasUnschedulableSecret,
   onClose,
@@ -22,6 +25,7 @@ export default function ScheduleModal({
   inputSchema: InputField[];
   schedule: SkillSchedule | null;
   scheduleInputValues: Record<string, string> | null;
+  scheduleApiSources: Record<string, ApiFieldSource> | null;
   scheduleLastRunAt: string | null;
   hasUnschedulableSecret: boolean;
   onClose: () => void;
@@ -36,22 +40,104 @@ export default function ScheduleModal({
   const [testing, setTesting] = useState(false);
 
   const schedulableSchema = inputSchema.filter((f) => f.type !== "secret");
-  const missingRequired = schedulableSchema.filter((f) => f.required && !values[f.key]?.trim());
+
+  // Per-field: a fixed saved value (existing behavior) or fetched fresh
+  // from an external API right before each scheduled run (lib/apiFieldSource.ts).
+  // A field lives in exactly one of `values` (static) or the api* state
+  // below — never both — enforced in save() below.
+  const [sourceMode, setSourceMode] = useState<Record<string, SourceMode>>(() =>
+    Object.fromEntries(schedulableSchema.map((f) => [f.key, scheduleApiSources?.[f.key] ? "api" : "static"]))
+  );
+  const [apiUrl, setApiUrl] = useState<Record<string, string>>(() =>
+    Object.fromEntries(schedulableSchema.map((f) => [f.key, scheduleApiSources?.[f.key]?.url ?? ""]))
+  );
+  const [apiAuthHeader, setApiAuthHeader] = useState<Record<string, string>>(() =>
+    Object.fromEntries(schedulableSchema.map((f) => [f.key, scheduleApiSources?.[f.key]?.headers?.Authorization ?? ""]))
+  );
+  // Only set once "Testar e gerar mapeamento" succeeds for the field's
+  // *current* url/header — cleared again whenever either changes, so a
+  // stale mapping can never be saved unverified against new values.
+  const [apiMapping, setApiMapping] = useState<Record<string, ApiFieldMapping | undefined>>(() =>
+    Object.fromEntries(schedulableSchema.map((f) => [f.key, scheduleApiSources?.[f.key]?.mapping]))
+  );
+  const [apiPreview, setApiPreview] = useState<Record<string, string>>({});
+  const [apiTesting, setApiTesting] = useState<Record<string, boolean>>({});
+  const [apiFieldError, setApiFieldError] = useState<Record<string, string>>({});
+
+  function setApiUrlField(key: string, url: string) {
+    setApiUrl((p) => ({ ...p, [key]: url }));
+    setApiMapping((p) => ({ ...p, [key]: undefined }));
+    setApiPreview((p) => ({ ...p, [key]: "" }));
+  }
+
+  function setApiAuthField(key: string, header: string) {
+    setApiAuthHeader((p) => ({ ...p, [key]: header }));
+    setApiMapping((p) => ({ ...p, [key]: undefined }));
+    setApiPreview((p) => ({ ...p, [key]: "" }));
+  }
+
+  async function testApiField(field: InputField) {
+    setApiTesting((p) => ({ ...p, [field.key]: true }));
+    setApiFieldError((p) => ({ ...p, [field.key]: "" }));
+    try {
+      const authValue = apiAuthHeader[field.key]?.trim();
+      const res = await fetch(`/api/skills/${skillId}/schedule/preview-field`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fieldKey: field.key,
+          url: apiUrl[field.key]?.trim() ?? "",
+          headers: authValue ? { Authorization: authValue } : undefined,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? `Falha ao testar (HTTP ${res.status})`);
+      setApiMapping((p) => ({ ...p, [field.key]: body.mapping }));
+      setApiPreview((p) => ({ ...p, [field.key]: body.preview }));
+    } catch (err) {
+      setApiFieldError((p) => ({ ...p, [field.key]: err instanceof Error ? err.message : "Falha ao testar" }));
+    } finally {
+      setApiTesting((p) => ({ ...p, [field.key]: false }));
+    }
+  }
+
+  const staticFields = schedulableSchema.filter((f) => sourceMode[f.key] !== "api");
+  const apiFields = schedulableSchema.filter((f) => sourceMode[f.key] === "api");
+  const missingRequired = staticFields.filter((f) => f.required && !values[f.key]?.trim());
+  const untestedApiFields = apiFields.filter((f) => !apiUrl[f.key]?.trim() || !apiMapping[f.key]);
 
   async function save() {
     if (missingRequired.length > 0) {
       setError(`Preencha: ${missingRequired.map((f) => f.label).join(", ")}`);
       return;
     }
+    if (untestedApiFields.length > 0) {
+      setError(`Teste a origem da API pra: ${untestedApiFields.map((f) => f.label).join(", ")}`);
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
+      const finalValues: Record<string, string> = {};
+      for (const f of staticFields) if (values[f.key]) finalValues[f.key] = values[f.key];
+
+      const finalApiSources: Record<string, ApiFieldSource> = {};
+      for (const f of apiFields) {
+        const authValue = apiAuthHeader[f.key]?.trim();
+        finalApiSources[f.key] = {
+          url: apiUrl[f.key].trim(),
+          headers: authValue ? { Authorization: authValue } : null,
+          mapping: apiMapping[f.key]!,
+        };
+      }
+
       const res = await fetch(`/api/skills/${skillId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           schedule: { frequency, time, ...(frequency === "weekly" ? { dayOfWeek } : {}) },
-          scheduleInputValues: Object.keys(values).length ? values : null,
+          scheduleInputValues: Object.keys(finalValues).length ? finalValues : null,
+          scheduleApiSources: Object.keys(finalApiSources).length ? finalApiSources : null,
         }),
       });
       if (!res.ok) {
@@ -89,10 +175,20 @@ export default function ScheduleModal({
     setTesting(true);
     setError(null);
     try {
+      // Resolves API-sourced fields fresh first (same helper the real
+      // cron-driven run uses — lib/schedule.ts's resolveScheduledInputValues)
+      // so this genuinely exercises what a scheduled run would send, not
+      // just the static saved values.
+      const resolveRes = await fetch(`/api/skills/${skillId}/schedule/resolve-values`, { method: "POST" });
+      const resolveBody = await resolveRes.json().catch(() => ({}));
+      if (!resolveRes.ok) {
+        throw new Error(resolveBody.error ?? `Falha ao resolver valores (HTTP ${resolveRes.status})`);
+      }
+
       const res = await fetch(`/api/skills/${skillId}/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ inputValues: scheduleInputValues ?? {} }),
+        body: JSON.stringify({ inputValues: resolveBody.values ?? scheduleInputValues ?? {} }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -231,15 +327,92 @@ export default function ScheduleModal({
               </div>
 
               {schedulableSchema.length > 0 && (
-                <div>
-                  <p className="text-xs font-medium text-ink mb-2">
-                    Valores padrão pra cada execução agendada
-                  </p>
-                  <DynamicForm
-                    schema={schedulableSchema}
-                    values={values}
-                    onChange={(k, v) => setValues((p) => ({ ...p, [k]: v }))}
-                  />
+                <div className="space-y-3">
+                  <p className="text-xs font-medium text-ink">Valores pra cada execução agendada</p>
+                  {schedulableSchema.map((field) => (
+                    <div key={field.key} className="rounded-md border border-line p-2.5">
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="text-xs font-medium text-ink/70">{field.label}</span>
+                        <div className="flex items-center gap-1 rounded-md border border-line bg-canvas p-0.5">
+                          <button
+                            type="button"
+                            onClick={() => setSourceMode((p) => ({ ...p, [field.key]: "static" }))}
+                            className={`rounded px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                              sourceMode[field.key] !== "api"
+                                ? "bg-primary text-white"
+                                : "text-muted hover:bg-surface"
+                            }`}
+                          >
+                            Valor fixo
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSourceMode((p) => ({ ...p, [field.key]: "api" }))}
+                            className={`rounded px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                              sourceMode[field.key] === "api"
+                                ? "bg-primary text-white"
+                                : "text-muted hover:bg-surface"
+                            }`}
+                          >
+                            Buscar da API
+                          </button>
+                        </div>
+                      </div>
+
+                      {sourceMode[field.key] !== "api" ? (
+                        <DynamicForm
+                          schema={[field]}
+                          values={values}
+                          onChange={(k, v) => setValues((p) => ({ ...p, [k]: v }))}
+                        />
+                      ) : (
+                        <div className="space-y-2">
+                          <input
+                            type="url"
+                            value={apiUrl[field.key] ?? ""}
+                            onChange={(e) => setApiUrlField(field.key, e.target.value)}
+                            placeholder="https://sua-outra-api.com/endpoint"
+                            className="w-full rounded-md border border-line px-2.5 py-1.5 text-sm"
+                          />
+                          <input
+                            type="text"
+                            value={apiAuthHeader[field.key] ?? ""}
+                            onChange={(e) => setApiAuthField(field.key, e.target.value)}
+                            placeholder="Header Authorization (opcional) — ex: Bearer abc123"
+                            className="w-full rounded-md border border-line px-2.5 py-1.5 text-sm"
+                          />
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => testApiField(field)}
+                              disabled={!apiUrl[field.key]?.trim() || apiTesting[field.key]}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-xs font-medium text-ink/80 hover:border-primary/30 hover:text-primary hover:bg-primary-soft transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {apiTesting[field.key] ? (
+                                <Loader2 size={12} className="animate-spin" />
+                              ) : apiMapping[field.key] ? (
+                                <Check size={12} className="text-emerald-600" />
+                              ) : null}
+                              {apiMapping[field.key] ? "Mapeamento pronto" : "Testar e gerar mapeamento"}
+                            </button>
+                          </div>
+                          {apiFieldError[field.key] && (
+                            <p className="text-xs text-red-600">{apiFieldError[field.key]}</p>
+                          )}
+                          {apiPreview[field.key] && (
+                            <div>
+                              <p className="text-[10px] uppercase tracking-wide text-muted mb-1">
+                                Prévia do valor (a partir da amostra buscada agora)
+                              </p>
+                              <pre className="whitespace-pre-wrap break-words rounded-md bg-canvas p-2 text-xs text-ink/80 max-h-32 overflow-y-auto">
+                                {apiPreview[field.key]}
+                              </pre>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
 

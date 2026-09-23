@@ -28,6 +28,7 @@ create table if not exists skills (
   tags            text[] not null default '{}',
   schedule        jsonb, -- SkillSchedule | null, see lib/types.ts — null means not scheduled
   schedule_input_values jsonb, -- Record<string, string> | null — saved defaults for a scheduled run's form, never includes secret-typed fields
+  schedule_api_sources jsonb, -- Record<string, ApiFieldSource> | null — per-field alternative to schedule_input_values: fetch fresh from an external API right before each scheduled run, see lib/types.ts
   schedule_last_run_at timestamptz,
   pinned          boolean not null default false, -- personal dashboard preference, not part of the skill's definition (not carried by export/import)
   share_token     text unique, -- null means not shared; set means /share/<token> shows a read-only public view of this skill

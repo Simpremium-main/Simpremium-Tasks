@@ -104,6 +104,40 @@ export interface SkillSchedule {
 }
 
 /**
+ * How to turn a raw external API response into one input field's text
+ * value, applied deterministically (no AI call) on every scheduled run —
+ * lib/apiFieldSource.ts's applyApiFieldMapping(). Generated once, by AI,
+ * from a live sample response (lib/proposeApiFieldMapping.ts), then saved
+ * and reused as-is; see components/ScheduleModal.tsx's "Testar e gerar
+ * mapeamento" step.
+ *
+ * "single" reaches one scalar value via a dot/bracket path ("" = the root
+ * value itself). "list" is for a textarea field that wants one line per
+ * item from an array in the response — each item optionally filtered by an
+ * exact field match first (e.g. only rows whose "status" field equals
+ * "pendente"), then formatted through itemTemplate's "{fieldName}"
+ * placeholders (matching the item object's own keys) and joined (default a
+ * newline).
+ */
+export type ApiFieldMapping =
+  | { kind: "single"; path: string }
+  | {
+      kind: "list";
+      listPath: string;
+      filter: { field: string; equals: string } | null;
+      itemTemplate: string;
+      join: string;
+    };
+
+export interface ApiFieldSource {
+  url: string;
+  /** Just enough for the common case (a bearer/API-key header) — not a
+   *  general headers editor. See components/ScheduleModal.tsx. */
+  headers?: Record<string, string> | null;
+  mapping: ApiFieldMapping;
+}
+
+/**
  * Saved mid-flight state for a Claude-direct run that didn't finish in one
  * HTTP request. `messages` is the raw Anthropic conversation history
  * (assistant turns included) so the next chunk can resume exactly where
@@ -140,6 +174,12 @@ export interface Skill {
    *  are never included (see lib/schedule.ts's hasUnschedulableSecret),
    *  since there's nowhere safe to store them for an unattended run. */
   scheduleInputValues: Record<string, string> | null;
+  /** Per-field alternative to scheduleInputValues: instead of a fixed saved
+   *  value, fetch a fresh value from an external API right before each
+   *  scheduled run (lib/apiFieldSource.ts). A field key appears in at most
+   *  one of scheduleInputValues / scheduleApiSources, never both — see
+   *  components/ScheduleModal.tsx's save() for how that's enforced. */
+  scheduleApiSources: Record<string, ApiFieldSource> | null;
   scheduleLastRunAt: Date | null;
   /** Personal dashboard-organization preference — pinned skills sort to the
    *  top of the skills list. Not part of the skill's definition, so it's

@@ -58,6 +58,7 @@ export default async function SkillDetailPage({ params }: { params: { id: string
               inputSchema={skill.inputSchema ?? []}
               schedule={skill.schedule}
               scheduleInputValues={skill.scheduleInputValues}
+              scheduleApiSources={skill.scheduleApiSources}
               scheduleLastRunAt={skill.scheduleLastRunAt?.toISOString() ?? null}
               hasUnschedulableSecret={hasUnschedulableSecret(skill.inputSchema ?? [])}
             />

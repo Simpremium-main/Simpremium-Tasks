@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import StatusBadge from "./StatusBadge";
 import ScheduleModal from "./ScheduleModal";
-import type { InputField, SkillSchedule } from "@/lib/types";
+import type { ApiFieldSource, InputField, SkillSchedule } from "@/lib/types";
 
 interface SkillCardProps {
   id: string;
@@ -33,6 +33,7 @@ interface SkillCardProps {
   inputSchema: InputField[];
   schedule: SkillSchedule | null;
   scheduleInputValues: Record<string, string> | null;
+  scheduleApiSources: Record<string, ApiFieldSource> | null;
   scheduleLastRunAt: string | null;
   hasUnschedulableSecret: boolean;
   pinned: boolean;
@@ -57,6 +58,7 @@ export default function SkillCard({
   inputSchema,
   schedule,
   scheduleInputValues,
+  scheduleApiSources,
   scheduleLastRunAt,
   hasUnschedulableSecret,
   pinned,
@@ -210,6 +212,7 @@ export default function SkillCard({
           inputSchema={inputSchema}
           schedule={schedule}
           scheduleInputValues={scheduleInputValues}
+          scheduleApiSources={scheduleApiSources}
           scheduleLastRunAt={scheduleLastRunAt}
           hasUnschedulableSecret={hasUnschedulableSecret}
           onClose={() => setScheduleOpen(false)}

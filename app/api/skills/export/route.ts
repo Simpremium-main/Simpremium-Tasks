@@ -1,7 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listSkills } from "@/lib/data";
+import { maskValue } from "@/lib/mask";
+import type { ApiFieldSource } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+// A backup file can end up in more places than the live dashboard (saved
+// locally, shared, etc.), so unlike the live DB — where any Authorization
+// header on an API source is stored in full to actually work — this masks
+// it, same as every other credential this app ever writes to something
+// that leaves the server. Import doesn't restore schedule/scheduleApiSources
+// at all (see app/api/skills/import/route.ts), so this is for manual
+// reference/restoration only, not a round-trippable secret.
+function maskApiSources(
+  sources: Record<string, ApiFieldSource> | null
+): Record<string, ApiFieldSource> | null {
+  if (!sources) return null;
+  return Object.fromEntries(
+    Object.entries(sources).map(([key, source]) => [
+      key,
+      {
+        ...source,
+        headers: source.headers
+          ? Object.fromEntries(Object.entries(source.headers).map(([h, v]) => [h, maskValue(v)]))
+          : source.headers,
+      },
+    ])
+  );
+}
 
 /**
  * A skill-definitions backup, not a full data export — no execution history,
@@ -33,6 +59,7 @@ export async function GET(req: NextRequest) {
       tags: skill.tags,
       schedule: skill.schedule,
       scheduleInputValues: skill.scheduleInputValues,
+      scheduleApiSources: maskApiSources(skill.scheduleApiSources),
       createdAt: skill.createdAt.toISOString(),
       updatedAt: skill.updatedAt.toISOString(),
     }));
