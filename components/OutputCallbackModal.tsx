@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle, Check, Loader2, Send, Trash2, X } from "lucide-react";
+import { describeOutputCallback } from "@/lib/outputCallback";
 import type { OutputCallback } from "@/lib/types";
 
 export default function OutputCallbackModal({
@@ -29,6 +30,37 @@ export default function OutputCallbackModal({
   const [testError, setTestError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadingSavedPreview, setLoadingSavedPreview] = useState(Boolean(outputCallback));
+
+  // Shows what's already sent the moment the modal opens, instead of
+  // making "Testar e gerar mapeamento" (which re-calls Claude) the only
+  // way to see it — applies the *existing* saved mapping to the skill's
+  // most recent successful run, no AI involved, so this is free to call
+  // on every open.
+  useEffect(() => {
+    if (!outputCallback) {
+      setLoadingSavedPreview(false);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/skills/${skillId}/output-callback/current-preview`, { method: "POST" })
+      .then((res) => res.json().catch(() => ({})).then((body) => ({ ok: res.ok, body })))
+      .then(({ ok, body }) => {
+        if (cancelled) return;
+        if (ok) setPreviewBody(JSON.stringify(body.previewBody, null, 2));
+        else setTestError(body.error ?? "Falha ao atualizar prévia");
+      })
+      .catch(() => {
+        // Best-effort — the saved config still shows, just without a fresh preview.
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingSavedPreview(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function clearMapping() {
     setMapping(null);
@@ -149,6 +181,28 @@ export default function OutputCallbackModal({
                 Depois de cada execução com sucesso, envia os dados dessa skill pra{" "}
                 <span className="font-mono text-xs break-all">{outputCallback.url}</span> ({outputCallback.method}).
               </p>
+              <ul className="mt-2 space-y-0.5 text-xs text-ink/70">
+                {describeOutputCallback(outputCallback).map((line, i) => (
+                  <li key={i}>• {line}</li>
+                ))}
+              </ul>
+              {loadingSavedPreview && (
+                <p className="mt-2 inline-flex items-center gap-1 text-xs text-muted">
+                  <Loader2 size={11} className="animate-spin" />
+                  carregando prévia…
+                </p>
+              )}
+              {testError && !loadingSavedPreview && <p className="mt-2 text-xs text-red-600">{testError}</p>}
+              {previewBody && !loadingSavedPreview && (
+                <div className="mt-2">
+                  <p className="text-[10px] uppercase tracking-wide text-muted mb-1">
+                    Prévia do corpo enviado (execução com sucesso mais recente)
+                  </p>
+                  <pre className="whitespace-pre-wrap break-words rounded-md bg-canvas p-2 text-xs text-ink/80 max-h-40 overflow-y-auto">
+                    {previewBody}
+                  </pre>
+                </div>
+              )}
               {error && (
                 <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md p-3 mt-3">
                   <AlertTriangle size={15} className="shrink-0 mt-0.5" />

@@ -41,6 +41,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     body && typeof body.inputValues === "object" && body.inputValues !== null
       ? body.inputValues
       : {};
+  const dryRun = Boolean(body?.dryRun);
 
   const user = await getCurrentUser();
 
@@ -53,7 +54,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           user?.displayName ?? null,
           (chunk) => {
             controller.enqueue(sseFormat("delta", { text: chunk }));
-          }
+          },
+          dryRun
         );
         controller.enqueue(sseFormat(done ? "done" : "continue", execution));
       } catch (err) {

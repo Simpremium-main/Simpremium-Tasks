@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle, CalendarClock, Check, Loader2, PlayCircle, Trash2, X } from "lucide-react";
 import DynamicForm from "./DynamicForm";
 import { SCHEDULE_DAYS, describeSchedule } from "@/lib/schedule";
+import { describeApiFieldMapping } from "@/lib/apiFieldSource";
 import type { ApiFieldMapping, ApiFieldSource, InputField, SkillSchedule } from "@/lib/types";
 
 type SourceMode = "static" | "api";
@@ -63,6 +64,44 @@ export default function ScheduleModal({
   const [apiPreview, setApiPreview] = useState<Record<string, string>>({});
   const [apiTesting, setApiTesting] = useState<Record<string, boolean>>({});
   const [apiFieldError, setApiFieldError] = useState<Record<string, string>>({});
+  const [loadingSavedPreview, setLoadingSavedPreview] = useState(Boolean(scheduleApiSources));
+
+  // Shows what's already configured the moment the modal opens, instead of
+  // making "Testar e gerar mapeamento" (which re-calls Claude) the only way
+  // to see it again — re-resolves every saved API field with its *existing*
+  // mapping (no AI involved, same resolveScheduledInputValues the cron
+  // route and "Testar agora" use), so this is free to call on every open.
+  useEffect(() => {
+    if (!scheduleApiSources || Object.keys(scheduleApiSources).length === 0) {
+      setLoadingSavedPreview(false);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/skills/${skillId}/schedule/resolve-values`, { method: "POST" })
+      .then((res) => res.json().catch(() => ({})).then((body) => ({ ok: res.ok, body })))
+      .then(({ ok, body }) => {
+        if (cancelled) return;
+        if (ok && body.values) {
+          setApiPreview((prev) => ({ ...prev, ...body.values }));
+        } else if (!ok) {
+          setApiFieldError((prev) => {
+            const next = { ...prev };
+            for (const key of Object.keys(scheduleApiSources)) next[key] = body.error ?? "Falha ao atualizar prévia";
+            return next;
+          });
+        }
+      })
+      .catch(() => {
+        // Best-effort — the saved config still shows, just without a fresh preview.
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingSavedPreview(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function setApiUrlField(key: string, url: string) {
     setApiUrl((p) => ({ ...p, [key]: url }));
@@ -381,6 +420,11 @@ export default function ScheduleModal({
                             placeholder="Header Authorization (opcional) — ex: Bearer abc123"
                             className="w-full rounded-md border border-line px-2.5 py-1.5 text-sm"
                           />
+                          {apiMapping[field.key] && (
+                            <p className="text-xs text-ink/70 bg-canvas rounded-md px-2.5 py-1.5">
+                              {describeApiFieldMapping(apiMapping[field.key]!)}
+                            </p>
+                          )}
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
@@ -393,8 +437,14 @@ export default function ScheduleModal({
                               ) : apiMapping[field.key] ? (
                                 <Check size={12} className="text-emerald-600" />
                               ) : null}
-                              {apiMapping[field.key] ? "Mapeamento pronto" : "Testar e gerar mapeamento"}
+                              {apiMapping[field.key] ? "Gerar de novo" : "Testar e gerar mapeamento"}
                             </button>
+                            {loadingSavedPreview && apiMapping[field.key] && (
+                              <span className="inline-flex items-center gap-1 text-xs text-muted">
+                                <Loader2 size={11} className="animate-spin" />
+                                atualizando prévia…
+                              </span>
+                            )}
                           </div>
                           {apiFieldError[field.key] && (
                             <p className="text-xs text-red-600">{apiFieldError[field.key]}</p>
@@ -402,7 +452,7 @@ export default function ScheduleModal({
                           {apiPreview[field.key] && (
                             <div>
                               <p className="text-[10px] uppercase tracking-wide text-muted mb-1">
-                                Prévia do valor (a partir da amostra buscada agora)
+                                Prévia do valor agora
                               </p>
                               <pre className="whitespace-pre-wrap break-words rounded-md bg-canvas p-2 text-xs text-ink/80 max-h-32 overflow-y-auto">
                                 {apiPreview[field.key]}

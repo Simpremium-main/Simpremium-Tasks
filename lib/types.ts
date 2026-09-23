@@ -264,8 +264,22 @@ export interface Execution {
    *  never reached the point of trying to send one. "never fail silently"
    *  applies to this side-effect too: a failed send is recorded here, not
    *  just logged. */
-  outputCallbackStatus: "sent" | "failed" | null;
+  /** "skipped" means the run had an outputCallback configured and actually
+   *  succeeded, but this was a dry run (see `dryRun` below) — the body was
+   *  built and is visible in outputCallbackLastBody, but nothing was
+   *  actually sent to the target API. */
+  outputCallbackStatus: "sent" | "failed" | "skipped" | null;
   outputCallbackError: string | null;
+  /** The exact JSON body that was (attempted to be) sent — set even when
+   *  the send itself failed or was skipped, so it's always visible what
+   *  would go out, not just whether it succeeded. */
+  outputCallbackLastBody: string | null;
+  /** Set at run start (see lib/runSkill.ts's startExecution) — the skill
+   *  runs for real exactly as normal, this only ever changes whether
+   *  finishExecution actually calls sendOutputCallback at the end or just
+   *  builds and records the body it *would* have sent. Never affects
+   *  dispatch itself (Cowork/Claude), only this one side effect. */
+  dryRun: boolean;
   startedAt: Date;
   finishedAt: Date | null;
 }

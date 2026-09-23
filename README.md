@@ -1154,6 +1154,60 @@ alter table executions add column if not exists output_callback_status text
 alter table executions add column if not exists output_callback_error text;
 ```
 
+### Reopening a saved mapping, badges, callback-body debugging, and a dry-run test mode
+
+Four small additions on top of the two features above, aimed at making them easier to trust and
+debug day to day instead of being a black box between "configure" and "it worked or it didn't":
+
+- **Reopening `ScheduleModal`/`OutputCallbackModal` shows the saved mapping immediately.** Before
+  this, seeing what a configured API source/callback actually resolves to meant clicking "Testar e
+  gerar mapeamento" again — which re-calls Claude, even though the mapping was already saved and
+  hasn't changed. Both modals now run a mount-only `useEffect` that re-resolves the *existing*
+  mapping against a fresh live sample — `POST /api/skills/[id]/schedule/resolve-values` (already
+  built for "Testar agora") and the new `POST /api/skills/[id]/output-callback/current-preview` —
+  zero AI calls, so it's free to run on every open. `ScheduleModal` also swaps the per-field button
+  label to "Gerar de novo" (instead of "Testar e gerar mapeamento") once a mapping already exists,
+  and shows `lib/apiFieldSource.ts`'s new `describeApiFieldMapping()`/`lib/outputCallback.ts`'s
+  `describeOutputCallback()` — a one-line human-readable summary of what the mapping actually does,
+  next to the raw preview.
+- **Small badges on the skill list.** `SkillCard.tsx` shows an "input API" pill
+  (`ArrowDownToLine` icon) when any schedule field is API-sourced, and a "retorno API" pill (`Send`
+  icon) when the skill has an output callback configured — visible without opening the skill, same
+  row as the existing "Cowork" pill.
+- **The exact last-sent (or would-be-sent) callback body is recorded on the execution**, not just
+  a success/failure status — `Execution.outputCallbackLastBody` (`lib/types.ts`), set by
+  `lib/runSkill.ts`'s `finishExecution` every time it builds the callback body, regardless of
+  outcome. Shown in the execution details modal as a collapsible "Corpo enviado ao retorno via API"
+  block (`ExecutionList.tsx`), so a bad field mapping can be debugged from the execution itself —
+  "why did protocol come through empty" — instead of guessed at.
+- **"Modo teste" (dry-run) on the manual run panel.** A checkbox (`RunSkillPanel.tsx`, shown only
+  when the skill has an output callback configured) runs the skill for real, but tells
+  `finishExecution` to build the callback body and record it — same as a real run — without ever
+  calling `sendOutputCallback`. Lets you exercise the whole real chain (prompt → Claude/Cowork →
+  result → table parsing → field mapping) without risking a spurious record landing in someone
+  else's system. The flag (`Execution.dryRun`) is persisted on the execution row at *dispatch* time,
+  not passed around as an in-memory function argument — a Cowork run's completion arrives later,
+  from a separate HTTP request the Mac mini agent makes (`POST /api/cowork-agent/report-result`),
+  so anything `finishExecution` needs at that point has to already be sitting in the DB. A dry run
+  shows as `outputCallbackStatus: "skipped"` (amber, distinct from the green "sent" and red
+  "failed" states) and an amber "modo teste" badge on the execution row/details, both in the
+  skill's own history and the global one.
+
+Needs two more columns and a widened check constraint that a fresh `supabase/schema.sql` already
+includes — if you set this project up before this feature existed, run in the SQL Editor:
+
+```sql
+alter table executions drop constraint if exists executions_output_callback_status_check;
+alter table executions add constraint executions_output_callback_status_check
+  check (output_callback_status in ('sent', 'failed', 'skipped'));
+alter table executions add column if not exists output_callback_last_body text;
+alter table executions add column if not exists dry_run boolean not null default false;
+```
+
+(The exact constraint name above matches what `supabase/schema.sql`'s inline `check` produces by
+default on a fresh project; if your project renamed it, adjust the `drop constraint` line to match
+— or just widen it by hand in the Supabase table editor instead.)
+
 ### Agendamentos overview page, and flagging a scheduled run that failed
 
 `/schedules` (`app/(app)/schedules/page.tsx`, linked from the sidebar) lists every skill with an

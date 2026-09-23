@@ -31,6 +31,10 @@ interface Skill {
   usesCowork: boolean;
   inputSchema: InputField[] | null;
   confirmedOnce: boolean;
+  /** Whether an outputCallback is configured (lib/types.ts) — only used to
+   *  show the "modo teste" checkbox below; the run itself works the same
+   *  either way. */
+  hasOutputCallback: boolean;
 }
 
 export default function RunSkillPanel({
@@ -66,6 +70,11 @@ export default function RunSkillPanel({
     initialFromChain ? { [initialFromChain.key]: initialFromChain.text } : {}
   );
   const [showConfirm, setShowConfirm] = useState(false);
+  // Only meaningful when skill.hasOutputCallback — the skill still runs for
+  // real either way, this only decides whether finishExecution actually
+  // sends the configured callback or just records what it would have sent
+  // (lib/runSkill.ts). Defaults off: a real send is the normal case.
+  const [dryRun, setDryRun] = useState(false);
   const [running, setRunning] = useState(false);
   const [executions, setExecutions] = useState(initialExecutions);
   const [formError, setFormError] = useState<string | null>(null);
@@ -149,7 +158,7 @@ export default function RunSkillPanel({
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: url.includes("/continue") ? undefined : JSON.stringify({ inputValues: values }),
+      body: url.includes("/continue") ? undefined : JSON.stringify({ inputValues: values, dryRun }),
     });
 
     if (!res.body) {
@@ -275,6 +284,20 @@ export default function RunSkillPanel({
         <DynamicForm schema={schema} values={values} onChange={(k, v) => setValues((p) => ({ ...p, [k]: v }))} />
         {retryNote && <p className="mt-2 text-sm text-primary">{retryNote}</p>}
         {formError && <p className="mt-2 text-sm text-red-600">{formError}</p>}
+        {skill.hasOutputCallback && (
+          <label className="mt-3 flex items-start gap-2 text-sm text-ink/70 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={dryRun}
+              onChange={(e) => setDryRun(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              Modo teste — roda a skill de verdade, mas não envia o retorno via API real (só mostra o
+              que seria enviado).
+            </span>
+          </label>
+        )}
         <button
           type="button"
           onClick={handleRunClick}

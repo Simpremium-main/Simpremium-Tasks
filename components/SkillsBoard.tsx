@@ -21,6 +21,7 @@ export interface BoardSkill {
   schedule: SkillSchedule | null;
   scheduleInputValues: Record<string, string> | null;
   scheduleApiSources: Record<string, ApiFieldSource> | null;
+  hasOutputCallback: boolean;
   scheduleLastRunAt: string | null;
   hasUnschedulableSecret: boolean;
   pinned: boolean;
@@ -255,6 +256,7 @@ export default function SkillsBoard({ skills: initialSkills }: { skills: BoardSk
           schedule={skill.schedule}
           scheduleInputValues={skill.scheduleInputValues}
           scheduleApiSources={skill.scheduleApiSources}
+          hasOutputCallback={skill.hasOutputCallback}
           scheduleLastRunAt={skill.scheduleLastRunAt}
           hasUnschedulableSecret={skill.hasUnschedulableSecret}
           pinned={skill.pinned}

@@ -13,11 +13,13 @@ import {
   Download,
   Eye,
   FileText,
+  FlaskConical,
   Hand,
   ListOrdered,
   Loader2,
   Paperclip,
   RotateCcw,
+  Send,
   Sparkles,
   Square,
   Star,
@@ -67,8 +69,18 @@ export interface ExecutionItem {
   /** Set only when the skill has an outputCallback configured and this run
    *  reached the point of trying to send it — lib/runSkill.ts's
    *  finishExecution. null for anything else. */
-  outputCallbackStatus: "sent" | "failed" | null;
+  outputCallbackStatus: "sent" | "failed" | "skipped" | null;
   outputCallbackError: string | null;
+  /** The exact JSON body sent (or, in dry-run/skipped/failed-before-send
+   *  cases, that would have been sent) to the skill's outputCallback —
+   *  recorded regardless of outcome so a bad mapping can be debugged from
+   *  the execution itself instead of guessed at. Null when the skill has
+   *  no outputCallback configured. */
+  outputCallbackLastBody: string | null;
+  /** "Modo teste" from the run panel — runs the skill for real but, when an
+   *  outputCallback is configured, only builds and records the body instead
+   *  of sending it. See lib/runSkill.ts's finishExecution. */
+  dryRun: boolean;
   startedAt: string;
   finishedAt: string | null;
   skill?: { id: string; name: string };
@@ -325,6 +337,15 @@ function ExecutionRow({
               >
                 <AlertTriangle size={11} />
                 falhou sozinha
+              </span>
+            )}
+            {execution.dryRun && (
+              <span
+                className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 rounded-full px-2 py-0.5 shrink-0"
+                title="Rodou de verdade, mas o retorno via API (se tinha) não foi enviado de verdade — só registrado."
+              >
+                <FlaskConical size={11} />
+                modo teste
               </span>
             )}
             <span className="inline-flex items-center gap-1 text-xs text-muted shrink-0">
@@ -707,6 +728,15 @@ function ExecutionDetailsModal({
                 {coworkPhase}
               </span>
             )}
+            {execution.dryRun && (
+              <span
+                className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 rounded-full px-2 py-0.5"
+                title="Rodou de verdade, mas o retorno via API (se tinha) não foi enviado de verdade — só registrado."
+              >
+                <FlaskConical size={11} />
+                modo teste
+              </span>
+            )}
             {execution.ranBy && (
               <span className="inline-flex items-center gap-1 text-xs text-muted">
                 <User size={11} />
@@ -829,23 +859,47 @@ function ExecutionDetailsModal({
 
             {execution.outputCallbackStatus && (
               <div
-                className={`mb-4 flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${
+                className={`mb-2 flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${
                   execution.outputCallbackStatus === "sent"
                     ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                    : "border-red-200 bg-red-50 text-red-700"
+                    : execution.outputCallbackStatus === "skipped"
+                      ? "border-amber-200 bg-amber-50 text-amber-800"
+                      : "border-red-200 bg-red-50 text-red-700"
                 }`}
               >
                 {execution.outputCallbackStatus === "sent" ? (
                   <Check size={15} className="shrink-0 mt-0.5" />
+                ) : execution.outputCallbackStatus === "skipped" ? (
+                  <FlaskConical size={15} className="shrink-0 mt-0.5" />
                 ) : (
                   <AlertTriangle size={15} className="shrink-0 mt-0.5" />
                 )}
                 <span>
                   {execution.outputCallbackStatus === "sent"
                     ? "Retorno via API enviado com sucesso."
-                    : `Falha ao enviar o retorno via API: ${execution.outputCallbackError ?? "erro desconhecido"}`}
+                    : execution.outputCallbackStatus === "skipped"
+                      ? "Modo teste — retorno via API não foi enviado de verdade, só o corpo abaixo foi montado."
+                      : `Falha ao enviar o retorno via API: ${execution.outputCallbackError ?? "erro desconhecido"}`}
                 </span>
               </div>
+            )}
+
+            {execution.outputCallbackLastBody && (
+              <details className="mb-4 rounded-md border border-line bg-canvas/60">
+                <summary className="cursor-pointer list-none px-3 py-2 text-xs uppercase tracking-wide text-muted flex items-center gap-1.5">
+                  <Send size={11} />
+                  Corpo enviado ao retorno via API
+                </summary>
+                <pre className="whitespace-pre-wrap break-words px-3 pb-3 text-xs text-ink/70 max-h-64 overflow-y-auto">
+                  {(() => {
+                    try {
+                      return JSON.stringify(JSON.parse(execution.outputCallbackLastBody!), null, 2);
+                    } catch {
+                      return execution.outputCallbackLastBody;
+                    }
+                  })()}
+                </pre>
+              </details>
             )}
           </>
         )}

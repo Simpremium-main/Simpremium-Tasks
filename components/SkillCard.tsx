@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
+  ArrowDownToLine,
   Bot,
   CalendarClock,
   CheckSquare,
@@ -12,6 +13,7 @@ import {
   Loader2,
   PenLine,
   Pin,
+  Send,
   Square,
   Sparkles,
 } from "lucide-react";
@@ -35,6 +37,10 @@ interface SkillCardProps {
   scheduleInputValues: Record<string, string> | null;
   scheduleApiSources: Record<string, ApiFieldSource> | null;
   scheduleLastRunAt: string | null;
+  /** Whether this skill has an outputCallback configured (lib/types.ts) —
+   *  only used to show the small "retorno API" badge below, doesn't need
+   *  the full config here. */
+  hasOutputCallback: boolean;
   hasUnschedulableSecret: boolean;
   pinned: boolean;
   /** Bulk-select mode (SkillsBoard) — when set, the card toggles selection
@@ -60,6 +66,7 @@ export default function SkillCard({
   scheduleInputValues,
   scheduleApiSources,
   scheduleLastRunAt,
+  hasOutputCallback,
   hasUnschedulableSecret,
   pinned,
   selectable = false,
@@ -173,6 +180,24 @@ export default function SkillCard({
             >
               <Bot size={11} />
               Cowork
+            </span>
+          )}
+          {scheduleApiSources && Object.keys(scheduleApiSources).length > 0 && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5"
+              title="Algum campo do agendamento busca o valor de uma API externa"
+            >
+              <ArrowDownToLine size={11} />
+              input API
+            </span>
+          )}
+          {hasOutputCallback && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5"
+              title="Envia o resultado pra outra API quando termina com sucesso"
+            >
+              <Send size={11} />
+              retorno API
             </span>
           )}
           {tags.slice(0, 3).map((tag) => (

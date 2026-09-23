@@ -57,6 +57,23 @@ export function applyApiFieldMapping(mapping: ApiFieldMapping, data: unknown): s
   return items.map((item) => fillItemTemplate(mapping.itemTemplate, item)).join(mapping.join || "\n");
 }
 
+/** A plain-language summary of what a saved mapping actually does — shown
+ *  in components/ScheduleModal.tsx when reopening a field that's already
+ *  configured, so what's saved is visible without re-testing (which would
+ *  otherwise be the only way to see it again). */
+export function describeApiFieldMapping(mapping: ApiFieldMapping): string {
+  if (mapping.kind === "single") {
+    return mapping.path ? `O valor em "${mapping.path}" da resposta` : "O valor retornado pela API, direto";
+  }
+  const base = mapping.listPath
+    ? `Uma linha por item da lista em "${mapping.listPath}"`
+    : "Uma linha por item da lista retornada";
+  const filterPart = mapping.filter
+    ? `, só os itens com "${mapping.filter.field}" = "${mapping.filter.equals}"`
+    : "";
+  return `${base}${filterPart}, no formato: ${mapping.itemTemplate}`;
+}
+
 /** Fetches an API-sourced field's current value fresh — called right before
  *  a scheduled run, never cached, so it reflects whatever the external
  *  system says right now (the whole point of this over a fixed saved

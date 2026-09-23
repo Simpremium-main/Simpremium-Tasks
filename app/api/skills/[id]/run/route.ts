@@ -22,9 +22,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       body && typeof body.inputValues === "object" && body.inputValues !== null
         ? body.inputValues
         : {};
+    const dryRun = Boolean(body?.dryRun);
 
     const user = await getCurrentUser();
-    const execution = await runSkill(skill, inputValues, user?.displayName ?? null);
+    const execution = await runSkill(skill, inputValues, user?.displayName ?? null, undefined, dryRun);
     return NextResponse.json(execution, { status: 201 });
   } catch (err) {
     console.error(`POST /api/skills/${params.id}/run failed:`, err);

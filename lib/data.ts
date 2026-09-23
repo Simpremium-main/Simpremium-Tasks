@@ -85,8 +85,10 @@ function mapExecutionRow(row: Record<string, unknown>): Execution {
     ranBy: (row.ran_by as string | null) ?? null,
     favorite: Boolean(row.favorite),
     coworkStartedAt: row.cowork_started_at ? new Date(row.cowork_started_at as string) : null,
-    outputCallbackStatus: (row.output_callback_status as "sent" | "failed" | null) ?? null,
+    outputCallbackStatus: (row.output_callback_status as "sent" | "failed" | "skipped" | null) ?? null,
     outputCallbackError: (row.output_callback_error as string | null) ?? null,
+    outputCallbackLastBody: (row.output_callback_last_body as string | null) ?? null,
+    dryRun: Boolean(row.dry_run),
     startedAt: new Date(row.started_at as string),
     finishedAt: row.finished_at ? new Date(row.finished_at as string) : null,
   };
@@ -558,6 +560,7 @@ export interface CreateExecutionInput {
   error: string | null;
   files: ExecutionFile[] | null;
   ranBy: string | null;
+  dryRun?: boolean;
 }
 
 export async function createExecution(input: CreateExecutionInput): Promise<Execution> {
@@ -576,6 +579,7 @@ export async function createExecution(input: CreateExecutionInput): Promise<Exec
       error: input.error,
       files: input.files,
       ran_by: input.ranBy,
+      dry_run: input.dryRun ?? false,
       started_at: now,
       finished_at: isTerminal ? now : null,
     })
@@ -913,8 +917,9 @@ export interface UpdateExecutionInput {
   conversationState?: ConversationState | null;
   usage?: TokenUsage | null;
   favorite?: boolean;
-  outputCallbackStatus?: "sent" | "failed" | null;
+  outputCallbackStatus?: "sent" | "failed" | "skipped" | null;
   outputCallbackError?: string | null;
+  outputCallbackLastBody?: string | null;
 }
 
 /**
@@ -950,6 +955,7 @@ export async function updateExecution(
   if (patch.favorite !== undefined) row.favorite = patch.favorite;
   if (patch.outputCallbackStatus !== undefined) row.output_callback_status = patch.outputCallbackStatus;
   if (patch.outputCallbackError !== undefined) row.output_callback_error = patch.outputCallbackError;
+  if (patch.outputCallbackLastBody !== undefined) row.output_callback_last_body = patch.outputCallbackLastBody;
 
   const { data, error, status, statusText } = await supabase
     .from("executions")

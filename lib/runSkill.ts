@@ -5,7 +5,7 @@ import { dispatchClaudeChunk, dispatchToClaude } from "./claude";
 import type { ClaudeChunkResult } from "./claude";
 import { sumTokenUsage } from "./cost";
 import { transcribeVideoUrl } from "./transcribe";
-import { sendOutputCallback } from "./outputCallback";
+import { buildCallbackBody, sendOutputCallback } from "./outputCallback";
 import type {
   ConversationState,
   DispatchResult,
@@ -59,9 +59,10 @@ export async function runSkillStreaming(
   skill: Skill,
   inputValues: Record<string, string>,
   ranBy: string | null,
-  onDelta: (chunk: string) => void
+  onDelta: (chunk: string) => void,
+  dryRun?: boolean
 ): Promise<RunStepResult> {
-  const execution = await startExecution(skill, inputValues, ranBy);
+  const execution = await startExecution(skill, inputValues, ranBy, undefined, dryRun);
 
   return withFailureRecorded(skill, execution.id, async () => {
     const resolved = await resolveInputValues(skill, inputValues);
@@ -151,9 +152,10 @@ export async function runSkill(
   skill: Skill,
   inputValues: Record<string, string>,
   ranBy: string | null,
-  sourceOverride?: Execution["source"]
+  sourceOverride?: Execution["source"],
+  dryRun?: boolean
 ): Promise<Execution> {
-  const execution = await startExecution(skill, inputValues, ranBy, sourceOverride);
+  const execution = await startExecution(skill, inputValues, ranBy, sourceOverride, dryRun);
 
   const resolved = await resolveInputValues(skill, inputValues);
   if ("error" in resolved) {
@@ -289,7 +291,8 @@ async function startExecution(
   skill: Skill,
   inputValues: Record<string, string>,
   ranBy: string | null,
-  sourceOverride?: Execution["source"]
+  sourceOverride?: Execution["source"],
+  dryRun?: boolean
 ) {
   const { promptSnapshot, maskedInputs } = buildPrompts(skill, inputValues);
   return createExecution({
@@ -302,6 +305,7 @@ async function startExecution(
     error: null,
     files: null,
     ranBy,
+    dryRun,
   });
 }
 
@@ -344,14 +348,57 @@ export async function finishExecution(skill: Skill, executionId: string, dispatc
   // is its own separate, visible fact (outputCallbackStatus/Error on the
   // row), not a reason to flip the execution to "error" after the fact.
   if (skill.outputCallback && dispatch.status === "success" && execution.result) {
+    // Built once regardless of dry-run, so both branches below can record
+    // exactly what was (or would have been) sent — never just a bare
+    // status with nothing to actually look at.
+    let bodyText: string | null = null;
+    try {
+      bodyText = JSON.stringify(buildCallbackBody(skill.outputCallback, execution.result), null, 2);
+    } catch {
+      // buildCallbackBody's own error surfaces below either way (from
+      // sendOutputCallback re-deriving it, or directly in the dry-run
+      // branch) — bodyText just stays null here.
+    }
+
+    if (execution.dryRun) {
+      // The skill itself already ran for real — this only skips the one
+      // side effect that would touch someone else's system, per the
+      // "test the real chain without risking a real send" ask.
+      let dryRunError: string | null = null;
+      if (bodyText === null) {
+        try {
+          buildCallbackBody(skill.outputCallback, execution.result);
+        } catch (err) {
+          dryRunError = err instanceof Error ? err.message : "Erro desconhecido ao montar o corpo";
+        }
+      }
+      return (
+        (await updateExecution(executionId, {
+          outputCallbackStatus: dryRunError ? "failed" : "skipped",
+          outputCallbackError: dryRunError,
+          outputCallbackLastBody: bodyText,
+        })) ?? execution
+      );
+    }
+
     try {
       await sendOutputCallback(skill.outputCallback, execution.result);
-      return (await updateExecution(executionId, { outputCallbackStatus: "sent", outputCallbackError: null })) ?? execution;
+      return (
+        (await updateExecution(executionId, {
+          outputCallbackStatus: "sent",
+          outputCallbackError: null,
+          outputCallbackLastBody: bodyText,
+        })) ?? execution
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro desconhecido ao enviar o retorno";
       console.error(`finishExecution: output callback failed for execution ${executionId}:`, err);
       return (
-        (await updateExecution(executionId, { outputCallbackStatus: "failed", outputCallbackError: message })) ?? execution
+        (await updateExecution(executionId, {
+          outputCallbackStatus: "failed",
+          outputCallbackError: message,
+          outputCallbackLastBody: bodyText,
+        })) ?? execution
       );
     }
   }

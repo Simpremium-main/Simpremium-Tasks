@@ -36,6 +36,21 @@ export function buildCallbackBody(callback: OutputCallback, resultText: string):
   return body;
 }
 
+/** A plain-language summary of what a saved callback actually sends —
+ *  shown in components/OutputCallbackModal.tsx when reopening one that's
+ *  already configured, so what's saved is visible without re-testing
+ *  (which would otherwise be the only way to see it, and re-calls Claude
+ *  for no reason). */
+export function describeOutputCallback(callback: OutputCallback): string[] {
+  const lines = callback.itemFieldMap.map(({ targetKey, sourceHeader }) => `${sourceHeader} → ${targetKey}`);
+  lines.push(
+    callback.itemsPath
+      ? `A lista de itens vai no campo "${callback.itemsPath}" do corpo enviado.`
+      : "A lista de itens é o corpo inteiro da requisição."
+  );
+  return lines;
+}
+
 /** The one place this app actually sends a real request to someone's
  *  external system as a side effect of a skill finishing — see
  *  lib/runSkill.ts's finishExecution for the only caller. Never used

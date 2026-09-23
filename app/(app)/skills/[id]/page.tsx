@@ -144,6 +144,7 @@ export default async function SkillDetailPage({ params }: { params: { id: string
             usesCowork: skill.usesCowork,
             inputSchema: skill.inputSchema,
             confirmedOnce: skill.confirmedOnce,
+            hasOutputCallback: Boolean(skill.outputCallback),
           }}
           initialExecutions={executions}
         />
