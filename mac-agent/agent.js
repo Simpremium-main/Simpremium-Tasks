@@ -174,7 +174,14 @@ async function driveCowork(executionId, prompt) {
     `igual à sua resposta final completa (sem comentário adicional). Se a tarefa gerou algum ` +
     `arquivo real (planilha, PDF, etc.), NÃO chame de "enviado" sem mais — inclua o conteúdo do ` +
     `arquivo em base64 no campo "files" dessa mesma chamada (name, mimeType e contentBase64); sem ` +
-    `isso o arquivo fica só nessa conversa e não chega no dashboard. Se durante a tarefa você usou ` +
+    `isso o arquivo fica só nessa conversa e não chega no dashboard. Se o resultado final for uma ` +
+    `tabela ou lista de dados estruturados (várias linhas com as mesmas colunas — números de linha, ` +
+    `estatísticas, resultados de busca, etc.), NÃO entregue só como tabela markdown no texto do ` +
+    `result — gere também um arquivo real com esses mesmos dados (.xlsx de preferência, .csv se não ` +
+    `conseguir gerar .xlsx) e anexe em "files" do mesmo jeito; o texto do result pode manter um ` +
+    `resumo ou a mesma tabela em markdown pra conferência rápida, mas o arquivo é obrigatório sempre ` +
+    `que o resultado for tabular, não é opcional nem depende do prompt específico ter pedido uma ` +
+    `"planilha" com essas palavras. Se durante a tarefa você usou ` +
     `o navegador e tirou prints de tela, inclua cada print também no campo "files" (mesma lógica: ` +
     `name descritivo tipo "passo-2-resultados-busca.png", mimeType "image/png" ou "image/jpeg" e o ` +
     `conteúdo em base64) — só valem os prints que você realmente tem como arquivo pra anexar, não ` +

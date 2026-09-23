@@ -833,6 +833,14 @@ skill returned only a text description of a spreadsheet it had generated). Fine 
 report/spreadsheet-sized files; Vercel's default ~4.5MB request-body limit is the practical ceiling
 for anything bigger, since base64 isn't chunked/streamed here.
 
+That instruction only fires when a task actually produces a file — a skill whose own prompt just
+asks Cowork to "devolva uma tabela" gets exactly that: a markdown table in the text result, no
+file, which is correct for that prompt but not what most people actually want. `agent.js`'s shared
+instruction now also covers this by default, for every Cowork skill, without each one's prompt
+needing to say so: any tabular/list-like result (several rows sharing the same columns) gets a real
+`.xlsx` (or `.csv` if `.xlsx` isn't possible) generated and attached the same way, alongside — not
+instead of — a markdown table in the text for quick reference. No skill-level opt-in needed.
+
 Needs two things added to your Supabase project that a fresh `supabase/schema.sql` already
 includes — if you set this project up before this feature existed, run in the SQL Editor:
 
