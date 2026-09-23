@@ -64,6 +64,11 @@ export interface ExecutionItem {
    *  actually starts driving Cowork for it (see mac-agent/agent.js's
    *  markStarted). Only meaningful when source is "cowork". */
   coworkStartedAt: string | null;
+  /** Set only when the skill has an outputCallback configured and this run
+   *  reached the point of trying to send it — lib/runSkill.ts's
+   *  finishExecution. null for anything else. */
+  outputCallbackStatus: "sent" | "failed" | null;
+  outputCallbackError: string | null;
   startedAt: string;
   finishedAt: string | null;
   skill?: { id: string; name: string };
@@ -821,6 +826,27 @@ function ExecutionDetailsModal({
             )}
 
             {execution.error && <DetailBlock label="Erro" text={execution.error} tone="red" />}
+
+            {execution.outputCallbackStatus && (
+              <div
+                className={`mb-4 flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${
+                  execution.outputCallbackStatus === "sent"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                    : "border-red-200 bg-red-50 text-red-700"
+                }`}
+              >
+                {execution.outputCallbackStatus === "sent" ? (
+                  <Check size={15} className="shrink-0 mt-0.5" />
+                ) : (
+                  <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+                )}
+                <span>
+                  {execution.outputCallbackStatus === "sent"
+                    ? "Retorno via API enviado com sucesso."
+                    : `Falha ao enviar o retorno via API: ${execution.outputCallbackError ?? "erro desconhecido"}`}
+                </span>
+              </div>
+            )}
           </>
         )}
 

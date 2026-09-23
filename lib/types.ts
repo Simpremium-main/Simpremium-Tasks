@@ -138,6 +138,36 @@ export interface ApiFieldSource {
 }
 
 /**
+ * A per-skill (not per-schedule) callback: after ANY execution of this
+ * skill finishes successfully — manual, scheduled, Cowork, Claude-direct,
+ * doesn't matter, they all funnel through lib/runSkill.ts's
+ * finishExecution() — POST the result's own table to this URL, built into
+ * whatever request body the target API expects. For confirming things
+ * like activation protocols back into another system the person owns,
+ * instead of copying them over by hand.
+ *
+ * itemFieldMap is an array of pairs rather than a plain
+ * Record<string,string> map on purpose — an object with unknown/dynamic
+ * keys doesn't express well in a strict JSON schema for AI-generated
+ * structured output (see lib/proposeOutputCallback.ts), while an array of
+ * fixed-shape { targetKey, sourceHeader } objects does, matching the same
+ * pattern already used for inputSchema elsewhere in this app.
+ */
+export interface OutputCallback {
+  url: string;
+  method: "POST" | "PUT" | "PATCH";
+  headers?: Record<string, string> | null;
+  /** sourceHeader must match a column header in the result's own markdown
+   *  table exactly (lib/resultTable.ts's parseMarkdownTable) — targetKey is
+   *  whatever field name the destination API's item shape wants. */
+  itemFieldMap: { targetKey: string; sourceHeader: string }[];
+  /** Dot path (within an otherwise-empty object) where the built items
+   *  array goes in the final request body — "items" for {"items": [...]},
+   *  "" to send the array itself as the whole body. */
+  itemsPath: string;
+}
+
+/**
  * Saved mid-flight state for a Claude-direct run that didn't finish in one
  * HTTP request. `messages` is the raw Anthropic conversation history
  * (assistant turns included) so the next chunk can resume exactly where
@@ -181,6 +211,9 @@ export interface Skill {
    *  components/ScheduleModal.tsx's save() for how that's enforced. */
   scheduleApiSources: Record<string, ApiFieldSource> | null;
   scheduleLastRunAt: Date | null;
+  /** Fires on every successful execution of this skill, any source — not
+   *  tied to scheduling at all. See lib/outputCallback.ts. */
+  outputCallback: OutputCallback | null;
   /** Personal dashboard-organization preference — pinned skills sort to the
    *  top of the skills list. Not part of the skill's definition, so it's
    *  left out of export/import. */
@@ -225,6 +258,14 @@ export interface Execution {
    *  poll it up. Lets the UI distinguish "queued" from "in progress" instead
    *  of both just reading "running". */
   coworkStartedAt: Date | null;
+  /** Set only when the skill has an outputCallback configured and this
+   *  execution actually finished successfully (see lib/runSkill.ts's
+   *  finishExecution) — null for a skill with no callback, or a run that
+   *  never reached the point of trying to send one. "never fail silently"
+   *  applies to this side-effect too: a failed send is recorded here, not
+   *  just logged. */
+  outputCallbackStatus: "sent" | "failed" | null;
+  outputCallbackError: string | null;
   startedAt: Date;
   finishedAt: Date | null;
 }

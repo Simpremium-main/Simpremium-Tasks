@@ -98,6 +98,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         : null;
   }
 
+  if ("outputCallback" in body) {
+    patch.outputCallback =
+      body.outputCallback && typeof body.outputCallback === "object" ? body.outputCallback : null;
+  }
+
   try {
     const user = await getCurrentUser();
     const skill = await updateSkill(params.id, patch, user?.displayName ?? null);

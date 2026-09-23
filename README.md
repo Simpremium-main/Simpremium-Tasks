@@ -1107,6 +1107,53 @@ genuinely needs it to keep working unattended — but it's masked (`lib/mask.ts`
 `GET /api/skills/export`'s backup output, since a downloaded file can end up in more places than the
 live dashboard.
 
+### Sending a skill's result to another API when it finishes
+
+The mirror image of API-sourced scheduled inputs: instead of pulling a value in before a run,
+**Retorno via API** (`components/OutputCallbackButton.tsx` → `OutputCallbackModal.tsx`,
+`Skill.outputCallback` in `lib/types.ts`) pushes the result out after one, to an endpoint the person
+owns (confirming activation protocols back into another system, in the case this was actually built
+for). Per-skill, not per-schedule — it fires after **any** successful execution of that skill,
+manual, scheduled, or Cowork, since they all funnel through the one shared
+`lib/runSkill.ts`'s `finishExecution()` regardless of source.
+
+Same "AI figures out the shape once, then it's deterministic forever after" split as the input-side
+feature, just running the other direction:
+
+- The *source* here is always a markdown table inside the run's own `result` text
+  (`lib/resultTable.ts`'s `parseMarkdownTable()` — a small hand-written GFM-table parser, not a
+  library) — the same table every tabular Cowork skill already puts there (see "Default tabular
+  Cowork results to a real file" above), so this needs no new convention from the skill's prompt.
+- **"Testar e gerar mapeamento"** (`POST /api/skills/[id]/output-callback/preview`) uses the skill's
+  own most recent successful execution as the live sample — no pasting required beyond describing
+  the target API once (paste its docs/example body as free text) — asks
+  `lib/proposeOutputCallback.ts` (Claude, same `output_config.format: json_schema` technique as
+  every other AI-structured-output call in this app) which table column feeds which target field,
+  and shows the exact resulting request body before anything is saved.
+- Deliberately **not** a JSON-string template (unlike a tempting first design) — `itemFieldMap` is
+  an array of `{ targetKey, sourceHeader }` pairs, and the request body is built as a real object
+  then `JSON.stringify`'d (`lib/outputCallback.ts`'s `buildCallbackBody`), so a value containing a
+  stray `"` or newline can't produce broken JSON the way filling a `'{"x": "{header}"}'`-style text
+  template would. The array-of-pairs shape (instead of a plain `Record<string,string>` map with
+  unknown keys) is also just what a strict AI-structured-output JSON schema can actually express
+  reliably — matches the same array-of-fixed-shape-objects pattern `inputSchema` itself already uses.
+- The preview step **never** calls the real target API — only `lib/runSkill.ts`'s `finishExecution`
+  does, as a genuine side effect of a real run actually succeeding. Configuring or testing a callback
+  can't accidentally create real records in someone else's system.
+- The outcome is recorded on the execution itself (`outputCallbackStatus`/`outputCallbackError`,
+  shown as a small line in the execution detail modal) — a failed send doesn't flip the run's own
+  status to `"error"` (the skill itself already succeeded by then), but it's never silent either,
+  same rule as everywhere else in this app.
+
+Needs one more column that a fresh `supabase/schema.sql` already includes:
+
+```sql
+alter table skills add column if not exists output_callback jsonb;
+alter table executions add column if not exists output_callback_status text
+  check (output_callback_status in ('sent', 'failed'));
+alter table executions add column if not exists output_callback_error text;
+```
+
 ### Agendamentos overview page, and flagging a scheduled run that failed
 
 `/schedules` (`app/(app)/schedules/page.tsx`, linked from the sidebar) lists every skill with an

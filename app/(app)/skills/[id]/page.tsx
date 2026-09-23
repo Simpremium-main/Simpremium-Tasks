@@ -9,6 +9,7 @@ import DeleteSkillButton from "@/components/DeleteSkillButton";
 import DuplicateSkillButton from "@/components/DuplicateSkillButton";
 import ArchiveSkillButton from "@/components/ArchiveSkillButton";
 import ScheduleButton from "@/components/ScheduleButton";
+import OutputCallbackButton from "@/components/OutputCallbackButton";
 import ShareSkillButton from "@/components/ShareSkillButton";
 import { isClaudeConfigured } from "@/lib/claude";
 import { isCoworkAgentConfigured } from "@/lib/cowork";
@@ -61,6 +62,11 @@ export default async function SkillDetailPage({ params }: { params: { id: string
               scheduleApiSources={skill.scheduleApiSources}
               scheduleLastRunAt={skill.scheduleLastRunAt?.toISOString() ?? null}
               hasUnschedulableSecret={hasUnschedulableSecret(skill.inputSchema ?? [])}
+            />
+            <OutputCallbackButton
+              skillId={skill.id}
+              skillName={skill.name}
+              outputCallback={skill.outputCallback}
             />
             <ShareSkillButton skillId={skill.id} shareToken={skill.shareToken} />
             <Link

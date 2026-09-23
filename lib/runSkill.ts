@@ -5,6 +5,7 @@ import { dispatchClaudeChunk, dispatchToClaude } from "./claude";
 import type { ClaudeChunkResult } from "./claude";
 import { sumTokenUsage } from "./cost";
 import { transcribeVideoUrl } from "./transcribe";
+import { sendOutputCallback } from "./outputCallback";
 import type {
   ConversationState,
   DispatchResult,
@@ -332,6 +333,27 @@ export async function finishExecution(skill: Skill, executionId: string, dispatc
   if (dispatch.status === "success" && skill.status === "draft") updates.status = "active";
   if (Object.keys(updates).length > 0) {
     await updateSkill(skill.id, updates);
+  }
+
+  // Fires on every successful run of a skill that has one configured, any
+  // source — this is the one shared path every dispatch funnels through
+  // (direct return here, POST /api/mcp, POST /api/cowork-agent/report-result,
+  // the cron route), so there's exactly one place this needs to be wired in.
+  // Never blocks/fails the execution's own recorded outcome: the skill run
+  // itself already succeeded by the time this runs, so a callback failure
+  // is its own separate, visible fact (outputCallbackStatus/Error on the
+  // row), not a reason to flip the execution to "error" after the fact.
+  if (skill.outputCallback && dispatch.status === "success" && execution.result) {
+    try {
+      await sendOutputCallback(skill.outputCallback, execution.result);
+      return (await updateExecution(executionId, { outputCallbackStatus: "sent", outputCallbackError: null })) ?? execution;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erro desconhecido ao enviar o retorno";
+      console.error(`finishExecution: output callback failed for execution ${executionId}:`, err);
+      return (
+        (await updateExecution(executionId, { outputCallbackStatus: "failed", outputCallbackError: message })) ?? execution
+      );
+    }
   }
 
   return execution;

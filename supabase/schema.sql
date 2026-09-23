@@ -29,6 +29,7 @@ create table if not exists skills (
   schedule        jsonb, -- SkillSchedule | null, see lib/types.ts — null means not scheduled
   schedule_input_values jsonb, -- Record<string, string> | null — saved defaults for a scheduled run's form, never includes secret-typed fields
   schedule_api_sources jsonb, -- Record<string, ApiFieldSource> | null — per-field alternative to schedule_input_values: fetch fresh from an external API right before each scheduled run, see lib/types.ts
+  output_callback jsonb, -- OutputCallback | null — fires on every successful execution of this skill (any source), posting the result's table to an external URL, see lib/outputCallback.ts
   schedule_last_run_at timestamptz,
   pinned          boolean not null default false, -- personal dashboard preference, not part of the skill's definition (not carried by export/import)
   share_token     text unique, -- null means not shared; set means /share/<token> shows a read-only public view of this skill
@@ -56,6 +57,8 @@ create table if not exists executions (
   favorite        boolean not null default false, -- starred by hand, "this was the good run" among several attempts
   cowork_payload  text, -- the real, unmasked prompt for a queued Cowork job, set only between dispatch and pickup — see lib/cowork.ts. Never read through mapExecutionRow/the Execution type, so it never reaches the UI.
   cowork_started_at timestamptz, -- stamped by POST /api/cowork-agent/mark-started the moment the Mac mini agent actually starts driving Cowork for this job (not when it was queued) — lets the UI say "Cowork's been working on this for Xm" instead of a generic "running" for a job that might still just be waiting in the queue.
+  output_callback_status text check (output_callback_status in ('sent', 'failed')), -- set only when the skill has an output_callback configured and this run succeeded — see lib/runSkill.ts's finishExecution
+  output_callback_error  text,
   started_at      timestamptz not null default now(),
   finished_at     timestamptz
 );
