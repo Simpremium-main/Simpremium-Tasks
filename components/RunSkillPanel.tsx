@@ -327,9 +327,20 @@ export default function RunSkillPanel({
               {fetchingApi ? "Buscando…" : "Buscar dados da API"}
             </button>
             <p className="mt-1 text-[11px] text-muted">
-              Preenche os campos configurados com fonte de API (mesma configuração do agendamento) com o
-              valor atual — confira antes de rodar.
+              Preenche os campos abaixo com o valor atual dessas URLs — confira antes de rodar. Configurado em
+              "Agendada", no topo da página.
             </p>
+            <ul className="mt-1 space-y-0.5">
+              {Object.entries(skill.scheduleApiSources ?? {}).map(([key, source]) => {
+                const label = schema.find((f) => f.key === key)?.label ?? key;
+                return (
+                  <li key={key} className="text-[11px] text-muted truncate">
+                    <span className="font-medium text-ink/70">{label}:</span>{" "}
+                    <span className="font-mono">{source.url}</span>
+                  </li>
+                );
+              })}
+            </ul>
             {apiFetchError && <p className="mt-1 text-xs text-red-600">{apiFetchError}</p>}
           </div>
         )}
