@@ -1614,6 +1614,22 @@ Not a text search across execution content — `/history`'s own search box alrea
 just fast navigation, fed the same skill list the sidebar already has server-side (no extra fetch).
 Arrow keys move the selection, Enter opens it, Esc (or the backdrop) closes it.
 
+### Date/time display and a hydration bug
+
+Every timestamp shown to you (execution times, API log times, prompt history, last scheduled
+run) goes through `lib/formatDate.ts`'s `formatDateTime()`, which pins `toLocaleString("pt-BR")`
+to `timeZone: "America/Sao_Paulo"`. This isn't cosmetic: without an explicit zone,
+`toLocaleString` uses the *runtime's own* local zone — UTC on Vercel's server, but your browser's
+zone (Brazil) on the client — so the exact same timestamp renders as two different strings during
+server-side render vs. client hydration. React treats that as a real bug (it can't tell "this text
+will always differ" from "the data actually changed"), and throws hydration errors #425/#418/#423,
+which is what broke `/api-logs` the first time it was opened. `formatDateTime()` fixes it by
+making server and client compute the identical string, and as a side effect shows your own local
+time instead of UTC. The one deliberate exception is `/schedules`' "próxima execução" line, which
+stays pinned to `timeZone: "UTC"` on purpose — that's rendering the cron schedule's own UTC-based
+math (when the schedule config says it fires), not a real event's timestamp, so pinning it to your
+browser zone would be actively wrong, not just inconsistent.
+
 ## Running locally
 
 ```bash

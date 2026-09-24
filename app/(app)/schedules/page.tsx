@@ -5,6 +5,7 @@ import { describeSchedule, hasUnschedulableSecret, nextDueAt } from "@/lib/sched
 import PageHeader from "@/components/PageHeader";
 import StatusBadge from "@/components/StatusBadge";
 import ScheduleButton from "@/components/ScheduleButton";
+import { formatDateTime } from "@/lib/formatDate";
 
 export const dynamic = "force-dynamic";
 
@@ -82,7 +83,7 @@ export default async function SchedulesPage() {
                       <>
                         <StatusBadge status={skill.lastScheduledRun.status} />
                         <span className="text-xs text-muted">
-                          {new Date(skill.lastScheduledRun.startedAt).toLocaleString("pt-BR")}
+                          {formatDateTime(skill.lastScheduledRun.startedAt)}
                         </span>
                       </>
                     ) : (

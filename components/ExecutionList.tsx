@@ -33,6 +33,7 @@ import ChainResultButton from "./ChainResultButton";
 import { downloadPdf, downloadText } from "@/lib/exportResult";
 import { estimateCostUsd, formatCostUsd, formatTokens, totalTokens } from "@/lib/cost";
 import { executionDurationMs, formatDuration } from "@/lib/duration";
+import { formatDateTime } from "@/lib/formatDate";
 
 export interface ExecutionFileItem {
   name: string;
@@ -421,7 +422,7 @@ function ExecutionRow({
               </span>
             )}
             <span className="ml-auto shrink-0 hidden sm:inline">
-              {new Date(execution.startedAt).toLocaleString("pt-BR")}
+              {formatDateTime(execution.startedAt)}
             </span>
           </div>
         </button>
@@ -774,9 +775,9 @@ function ExecutionDetailsModal({
 
         <div className="flex items-center gap-1.5 text-xs text-muted mb-4">
           <span>
-            Iniciada em {new Date(execution.startedAt).toLocaleString("pt-BR")}
+            Iniciada em {formatDateTime(execution.startedAt)}
             {execution.finishedAt &&
-              ` · finalizada em ${new Date(execution.finishedAt).toLocaleString("pt-BR")}`}
+              ` · finalizada em ${formatDateTime(execution.finishedAt)}`}
           </span>
           {durationMs !== null && (
             <span className="inline-flex items-center gap-1 rounded-full bg-canvas px-2 py-0.5">

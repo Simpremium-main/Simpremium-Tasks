@@ -7,6 +7,7 @@ import DynamicForm from "./DynamicForm";
 import { SCHEDULE_DAYS, describeSchedule } from "@/lib/schedule";
 import { describeApiFieldMapping } from "@/lib/apiFieldSource";
 import type { ApiFieldMapping, ApiFieldSource, InputField, SkillSchedule } from "@/lib/types";
+import { formatDateTime } from "@/lib/formatDate";
 
 type SourceMode = "static" | "api";
 
@@ -376,7 +377,7 @@ export default function ScheduleModal({
               <p className="text-sm text-ink/80">Roda {describeSchedule(schedule)}.</p>
               <p className="mt-1 text-xs text-muted">
                 {scheduleLastRunAt
-                  ? `Última execução agendada: ${new Date(scheduleLastRunAt).toLocaleString("pt-BR")}`
+                  ? `Última execução agendada: ${formatDateTime(scheduleLastRunAt)}`
                   : "Ainda não rodou pelo agendamento."}
               </p>
               {error && (

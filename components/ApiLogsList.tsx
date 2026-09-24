@@ -11,6 +11,7 @@ import {
   Send,
   X,
 } from "lucide-react";
+import { formatDateTime } from "@/lib/formatDate";
 
 export interface ApiLogItem {
   id: string;
@@ -144,7 +145,7 @@ function LogRow({ log, onViewDetails }: { log: ApiLogItem; onViewDetails: () => 
           {log.error && <p className="mt-0.5 text-xs text-red-600 truncate">{log.error}</p>}
         </div>
         <span className="shrink-0 text-xs text-muted">
-          {new Date(log.createdAt).toLocaleString("pt-BR")}
+          {formatDateTime(log.createdAt)}
         </span>
       </button>
     </li>
@@ -182,7 +183,7 @@ function LogDetailsModal({ log, onClose }: { log: ApiLogItem; onClose: () => voi
         </div>
 
         <div className="flex items-center gap-2 text-xs text-muted mb-4">
-          <span>{new Date(log.createdAt).toLocaleString("pt-BR")}</span>
+          <span>{formatDateTime(log.createdAt)}</span>
           {log.skillName && (
             <>
               <span>·</span>

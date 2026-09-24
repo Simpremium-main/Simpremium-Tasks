@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { History, Loader2, RotateCcw, User } from "lucide-react";
+import { formatDateTime } from "@/lib/formatDate";
 
 interface PromptVersionItem {
   id: string;
@@ -76,7 +77,7 @@ export default function PromptHistoryPanel({
           {versions.map((v) => (
             <div key={v.id} className="rounded border border-line bg-surface p-2 text-xs">
               <div className="flex items-center gap-2 text-muted mb-1">
-                <span>{new Date(v.createdAt).toLocaleString("pt-BR")}</span>
+                <span>{formatDateTime(v.createdAt)}</span>
                 {v.changedBy && (
                   <span className="inline-flex items-center gap-1">
                     <User size={10} />
