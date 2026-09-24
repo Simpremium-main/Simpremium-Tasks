@@ -29,7 +29,7 @@ create table if not exists skills (
   schedule        jsonb, -- SkillSchedule | null, see lib/types.ts — null means not scheduled
   schedule_input_values jsonb, -- Record<string, string> | null — saved defaults for a scheduled run's form, never includes secret-typed fields
   schedule_api_sources jsonb, -- Record<string, ApiFieldSource> | null — per-field alternative to schedule_input_values: fetch fresh from an external API right before each scheduled run, see lib/types.ts
-  output_callback jsonb, -- OutputCallback | null — fires on every successful execution of this skill (any source), posting the result's table to an external URL, see lib/outputCallback.ts
+  output_callbacks jsonb, -- OutputCallback[] | null — fires on every successful execution of this skill (any source), posting the result's table to every configured URL, see lib/outputCallback.ts. Superseded the old single-object output_callback column.
   schedule_last_run_at timestamptz,
   pinned          boolean not null default false, -- personal dashboard preference, not part of the skill's definition (not carried by export/import)
   share_token     text unique, -- null means not shared; set means /share/<token> shows a read-only public view of this skill
@@ -58,10 +58,8 @@ create table if not exists executions (
   favorite        boolean not null default false, -- starred by hand, "this was the good run" among several attempts
   cowork_payload  text, -- the real, unmasked prompt for a queued Cowork job, set only between dispatch and pickup — see lib/cowork.ts. Never read through mapExecutionRow/the Execution type, so it never reaches the UI.
   cowork_started_at timestamptz, -- stamped by POST /api/cowork-agent/mark-started the moment the Mac mini agent actually starts driving Cowork for this job (not when it was queued) — lets the UI say "Cowork's been working on this for Xm" instead of a generic "running" for a job that might still just be waiting in the queue.
-  output_callback_status text check (output_callback_status in ('sent', 'failed', 'skipped')), -- set only when the skill has an output_callback configured and this run succeeded — see lib/runSkill.ts's finishExecution. 'skipped' means dry_run was true.
-  output_callback_error  text,
-  output_callback_last_body text, -- the exact JSON body that was (attempted to be) sent — set even on failure/skip, for debugging a mismatch against the target system after the fact
-  dry_run                boolean not null default false, -- set at run start (see lib/runSkill.ts's startExecution) — the skill itself runs for real either way; this only controls whether finishExecution actually calls the configured output_callback or just records what it would have sent
+  output_callback_results jsonb, -- OutputCallbackResult[] | null — one entry per Skill.outputCallbacks, same order — set only when the skill has at least one configured and this run succeeded. Superseded the old output_callback_status/error/last_body columns.
+  dry_run                boolean not null default false, -- set at run start (see lib/runSkill.ts's startExecution) — the skill itself runs for real either way; this only controls whether finishExecution actually calls the configured output callbacks or just records what it would have sent
   started_at      timestamptz not null default now(),
   finished_at     timestamptz
 );

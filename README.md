@@ -1198,6 +1198,17 @@ exactly what an endpoint returns before deciding how to map it (or debugging why
 an unexpected value). No AI call, no mapping — `POST /api/skills/[id]/schedule/raw-response` just
 fetches the URL and returns the body pretty-printed if it's valid JSON, as-is otherwise.
 
+**A field can have more than one API source.** Come up when a value genuinely lives in two separate
+places — e.g. two different upstream queues that both feed the same "linhas" list. `Skill.scheduleApiSources`
+is now `Record<string, ApiFieldSource[]>` (an array per field, not a single source) — each is
+fetched, mapped and tested independently in `ScheduleModal` ("Fonte 1", "Fonte 2", ..., each with
+its own URL/header/"Testar e gerar mapeamento"/"Ver resposta bruta", an "Adicionar outra fonte pra
+esse campo" button, and a per-source remove), then joined with `\n` at resolve time
+(`lib/schedule.ts`'s `resolveScheduledInputValues`) — the same separator a single source's own
+"list" mapping already uses between rows, so the combined value just reads like more rows appended.
+No migration needed — `schedule_api_sources` was already a `jsonb` column; only the shape of the
+value stored in it changed (an object per field, not a single one), same column.
+
 ### A log of every request this app makes to an external API
 
 `app/(app)/api-logs` (sidebar: **Logs de API**) — every outbound HTTP call the panel itself makes to
@@ -1269,19 +1280,44 @@ feature, just running the other direction:
 - The preview step **never** calls the real target API — only `lib/runSkill.ts`'s `finishExecution`
   does, as a genuine side effect of a real run actually succeeding. Configuring or testing a callback
   can't accidentally create real records in someone else's system.
-- The outcome is recorded on the execution itself (`outputCallbackStatus`/`outputCallbackError`,
-  shown as a small line in the execution detail modal) — a failed send doesn't flip the run's own
-  status to `"error"` (the skill itself already succeeded by then), but it's never silent either,
-  same rule as everywhere else in this app.
+- The outcome is recorded on the execution itself (`outputCallbackResults`, shown as a line per
+  callback in the execution detail modal) — a failed send doesn't flip the run's own status to
+  `"error"` (the skill itself already succeeded by then), but it's never silent either, same rule
+  as everywhere else in this app.
 
-Needs one more column that a fresh `supabase/schema.sql` already includes:
+**A skill can fan its result out to more than one destination.** Come up the same way the input
+side did — a result that needs confirming into two separate downstream systems (e.g. an
+activations log and a separate stock table). `Skill.outputCallbacks` is an array now, not a single
+`OutputCallback` — `OutputCallbackButton`/`OutputCallbacksModal` show a list (URL, method, and a
+plain-language mapping summary per entry) with its own "Editar"/"Remover", and an "Adicionar outro
+retorno via API" that opens the same single-callback editing form (URL/method/header/description/
+test/preview, unchanged) to append a new one. `lib/runSkill.ts`'s `finishExecution` loops over every
+configured callback independently — one failing (like a target table rejecting the request for a
+column this skill's result was never going to have) doesn't stop the others from being attempted,
+and each gets its own entry in `Execution.outputCallbackResults` (`{ url, status, error, lastBody }`),
+shown as its own status line + collapsible sent-body block in the details modal.
+
+Needs the skills/executions columns a fresh `supabase/schema.sql` already includes — replacing the
+old single-object ones:
 
 ```sql
-alter table skills add column if not exists output_callback jsonb;
-alter table executions add column if not exists output_callback_status text
-  check (output_callback_status in ('sent', 'failed'));
-alter table executions add column if not exists output_callback_error text;
+alter table skills add column if not exists output_callbacks jsonb;
+update skills set output_callbacks = jsonb_build_array(output_callback) where output_callback is not null;
+
+alter table executions add column if not exists output_callback_results jsonb;
+update executions set output_callback_results = jsonb_build_array(
+  jsonb_build_object(
+    'url', coalesce((select url from skills where id = executions.skill_id and output_callback is not null), ''),
+    'status', output_callback_status,
+    'error', output_callback_error,
+    'lastBody', output_callback_last_body
+  )
+) where output_callback_status is not null;
 ```
+
+(The old `output_callback`/`output_callback_status`/`output_callback_error`/`output_callback_last_body`
+columns are no longer read by the app — safe to drop once you've confirmed the migration above
+copied anything you cared about, or just leave them, unused.)
 
 **Configuring a callback before the skill has ever run.** "Testar e gerar mapeamento" originally
 required a real sample — a successful execution whose result had a table — to read real column

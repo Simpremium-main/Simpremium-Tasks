@@ -2,41 +2,46 @@
 
 import { useState } from "react";
 import { Send } from "lucide-react";
-import OutputCallbackModal from "./OutputCallbackModal";
+import OutputCallbacksModal from "./OutputCallbackModal";
 import type { OutputCallback } from "@/lib/types";
 
 export default function OutputCallbackButton({
   skillId,
   skillName,
-  outputCallback,
+  outputCallbacks,
 }: {
   skillId: string;
   skillName: string;
-  outputCallback: OutputCallback | null;
+  outputCallbacks: OutputCallback[] | null;
 }) {
   const [open, setOpen] = useState(false);
+  const count = outputCallbacks?.length ?? 0;
 
   return (
     <>
       <button
         type="button"
         onClick={() => setOpen(true)}
-        title={outputCallback ? `Retorno via API: ${outputCallback.url}` : "Enviar resultado via API ao terminar"}
+        title={
+          count > 0
+            ? `Retorno via API: ${outputCallbacks!.map((c) => c.url).join(", ")}`
+            : "Enviar resultado via API ao terminar"
+        }
         className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors ${
-          outputCallback
+          count > 0
             ? "border-primary/30 bg-primary-soft text-primary"
             : "border-line text-muted hover:border-primary/30 hover:text-primary hover:bg-primary-soft"
         }`}
       >
         <Send size={13} />
-        {outputCallback ? "Retorno ativo" : "Retorno via API"}
+        {count === 0 ? "Retorno via API" : count === 1 ? "Retorno ativo" : `${count} retornos ativos`}
       </button>
 
       {open && (
-        <OutputCallbackModal
+        <OutputCallbacksModal
           skillId={skillId}
           skillName={skillName}
-          outputCallback={outputCallback}
+          outputCallbacks={outputCallbacks}
           onClose={() => setOpen(false)}
         />
       )}

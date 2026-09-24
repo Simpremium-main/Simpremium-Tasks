@@ -35,7 +35,7 @@ interface SkillCardProps {
   inputSchema: InputField[];
   schedule: SkillSchedule | null;
   scheduleInputValues: Record<string, string> | null;
-  scheduleApiSources: Record<string, ApiFieldSource> | null;
+  scheduleApiSources: Record<string, ApiFieldSource[]> | null;
   scheduleLastRunAt: string | null;
   /** Whether this skill has an outputCallback configured (lib/types.ts) —
    *  only used to show the small "retorno API" badge below, doesn't need

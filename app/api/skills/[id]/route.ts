@@ -98,9 +98,20 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         : null;
   }
 
-  if ("outputCallback" in body) {
-    patch.outputCallback =
-      body.outputCallback && typeof body.outputCallback === "object" ? body.outputCallback : null;
+  if ("outputCallbacks" in body) {
+    if (body.outputCallbacks === null) {
+      patch.outputCallbacks = null;
+    } else if (Array.isArray(body.outputCallbacks)) {
+      const valid = body.outputCallbacks.every(
+        (c: unknown) => c && typeof c === "object" && typeof (c as { url?: unknown }).url === "string"
+      );
+      if (!valid) {
+        return NextResponse.json({ error: "outputCallbacks must be an array of OutputCallback objects" }, { status: 400 });
+      }
+      patch.outputCallbacks = body.outputCallbacks.length ? body.outputCallbacks : null;
+    } else {
+      return NextResponse.json({ error: "outputCallbacks must be an array or null" }, { status: 400 });
+    }
   }
 
   if ("systemSecrets" in body) {

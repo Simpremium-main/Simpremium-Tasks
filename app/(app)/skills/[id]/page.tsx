@@ -70,7 +70,7 @@ export default async function SkillDetailPage({ params }: { params: { id: string
             <OutputCallbackButton
               skillId={skill.id}
               skillName={skill.name}
-              outputCallback={skill.outputCallback}
+              outputCallbacks={skill.outputCallbacks}
             />
             <ShareSkillButton skillId={skill.id} shareToken={skill.shareToken} />
             <Link
@@ -148,7 +148,7 @@ export default async function SkillDetailPage({ params }: { params: { id: string
             usesCowork: skill.usesCowork,
             inputSchema: skill.inputSchema,
             confirmedOnce: skill.confirmedOnce,
-            hasOutputCallback: Boolean(skill.outputCallback),
+            hasOutputCallback: Boolean(skill.outputCallbacks?.length),
             scheduleApiSources: skill.scheduleApiSources,
           }}
           initialExecutions={executions}

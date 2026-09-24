@@ -12,6 +12,7 @@ import type {
   ExecutionSource,
   InputField,
   OutputCallback,
+  OutputCallbackResult,
   PromptVersion,
   Skill,
   SkillSchedule,
@@ -58,9 +59,9 @@ function mapSkillRow(row: Record<string, unknown>): Skill {
     tags: (row.tags as string[] | null) ?? [],
     schedule: (row.schedule as SkillSchedule | null) ?? null,
     scheduleInputValues: (row.schedule_input_values as Record<string, string> | null) ?? null,
-    scheduleApiSources: (row.schedule_api_sources as Record<string, ApiFieldSource> | null) ?? null,
+    scheduleApiSources: (row.schedule_api_sources as Record<string, ApiFieldSource[]> | null) ?? null,
     scheduleLastRunAt: row.schedule_last_run_at ? new Date(row.schedule_last_run_at as string) : null,
-    outputCallback: (row.output_callback as OutputCallback | null) ?? null,
+    outputCallbacks: (row.output_callbacks as OutputCallback[] | null) ?? null,
     pinned: Boolean(row.pinned),
     shareToken: (row.share_token as string | null) ?? null,
     systemSecrets: (row.system_secrets as string[] | null) ?? null,
@@ -87,9 +88,7 @@ function mapExecutionRow(row: Record<string, unknown>): Execution {
     ranBy: (row.ran_by as string | null) ?? null,
     favorite: Boolean(row.favorite),
     coworkStartedAt: row.cowork_started_at ? new Date(row.cowork_started_at as string) : null,
-    outputCallbackStatus: (row.output_callback_status as "sent" | "failed" | "skipped" | null) ?? null,
-    outputCallbackError: (row.output_callback_error as string | null) ?? null,
-    outputCallbackLastBody: (row.output_callback_last_body as string | null) ?? null,
+    outputCallbackResults: (row.output_callback_results as OutputCallbackResult[] | null) ?? null,
     dryRun: Boolean(row.dry_run),
     startedAt: new Date(row.started_at as string),
     finishedAt: row.finished_at ? new Date(row.finished_at as string) : null,
@@ -339,8 +338,8 @@ export interface UpdateSkillInput {
   tags?: string[];
   schedule?: SkillSchedule | null;
   scheduleInputValues?: Record<string, string> | null;
-  scheduleApiSources?: Record<string, ApiFieldSource> | null;
-  outputCallback?: OutputCallback | null;
+  scheduleApiSources?: Record<string, ApiFieldSource[]> | null;
+  outputCallbacks?: OutputCallback[] | null;
   scheduleLastRunAt?: Date;
   pinned?: boolean;
   position?: number;
@@ -392,7 +391,7 @@ export async function updateSkill(
   if (patch.schedule !== undefined) row.schedule = patch.schedule;
   if (patch.scheduleInputValues !== undefined) row.schedule_input_values = patch.scheduleInputValues;
   if (patch.scheduleApiSources !== undefined) row.schedule_api_sources = patch.scheduleApiSources;
-  if (patch.outputCallback !== undefined) row.output_callback = patch.outputCallback;
+  if (patch.outputCallbacks !== undefined) row.output_callbacks = patch.outputCallbacks;
   if (patch.scheduleLastRunAt !== undefined) row.schedule_last_run_at = patch.scheduleLastRunAt.toISOString();
   if (patch.pinned !== undefined) row.pinned = patch.pinned;
   if (patch.position !== undefined) row.position = patch.position;
@@ -965,9 +964,7 @@ export interface UpdateExecutionInput {
   conversationState?: ConversationState | null;
   usage?: TokenUsage | null;
   favorite?: boolean;
-  outputCallbackStatus?: "sent" | "failed" | "skipped" | null;
-  outputCallbackError?: string | null;
-  outputCallbackLastBody?: string | null;
+  outputCallbackResults?: OutputCallbackResult[] | null;
 }
 
 /**
@@ -1001,9 +998,7 @@ export async function updateExecution(
   if (patch.conversationState !== undefined) row.conversation_state = patch.conversationState;
   if (patch.usage !== undefined) row.usage = patch.usage;
   if (patch.favorite !== undefined) row.favorite = patch.favorite;
-  if (patch.outputCallbackStatus !== undefined) row.output_callback_status = patch.outputCallbackStatus;
-  if (patch.outputCallbackError !== undefined) row.output_callback_error = patch.outputCallbackError;
-  if (patch.outputCallbackLastBody !== undefined) row.output_callback_last_body = patch.outputCallbackLastBody;
+  if (patch.outputCallbackResults !== undefined) row.output_callback_results = patch.outputCallbackResults;
 
   const { data, error, status, statusText } = await supabase
     .from("executions")

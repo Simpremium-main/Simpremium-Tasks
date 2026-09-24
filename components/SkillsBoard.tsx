@@ -20,7 +20,7 @@ export interface BoardSkill {
   inputSchema: InputField[];
   schedule: SkillSchedule | null;
   scheduleInputValues: Record<string, string> | null;
-  scheduleApiSources: Record<string, ApiFieldSource> | null;
+  scheduleApiSources: Record<string, ApiFieldSource[]> | null;
   hasOutputCallback: boolean;
   scheduleLastRunAt: string | null;
   hasUnschedulableSecret: boolean;

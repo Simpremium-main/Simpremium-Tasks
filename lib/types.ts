@@ -172,6 +172,21 @@ export interface OutputCallback {
   itemsPath: string;
 }
 
+/** One outbound send's outcome, recorded per callback on the execution —
+ *  see Skill.outputCallbacks (a skill can fan a single result out to
+ *  several destinations) and Execution.outputCallbackResults. */
+export interface OutputCallbackResult {
+  url: string;
+  /** "skipped" means the run had a dry-run flag set — the body was still
+   *  built and is visible in `lastBody`, but nothing was actually sent. */
+  status: "sent" | "failed" | "skipped";
+  error: string | null;
+  /** The exact JSON body that was (attempted to be) sent — set even when
+   *  the send itself failed or was skipped, so it's always visible what
+   *  would go out, not just whether it succeeded. */
+  lastBody: string | null;
+}
+
 /**
  * Saved mid-flight state for a Claude-direct run that didn't finish in one
  * HTTP request. `messages` is the raw Anthropic conversation history
@@ -213,12 +228,18 @@ export interface Skill {
    *  value, fetch a fresh value from an external API right before each
    *  scheduled run (lib/apiFieldSource.ts). A field key appears in at most
    *  one of scheduleInputValues / scheduleApiSources, never both — see
-   *  components/ScheduleModal.tsx's save() for how that's enforced. */
-  scheduleApiSources: Record<string, ApiFieldSource> | null;
+   *  components/ScheduleModal.tsx's save() for how that's enforced.
+   *  Each field can have MORE than one source — fetched and joined with
+   *  "\n" (lib/schedule.ts's resolveScheduledInputValues), for a field like
+   *  a pending-activations list that's actually split across two upstream
+   *  queues/accounts. */
+  scheduleApiSources: Record<string, ApiFieldSource[]> | null;
   scheduleLastRunAt: Date | null;
   /** Fires on every successful execution of this skill, any source — not
-   *  tied to scheduling at all. See lib/outputCallback.ts. */
-  outputCallback: OutputCallback | null;
+   *  tied to scheduling at all. Every entry gets the same result, sent to
+   *  its own destination (lib/outputCallback.ts) — for a result that needs
+   *  to be confirmed back into more than one downstream system. */
+  outputCallbacks: OutputCallback[] | null;
   /** Personal dashboard-organization preference — pinned skills sort to the
    *  top of the skills list. Not part of the skill's definition, so it's
    *  left out of export/import. */
@@ -277,22 +298,15 @@ export interface Execution {
    *  poll it up. Lets the UI distinguish "queued" from "in progress" instead
    *  of both just reading "running". */
   coworkStartedAt: Date | null;
-  /** Set only when the skill has an outputCallback configured and this
-   *  execution actually finished successfully (see lib/runSkill.ts's
-   *  finishExecution) — null for a skill with no callback, or a run that
-   *  never reached the point of trying to send one. "never fail silently"
-   *  applies to this side-effect too: a failed send is recorded here, not
-   *  just logged. */
-  /** "skipped" means the run had an outputCallback configured and actually
-   *  succeeded, but this was a dry run (see `dryRun` below) — the body was
-   *  built and is visible in outputCallbackLastBody, but nothing was
-   *  actually sent to the target API. */
-  outputCallbackStatus: "sent" | "failed" | "skipped" | null;
-  outputCallbackError: string | null;
-  /** The exact JSON body that was (attempted to be) sent — set even when
-   *  the send itself failed or was skipped, so it's always visible what
-   *  would go out, not just whether it succeeded. */
-  outputCallbackLastBody: string | null;
+  /** Set only when the skill has at least one outputCallback configured and
+   *  this execution actually finished successfully (see lib/runSkill.ts's
+   *  finishExecution) — null for a skill with none configured, or a run
+   *  that never reached the point of trying to send one. One entry per
+   *  configured callback, same order as Skill.outputCallbacks — "never fail
+   *  silently" applies to this side-effect too: a failed send is recorded
+   *  here, not just logged, and one callback failing doesn't stop the
+   *  others from being attempted. */
+  outputCallbackResults: OutputCallbackResult[] | null;
   /** Set at run start (see lib/runSkill.ts's startExecution) — the skill
    *  runs for real exactly as normal, this only ever changes whether
    *  finishExecution actually calls sendOutputCallback at the end or just

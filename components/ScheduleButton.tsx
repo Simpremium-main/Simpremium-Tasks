@@ -21,7 +21,7 @@ export default function ScheduleButton({
   inputSchema: InputField[];
   schedule: SkillSchedule | null;
   scheduleInputValues: Record<string, string> | null;
-  scheduleApiSources: Record<string, ApiFieldSource> | null;
+  scheduleApiSources: Record<string, ApiFieldSource[]> | null;
   scheduleLastRunAt: string | null;
   hasUnschedulableSecret: boolean;
 }) {

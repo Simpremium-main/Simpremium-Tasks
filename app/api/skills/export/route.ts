@@ -13,18 +13,18 @@ export const dynamic = "force-dynamic";
 // at all (see app/api/skills/import/route.ts), so this is for manual
 // reference/restoration only, not a round-trippable secret.
 function maskApiSources(
-  sources: Record<string, ApiFieldSource> | null
-): Record<string, ApiFieldSource> | null {
+  sources: Record<string, ApiFieldSource[]> | null
+): Record<string, ApiFieldSource[]> | null {
   if (!sources) return null;
   return Object.fromEntries(
-    Object.entries(sources).map(([key, source]) => [
+    Object.entries(sources).map(([key, fieldSources]) => [
       key,
-      {
+      fieldSources.map((source) => ({
         ...source,
         headers: source.headers
           ? Object.fromEntries(Object.entries(source.headers).map(([h, v]) => [h, maskValue(v)]))
           : source.headers,
-      },
+      })),
     ])
   );
 }

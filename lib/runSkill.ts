@@ -13,6 +13,7 @@ import type {
   Execution,
   ExecutionFile,
   InputField,
+  OutputCallbackResult,
   Skill,
   TokenUsage,
 } from "./types";
@@ -375,68 +376,60 @@ export async function finishExecution(skill: Skill, executionId: string, dispatc
     await updateSkill(skill.id, updates);
   }
 
-  // Fires on every successful run of a skill that has one configured, any
+  // Fires on every successful run of a skill that has any configured, any
   // source — this is the one shared path every dispatch funnels through
   // (direct return here, POST /api/mcp, POST /api/cowork-agent/report-result,
   // the cron route), so there's exactly one place this needs to be wired in.
+  // A skill can fan the same result out to more than one destination — each
+  // is attempted independently, so one failing doesn't stop the others.
   // Never blocks/fails the execution's own recorded outcome: the skill run
   // itself already succeeded by the time this runs, so a callback failure
-  // is its own separate, visible fact (outputCallbackStatus/Error on the
-  // row), not a reason to flip the execution to "error" after the fact.
-  if (skill.outputCallback && dispatch.status === "success" && execution.result) {
-    // Built once regardless of dry-run, so both branches below can record
-    // exactly what was (or would have been) sent — never just a bare
-    // status with nothing to actually look at.
-    let bodyText: string | null = null;
-    try {
-      bodyText = JSON.stringify(buildCallbackBody(skill.outputCallback, execution.result), null, 2);
-    } catch {
-      // buildCallbackBody's own error surfaces below either way (from
-      // sendOutputCallback re-deriving it, or directly in the dry-run
-      // branch) — bodyText just stays null here.
-    }
+  // is its own separate, visible fact (outputCallbackResults on the row),
+  // not a reason to flip the execution to "error" after the fact.
+  if (skill.outputCallbacks && skill.outputCallbacks.length > 0 && dispatch.status === "success" && execution.result) {
+    const resultText = execution.result;
+    const results: OutputCallbackResult[] = [];
 
-    if (execution.dryRun) {
-      // The skill itself already ran for real — this only skips the one
-      // side effect that would touch someone else's system, per the
-      // "test the real chain without risking a real send" ask.
-      let dryRunError: string | null = null;
-      if (bodyText === null) {
-        try {
-          buildCallbackBody(skill.outputCallback, execution.result);
-        } catch (err) {
-          dryRunError = err instanceof Error ? err.message : "Erro desconhecido ao montar o corpo";
-        }
+    for (const callback of skill.outputCallbacks) {
+      // Built once regardless of dry-run, so both branches below can record
+      // exactly what was (or would have been) sent — never just a bare
+      // status with nothing to actually look at.
+      let bodyText: string | null = null;
+      try {
+        bodyText = JSON.stringify(buildCallbackBody(callback, resultText), null, 2);
+      } catch {
+        // buildCallbackBody's own error surfaces below either way (from
+        // sendOutputCallback re-deriving it, or directly in the dry-run
+        // branch) — bodyText just stays null here.
       }
-      return (
-        (await updateExecution(executionId, {
-          outputCallbackStatus: dryRunError ? "failed" : "skipped",
-          outputCallbackError: dryRunError,
-          outputCallbackLastBody: bodyText,
-        })) ?? execution
-      );
+
+      if (execution.dryRun) {
+        // The skill itself already ran for real — this only skips the one
+        // side effect that would touch someone else's system, per the
+        // "test the real chain without risking a real send" ask.
+        let dryRunError: string | null = null;
+        if (bodyText === null) {
+          try {
+            buildCallbackBody(callback, resultText);
+          } catch (err) {
+            dryRunError = err instanceof Error ? err.message : "Erro desconhecido ao montar o corpo";
+          }
+        }
+        results.push({ url: callback.url, status: dryRunError ? "failed" : "skipped", error: dryRunError, lastBody: bodyText });
+        continue;
+      }
+
+      try {
+        await sendOutputCallback(callback, resultText, skill.id);
+        results.push({ url: callback.url, status: "sent", error: null, lastBody: bodyText });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Erro desconhecido ao enviar o retorno";
+        console.error(`finishExecution: output callback failed for execution ${executionId} (${callback.url}):`, err);
+        results.push({ url: callback.url, status: "failed", error: message, lastBody: bodyText });
+      }
     }
 
-    try {
-      await sendOutputCallback(skill.outputCallback, execution.result, skill.id);
-      return (
-        (await updateExecution(executionId, {
-          outputCallbackStatus: "sent",
-          outputCallbackError: null,
-          outputCallbackLastBody: bodyText,
-        })) ?? execution
-      );
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Erro desconhecido ao enviar o retorno";
-      console.error(`finishExecution: output callback failed for execution ${executionId}:`, err);
-      return (
-        (await updateExecution(executionId, {
-          outputCallbackStatus: "failed",
-          outputCallbackError: message,
-          outputCallbackLastBody: bodyText,
-        })) ?? execution
-      );
-    }
+    return (await updateExecution(executionId, { outputCallbackResults: results })) ?? execution;
   }
 
   return execution;

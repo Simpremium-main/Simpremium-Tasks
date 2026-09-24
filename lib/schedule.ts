@@ -46,21 +46,31 @@ export function hasUnschedulableSecret(schema: InputField[]): boolean {
  * real scheduled run would do, API sources included. On any API field
  * failure, stops and returns the error rather than a partial result: same
  * "never simulate a result" rule as everywhere else in this app.
+ *
+ * A field can have more than one source (e.g. two separate upstream queues
+ * that both feed the same "linhas" list) — each is fetched and its
+ * resulting text joined with "\n", same separator a single source's own
+ * "list" mapping already uses between rows, so the combined value just
+ * reads like more rows appended.
  */
 export async function resolveScheduledInputValues(
   skill: Skill
 ): Promise<{ values: Record<string, string> } | { error: string }> {
   const values: Record<string, string> = { ...(skill.scheduleInputValues ?? {}) };
-  for (const [key, source] of Object.entries(skill.scheduleApiSources ?? {})) {
-    try {
-      values[key] = await fetchApiFieldValue(source, { skillId: skill.id, fieldKey: key });
-    } catch (err) {
-      return {
-        error: `Falha ao buscar "${key}" da API (${source.url}): ${
-          err instanceof Error ? err.message : "erro desconhecido"
-        }`,
-      };
+  for (const [key, sources] of Object.entries(skill.scheduleApiSources ?? {})) {
+    const parts: string[] = [];
+    for (const source of sources) {
+      try {
+        parts.push(await fetchApiFieldValue(source, { skillId: skill.id, fieldKey: key }));
+      } catch (err) {
+        return {
+          error: `Falha ao buscar "${key}" da API (${source.url}): ${
+            err instanceof Error ? err.message : "erro desconhecido"
+          }`,
+        };
+      }
     }
+    values[key] = parts.filter(Boolean).join("\n");
   }
   return { values };
 }

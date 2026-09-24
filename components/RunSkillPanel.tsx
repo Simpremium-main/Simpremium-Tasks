@@ -43,7 +43,7 @@ interface Skill {
    *  skill actually has an active recurring schedule — see
    *  lib/schedule.ts's resolveScheduledInputValues, which never looks at
    *  Skill.schedule at all. */
-  scheduleApiSources: Record<string, ApiFieldSource> | null;
+  scheduleApiSources: Record<string, ApiFieldSource[]> | null;
 }
 
 export default function RunSkillPanel({
@@ -331,12 +331,12 @@ export default function RunSkillPanel({
               "Agendada", no topo da página.
             </p>
             <ul className="mt-1 space-y-0.5">
-              {Object.entries(skill.scheduleApiSources ?? {}).map(([key, source]) => {
+              {Object.entries(skill.scheduleApiSources ?? {}).map(([key, sources]) => {
                 const label = schema.find((f) => f.key === key)?.label ?? key;
                 return (
                   <li key={key} className="text-[11px] text-muted truncate">
                     <span className="font-medium text-ink/70">{label}:</span>{" "}
-                    <span className="font-mono">{source.url}</span>
+                    {sources.map((s) => s.url).join(" + ")}
                   </li>
                 );
               })}

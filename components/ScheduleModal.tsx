@@ -2,13 +2,57 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, CalendarClock, Check, Loader2, PlayCircle, Trash2, X } from "lucide-react";
+import { AlertTriangle, CalendarClock, Check, Loader2, Plus, PlayCircle, Trash2, X } from "lucide-react";
 import DynamicForm from "./DynamicForm";
 import { SCHEDULE_DAYS, describeSchedule } from "@/lib/schedule";
 import { describeApiFieldMapping } from "@/lib/apiFieldSource";
 import type { ApiFieldMapping, ApiFieldSource, InputField, SkillSchedule } from "@/lib/types";
 
 type SourceMode = "static" | "api";
+
+// Draft state for one of a field's (possibly several) API sources — a
+// field can be fed by more than one upstream API at once (two separate
+// queues that both feed the same list), each resolved and joined with
+// "\n" at run time (lib/schedule.ts's resolveScheduledInputValues).
+interface SourceDraft {
+  url: string;
+  authHeader: string;
+  // Only set once "Testar e gerar mapeamento" succeeds for this draft's
+  // *current* url/header — cleared whenever either changes, so a stale
+  // mapping can never be saved unverified against new values.
+  mapping: ApiFieldMapping | undefined;
+  preview: string;
+  rawResponse: string;
+  testing: boolean;
+  rawLoading: boolean;
+  fieldError: string;
+}
+
+function emptyDraft(): SourceDraft {
+  return {
+    url: "",
+    authHeader: "",
+    mapping: undefined,
+    preview: "",
+    rawResponse: "",
+    testing: false,
+    rawLoading: false,
+    fieldError: "",
+  };
+}
+
+function draftFromSource(source: ApiFieldSource): SourceDraft {
+  return {
+    url: source.url,
+    authHeader: source.headers?.Authorization ?? "",
+    mapping: source.mapping,
+    preview: "",
+    rawResponse: "",
+    testing: false,
+    rawLoading: false,
+    fieldError: "",
+  };
+}
 
 export default function ScheduleModal({
   skillId,
@@ -26,7 +70,7 @@ export default function ScheduleModal({
   inputSchema: InputField[];
   schedule: SkillSchedule | null;
   scheduleInputValues: Record<string, string> | null;
-  scheduleApiSources: Record<string, ApiFieldSource> | null;
+  scheduleApiSources: Record<string, ApiFieldSource[]> | null;
   scheduleLastRunAt: string | null;
   hasUnschedulableSecret: boolean;
   onClose: () => void;
@@ -49,39 +93,30 @@ export default function ScheduleModal({
 
   const schedulableSchema = inputSchema.filter((f) => f.type !== "secret");
 
-  // Per-field: a fixed saved value (existing behavior) or fetched fresh
-  // from an external API right before each scheduled run (lib/apiFieldSource.ts).
-  // A field lives in exactly one of `values` (static) or the api* state
-  // below — never both — enforced in save() below.
+  // Per-field: a fixed saved value (existing behavior) or one-or-more
+  // sources fetched fresh from an external API right before each scheduled
+  // run (lib/apiFieldSource.ts). A field lives in exactly one of `values`
+  // (static) or the drafts below — never both — enforced in save().
   const [sourceMode, setSourceMode] = useState<Record<string, SourceMode>>(() =>
-    Object.fromEntries(schedulableSchema.map((f) => [f.key, scheduleApiSources?.[f.key] ? "api" : "static"]))
+    Object.fromEntries(
+      schedulableSchema.map((f) => [f.key, (scheduleApiSources?.[f.key]?.length ?? 0) > 0 ? "api" : "static"])
+    )
   );
-  const [apiUrl, setApiUrl] = useState<Record<string, string>>(() =>
-    Object.fromEntries(schedulableSchema.map((f) => [f.key, scheduleApiSources?.[f.key]?.url ?? ""]))
+  const [apiSourceDrafts, setApiSourceDrafts] = useState<Record<string, SourceDraft[]>>(() =>
+    Object.fromEntries(schedulableSchema.map((f) => [f.key, (scheduleApiSources?.[f.key] ?? []).map(draftFromSource)]))
   );
-  const [apiAuthHeader, setApiAuthHeader] = useState<Record<string, string>>(() =>
-    Object.fromEntries(schedulableSchema.map((f) => [f.key, scheduleApiSources?.[f.key]?.headers?.Authorization ?? ""]))
-  );
-  // Only set once "Testar e gerar mapeamento" succeeds for the field's
-  // *current* url/header — cleared again whenever either changes, so a
-  // stale mapping can never be saved unverified against new values.
-  const [apiMapping, setApiMapping] = useState<Record<string, ApiFieldMapping | undefined>>(() =>
-    Object.fromEntries(schedulableSchema.map((f) => [f.key, scheduleApiSources?.[f.key]?.mapping]))
-  );
+  // The *combined* (already-joined, same as a real run would use) value per
+  // field, from resolve-values — distinct from each draft's own `preview`
+  // (that source's value alone, from testing it individually).
   const [apiPreview, setApiPreview] = useState<Record<string, string>>({});
-  const [apiTesting, setApiTesting] = useState<Record<string, boolean>>({});
-  const [apiFieldError, setApiFieldError] = useState<Record<string, string>>({});
-  const [loadingSavedPreview, setLoadingSavedPreview] = useState(Boolean(scheduleApiSources));
-  // The API's own raw response, unmapped — for "what is this endpoint
-  // actually sending back", separate from apiPreview (the *mapped* value
-  // "Testar e gerar mapeamento" produces). No AI involved, just a fetch.
-  const [apiRawResponse, setApiRawResponse] = useState<Record<string, string>>({});
-  const [apiRawLoading, setApiRawLoading] = useState<Record<string, boolean>>({});
+  const [loadingSavedPreview, setLoadingSavedPreview] = useState(
+    Boolean(scheduleApiSources && Object.keys(scheduleApiSources).length)
+  );
 
   // Shows what's already configured the moment the modal opens, instead of
   // making "Testar e gerar mapeamento" (which re-calls Claude) the only way
   // to see it again — re-resolves every saved API field with its *existing*
-  // mapping (no AI involved, same resolveScheduledInputValues the cron
+  // mapping(s) (no AI involved, same resolveScheduledInputValues the cron
   // route and "Testar agora" use), so this is free to call on every open.
   useEffect(() => {
     if (!scheduleApiSources || Object.keys(scheduleApiSources).length === 0) {
@@ -96,9 +131,12 @@ export default function ScheduleModal({
         if (ok && body.values) {
           setApiPreview((prev) => ({ ...prev, ...body.values }));
         } else if (!ok) {
-          setApiFieldError((prev) => {
+          const message = body.error ?? "Falha ao atualizar prévia";
+          setApiSourceDrafts((prev) => {
             const next = { ...prev };
-            for (const key of Object.keys(scheduleApiSources)) next[key] = body.error ?? "Falha ao atualizar prévia";
+            for (const key of Object.keys(scheduleApiSources)) {
+              next[key] = (next[key] ?? []).map((d) => ({ ...d, fieldError: message }));
+            }
             return next;
           });
         }
@@ -115,80 +153,89 @@ export default function ScheduleModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function setApiUrlField(key: string, url: string) {
-    setApiUrl((p) => ({ ...p, [key]: url }));
-    setApiMapping((p) => ({ ...p, [key]: undefined }));
-    setApiPreview((p) => ({ ...p, [key]: "" }));
-    setApiRawResponse((p) => ({ ...p, [key]: "" }));
+  function updateDraft(fieldKey: string, index: number, patch: Partial<SourceDraft>) {
+    setApiSourceDrafts((prev) => ({
+      ...prev,
+      [fieldKey]: (prev[fieldKey] ?? []).map((d, i) => (i === index ? { ...d, ...patch } : d)),
+    }));
   }
 
-  function setApiAuthField(key: string, header: string) {
-    setApiAuthHeader((p) => ({ ...p, [key]: header }));
-    setApiMapping((p) => ({ ...p, [key]: undefined }));
-    setApiPreview((p) => ({ ...p, [key]: "" }));
-    setApiRawResponse((p) => ({ ...p, [key]: "" }));
+  function addSourceDraft(fieldKey: string) {
+    setApiSourceDrafts((prev) => ({ ...prev, [fieldKey]: [...(prev[fieldKey] ?? []), emptyDraft()] }));
+  }
+
+  function removeSourceDraft(fieldKey: string, index: number) {
+    setApiSourceDrafts((prev) => ({ ...prev, [fieldKey]: (prev[fieldKey] ?? []).filter((_, i) => i !== index) }));
+  }
+
+  function enableApiMode(field: InputField) {
+    setSourceMode((p) => ({ ...p, [field.key]: "api" }));
+    setApiSourceDrafts((prev) => (prev[field.key]?.length ? prev : { ...prev, [field.key]: [emptyDraft()] }));
   }
 
   // No AI, no mapping — just fetches the URL and shows exactly what comes
   // back, so a person can see the real field names/shape before deciding
   // how to map them (or sanity-check why a mapping isn't producing what
   // they expect).
-  async function viewRawResponse(field: InputField) {
-    setApiRawLoading((p) => ({ ...p, [field.key]: true }));
-    setApiFieldError((p) => ({ ...p, [field.key]: "" }));
+  async function viewRawResponse(field: InputField, index: number) {
+    const draft = apiSourceDrafts[field.key]?.[index];
+    if (!draft) return;
+    updateDraft(field.key, index, { rawLoading: true, fieldError: "" });
     try {
-      const authValue = apiAuthHeader[field.key]?.trim();
+      const authValue = draft.authHeader.trim();
       const res = await fetch(`/api/skills/${skillId}/schedule/raw-response`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fieldKey: field.key,
-          url: apiUrl[field.key]?.trim() ?? "",
+          url: draft.url.trim(),
           headers: authValue ? { Authorization: authValue } : undefined,
         }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? `Falha ao buscar (HTTP ${res.status})`);
-      setApiRawResponse((p) => ({ ...p, [field.key]: body.body }));
+      updateDraft(field.key, index, { rawResponse: body.body, rawLoading: false });
     } catch (err) {
-      setApiFieldError((p) => ({
-        ...p,
-        [field.key]: err instanceof Error ? err.message : "Falha ao buscar resposta bruta",
-      }));
-    } finally {
-      setApiRawLoading((p) => ({ ...p, [field.key]: false }));
+      updateDraft(field.key, index, {
+        fieldError: err instanceof Error ? err.message : "Falha ao buscar resposta bruta",
+        rawLoading: false,
+      });
     }
   }
 
-  async function testApiField(field: InputField) {
-    setApiTesting((p) => ({ ...p, [field.key]: true }));
-    setApiFieldError((p) => ({ ...p, [field.key]: "" }));
+  async function testSource(field: InputField, index: number) {
+    const draft = apiSourceDrafts[field.key]?.[index];
+    if (!draft) return;
+    updateDraft(field.key, index, { testing: true, fieldError: "" });
     try {
-      const authValue = apiAuthHeader[field.key]?.trim();
+      const authValue = draft.authHeader.trim();
       const res = await fetch(`/api/skills/${skillId}/schedule/preview-field`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fieldKey: field.key,
-          url: apiUrl[field.key]?.trim() ?? "",
+          url: draft.url.trim(),
           headers: authValue ? { Authorization: authValue } : undefined,
         }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? `Falha ao testar (HTTP ${res.status})`);
-      setApiMapping((p) => ({ ...p, [field.key]: body.mapping }));
-      setApiPreview((p) => ({ ...p, [field.key]: body.preview }));
+      updateDraft(field.key, index, { mapping: body.mapping, preview: body.preview, testing: false });
     } catch (err) {
-      setApiFieldError((p) => ({ ...p, [field.key]: err instanceof Error ? err.message : "Falha ao testar" }));
-    } finally {
-      setApiTesting((p) => ({ ...p, [field.key]: false }));
+      updateDraft(field.key, index, {
+        fieldError: err instanceof Error ? err.message : "Falha ao testar",
+        testing: false,
+      });
     }
   }
 
   const staticFields = schedulableSchema.filter((f) => sourceMode[f.key] !== "api");
   const apiFields = schedulableSchema.filter((f) => sourceMode[f.key] === "api");
   const missingRequired = staticFields.filter((f) => f.required && !values[f.key]?.trim());
-  const untestedApiFields = apiFields.filter((f) => !apiUrl[f.key]?.trim() || !apiMapping[f.key]);
+  const untestedApiFields = apiFields.filter((f) => {
+    const drafts = apiSourceDrafts[f.key] ?? [];
+    return drafts.length === 0 || drafts.some((d) => !d.url.trim() || !d.mapping);
+  });
 
   async function save() {
     if (missingRequired.length > 0) {
@@ -196,7 +243,7 @@ export default function ScheduleModal({
       return;
     }
     if (untestedApiFields.length > 0) {
-      setError(`Teste a origem da API pra: ${untestedApiFields.map((f) => f.label).join(", ")}`);
+      setError(`Teste todas as fontes de API pra: ${untestedApiFields.map((f) => f.label).join(", ")}`);
       return;
     }
     setSaving(true);
@@ -205,14 +252,14 @@ export default function ScheduleModal({
       const finalValues: Record<string, string> = {};
       for (const f of staticFields) if (values[f.key]) finalValues[f.key] = values[f.key];
 
-      const finalApiSources: Record<string, ApiFieldSource> = {};
+      const finalApiSources: Record<string, ApiFieldSource[]> = {};
       for (const f of apiFields) {
-        const authValue = apiAuthHeader[f.key]?.trim();
-        finalApiSources[f.key] = {
-          url: apiUrl[f.key].trim(),
-          headers: authValue ? { Authorization: authValue } : null,
-          mapping: apiMapping[f.key]!,
-        };
+        const drafts = apiSourceDrafts[f.key] ?? [];
+        finalApiSources[f.key] = drafts.map((d) => ({
+          url: d.url.trim(),
+          headers: d.authHeader.trim() ? { Authorization: d.authHeader.trim() } : null,
+          mapping: d.mapping!,
+        }));
       }
 
       const res = await fetch(`/api/skills/${skillId}`, {
@@ -264,7 +311,7 @@ export default function ScheduleModal({
       // Resolves API-sourced fields fresh first (same helper the real
       // cron-driven run uses — lib/schedule.ts's resolveScheduledInputValues)
       // so this genuinely exercises what a scheduled run would send, not
-      // just the static saved values.
+      // just the saved static values.
       const resolveRes = await fetch(`/api/skills/${skillId}/schedule/resolve-values`, { method: "POST" });
       const resolveBody = await resolveRes.json().catch(() => ({}));
       if (!resolveRes.ok) {
@@ -293,10 +340,10 @@ export default function ScheduleModal({
       onClick={() => !saving && onClose()}
     >
       <div
-        className="bg-surface rounded-2xl border border-line max-w-md w-full shadow-2xl animate-scale-in overflow-hidden"
+        className="bg-surface rounded-2xl border border-line max-w-md w-full shadow-2xl animate-scale-in overflow-hidden max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="relative bg-gradient-to-br from-primary to-primary-hover px-5 pt-5 pb-6 text-white overflow-hidden">
+        <div className="relative bg-gradient-to-br from-primary to-primary-hover px-5 pt-5 pb-6 text-white overflow-hidden shrink-0">
           <div className="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-white/10" />
           <button
             type="button"
@@ -318,7 +365,7 @@ export default function ScheduleModal({
           </div>
         </div>
 
-        <div className="p-5">
+        <div className="p-5 overflow-y-auto">
           {hasUnschedulableSecret ? (
             <p className="text-sm text-muted">
               Essa skill tem um campo secreto obrigatório, então não dá pra agendar — não existe
@@ -439,121 +486,176 @@ export default function ScheduleModal({
               {schedulableSchema.length > 0 && (
                 <div className="space-y-3">
                   <p className="text-xs font-medium text-ink">Valores pra cada execução agendada</p>
-                  {schedulableSchema.map((field) => (
-                    <div key={field.key} className="rounded-md border border-line p-2.5">
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className="text-xs font-medium text-ink/70">{field.label}</span>
-                        <div className="flex items-center gap-1 rounded-md border border-line bg-canvas p-0.5">
-                          <button
-                            type="button"
-                            onClick={() => setSourceMode((p) => ({ ...p, [field.key]: "static" }))}
-                            className={`rounded px-2 py-0.5 text-[11px] font-medium transition-colors ${
-                              sourceMode[field.key] !== "api"
-                                ? "bg-primary text-white"
-                                : "text-muted hover:bg-surface"
-                            }`}
-                          >
-                            Valor fixo
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setSourceMode((p) => ({ ...p, [field.key]: "api" }))}
-                            className={`rounded px-2 py-0.5 text-[11px] font-medium transition-colors ${
-                              sourceMode[field.key] === "api"
-                                ? "bg-primary text-white"
-                                : "text-muted hover:bg-surface"
-                            }`}
-                          >
-                            Buscar da API
-                          </button>
+                  {schedulableSchema.map((field) => {
+                    const drafts = apiSourceDrafts[field.key] ?? [];
+                    return (
+                      <div key={field.key} className="rounded-md border border-line p-2.5">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <span className="text-xs font-medium text-ink/70">{field.label}</span>
+                          <div className="flex items-center gap-1 rounded-md border border-line bg-canvas p-0.5">
+                            <button
+                              type="button"
+                              onClick={() => setSourceMode((p) => ({ ...p, [field.key]: "static" }))}
+                              className={`rounded px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                                sourceMode[field.key] !== "api"
+                                  ? "bg-primary text-white"
+                                  : "text-muted hover:bg-surface"
+                              }`}
+                            >
+                              Valor fixo
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => enableApiMode(field)}
+                              className={`rounded px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                                sourceMode[field.key] === "api"
+                                  ? "bg-primary text-white"
+                                  : "text-muted hover:bg-surface"
+                              }`}
+                            >
+                              Buscar da API
+                            </button>
+                          </div>
                         </div>
-                      </div>
 
-                      {sourceMode[field.key] !== "api" ? (
-                        <DynamicForm
-                          schema={[field]}
-                          values={values}
-                          onChange={(k, v) => setValues((p) => ({ ...p, [k]: v }))}
-                        />
-                      ) : (
-                        <div className="space-y-2">
-                          <input
-                            type="url"
-                            value={apiUrl[field.key] ?? ""}
-                            onChange={(e) => setApiUrlField(field.key, e.target.value)}
-                            placeholder="https://sua-outra-api.com/endpoint"
-                            className="w-full rounded-md border border-line px-2.5 py-1.5 text-sm"
+                        {sourceMode[field.key] !== "api" ? (
+                          <DynamicForm
+                            schema={[field]}
+                            values={values}
+                            onChange={(k, v) => setValues((p) => ({ ...p, [k]: v }))}
                           />
-                          <input
-                            type="text"
-                            value={apiAuthHeader[field.key] ?? ""}
-                            onChange={(e) => setApiAuthField(field.key, e.target.value)}
-                            placeholder="Header Authorization (opcional) — ex: Bearer abc123"
-                            className="w-full rounded-md border border-line px-2.5 py-1.5 text-sm"
-                          />
-                          {apiMapping[field.key] && (
-                            <p className="text-xs text-ink/70 bg-canvas rounded-md px-2.5 py-1.5">
-                              {describeApiFieldMapping(apiMapping[field.key]!)}
-                            </p>
-                          )}
-                          <div className="flex flex-wrap items-center gap-2">
+                        ) : (
+                          <div className="space-y-3">
+                            {drafts.map((draft, index) => (
+                              <div
+                                key={index}
+                                className={`space-y-2 ${index > 0 ? "border-t border-line pt-3" : ""}`}
+                              >
+                                {drafts.length > 1 && (
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[11px] font-medium text-muted">Fonte {index + 1}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => removeSourceDraft(field.key, index)}
+                                      title="Remover essa fonte"
+                                      className="text-muted hover:text-red-600 transition-colors"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </div>
+                                )}
+                                <input
+                                  type="url"
+                                  value={draft.url}
+                                  onChange={(e) =>
+                                    updateDraft(field.key, index, {
+                                      url: e.target.value,
+                                      mapping: undefined,
+                                      preview: "",
+                                      rawResponse: "",
+                                    })
+                                  }
+                                  placeholder="https://sua-outra-api.com/endpoint"
+                                  className="w-full rounded-md border border-line px-2.5 py-1.5 text-sm"
+                                />
+                                <input
+                                  type="text"
+                                  value={draft.authHeader}
+                                  onChange={(e) =>
+                                    updateDraft(field.key, index, {
+                                      authHeader: e.target.value,
+                                      mapping: undefined,
+                                      preview: "",
+                                      rawResponse: "",
+                                    })
+                                  }
+                                  placeholder="Header Authorization (opcional) — ex: Bearer abc123"
+                                  className="w-full rounded-md border border-line px-2.5 py-1.5 text-sm"
+                                />
+                                {draft.mapping && (
+                                  <p className="text-xs text-ink/70 bg-canvas rounded-md px-2.5 py-1.5">
+                                    {describeApiFieldMapping(draft.mapping)}
+                                  </p>
+                                )}
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => testSource(field, index)}
+                                    disabled={!draft.url.trim() || draft.testing}
+                                    className="inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-xs font-medium text-ink/80 hover:border-primary/30 hover:text-primary hover:bg-primary-soft transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    {draft.testing ? (
+                                      <Loader2 size={12} className="animate-spin" />
+                                    ) : draft.mapping ? (
+                                      <Check size={12} className="text-emerald-600" />
+                                    ) : null}
+                                    {draft.mapping ? "Gerar de novo" : "Testar e gerar mapeamento"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => viewRawResponse(field, index)}
+                                    disabled={!draft.url.trim() || draft.rawLoading}
+                                    title="Busca a URL e mostra a resposta exatamente como veio, sem mapear nada"
+                                    className="inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-xs font-medium text-ink/80 hover:border-primary/30 hover:text-primary hover:bg-primary-soft transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    {draft.rawLoading ? <Loader2 size={12} className="animate-spin" /> : null}
+                                    Ver resposta bruta (JSON)
+                                  </button>
+                                </div>
+                                {draft.fieldError && <p className="text-xs text-red-600">{draft.fieldError}</p>}
+                                {draft.rawResponse && (
+                                  <div>
+                                    <p className="text-[10px] uppercase tracking-wide text-muted mb-1">
+                                      Resposta bruta da API (sem mapear)
+                                    </p>
+                                    <pre className="whitespace-pre-wrap break-words rounded-md bg-canvas p-2 text-xs text-ink/80 max-h-48 overflow-y-auto">
+                                      {draft.rawResponse}
+                                    </pre>
+                                  </div>
+                                )}
+                                {draft.preview && (
+                                  <div>
+                                    <p className="text-[10px] uppercase tracking-wide text-muted mb-1">
+                                      Prévia dessa fonte
+                                    </p>
+                                    <pre className="whitespace-pre-wrap break-words rounded-md bg-canvas p-2 text-xs text-ink/80 max-h-32 overflow-y-auto">
+                                      {draft.preview}
+                                    </pre>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+
                             <button
                               type="button"
-                              onClick={() => testApiField(field)}
-                              disabled={!apiUrl[field.key]?.trim() || apiTesting[field.key]}
-                              className="inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-xs font-medium text-ink/80 hover:border-primary/30 hover:text-primary hover:bg-primary-soft transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              onClick={() => addSourceDraft(field.key)}
+                              className="inline-flex items-center gap-1 text-xs text-primary hover:underline font-medium"
                             >
-                              {apiTesting[field.key] ? (
-                                <Loader2 size={12} className="animate-spin" />
-                              ) : apiMapping[field.key] ? (
-                                <Check size={12} className="text-emerald-600" />
-                              ) : null}
-                              {apiMapping[field.key] ? "Gerar de novo" : "Testar e gerar mapeamento"}
+                              <Plus size={12} />
+                              Adicionar outra fonte pra esse campo
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => viewRawResponse(field)}
-                              disabled={!apiUrl[field.key]?.trim() || apiRawLoading[field.key]}
-                              title="Busca a URL e mostra a resposta exatamente como veio, sem mapear nada"
-                              className="inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-xs font-medium text-ink/80 hover:border-primary/30 hover:text-primary hover:bg-primary-soft transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              {apiRawLoading[field.key] ? <Loader2 size={12} className="animate-spin" /> : null}
-                              Ver resposta bruta (JSON)
-                            </button>
-                            {loadingSavedPreview && apiMapping[field.key] && (
-                              <span className="inline-flex items-center gap-1 text-xs text-muted">
+
+                            {loadingSavedPreview && drafts.some((d) => d.mapping) && (
+                              <p className="inline-flex items-center gap-1 text-xs text-muted">
                                 <Loader2 size={11} className="animate-spin" />
-                                atualizando prévia…
-                              </span>
+                                atualizando prévia combinada…
+                              </p>
+                            )}
+                            {apiPreview[field.key] && (
+                              <div>
+                                <p className="text-[10px] uppercase tracking-wide text-muted mb-1">
+                                  Prévia do valor combinado agora{drafts.length > 1 ? " (todas as fontes juntas)" : ""}
+                                </p>
+                                <pre className="whitespace-pre-wrap break-words rounded-md bg-canvas p-2 text-xs text-ink/80 max-h-32 overflow-y-auto">
+                                  {apiPreview[field.key]}
+                                </pre>
+                              </div>
                             )}
                           </div>
-                          {apiFieldError[field.key] && (
-                            <p className="text-xs text-red-600">{apiFieldError[field.key]}</p>
-                          )}
-                          {apiRawResponse[field.key] && (
-                            <div>
-                              <p className="text-[10px] uppercase tracking-wide text-muted mb-1">
-                                Resposta bruta da API (sem mapear)
-                              </p>
-                              <pre className="whitespace-pre-wrap break-words rounded-md bg-canvas p-2 text-xs text-ink/80 max-h-48 overflow-y-auto">
-                                {apiRawResponse[field.key]}
-                              </pre>
-                            </div>
-                          )}
-                          {apiPreview[field.key] && (
-                            <div>
-                              <p className="text-[10px] uppercase tracking-wide text-muted mb-1">
-                                Prévia do valor agora
-                              </p>
-                              <pre className="whitespace-pre-wrap break-words rounded-md bg-canvas p-2 text-xs text-ink/80 max-h-32 overflow-y-auto">
-                                {apiPreview[field.key]}
-                              </pre>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
