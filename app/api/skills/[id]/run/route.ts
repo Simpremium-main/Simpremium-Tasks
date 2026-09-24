@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSkill } from "@/lib/data";
-import { runSkill } from "@/lib/runSkill";
+import { runSkillMaybeSplit } from "@/lib/runSkill";
 import { getCurrentUser } from "@/lib/auth";
 
 // A skill that fetches a page and generates a file via code execution can
@@ -25,8 +25,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const dryRun = Boolean(body?.dryRun);
 
     const user = await getCurrentUser();
-    const execution = await runSkill(skill, inputValues, user?.displayName ?? null, undefined, dryRun);
-    return NextResponse.json(execution, { status: 201 });
+    // Usually one execution — more than one only when Skill.accountSplit
+    // split these inputValues across several accounts (see
+    // lib/runSkill.ts's runSkillMaybeSplit). Always an array in the
+    // response, even for the common single-execution case, so callers
+    // don't need two different shapes to handle.
+    const executions = await runSkillMaybeSplit(skill, inputValues, user?.displayName ?? null, undefined, dryRun);
+    return NextResponse.json({ executions }, { status: 201 });
   } catch (err) {
     console.error(`POST /api/skills/${params.id}/run failed:`, err);
     return NextResponse.json(

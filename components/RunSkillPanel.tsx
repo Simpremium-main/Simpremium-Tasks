@@ -187,8 +187,12 @@ export default function RunSkillPanel({
 
   // Runs one leg of an SSE stream (either the initial run, or a continue
   // call for a heavy skill that didn't finish in one chunk) and reports
-  // back whether it's actually done or needs another leg.
-  async function streamLeg(url: string): Promise<{ execution: ExecutionItem; done: boolean }> {
+  // back whether it's actually done or needs another leg. Returns an array
+  // of executions, not one — usually exactly one, but Skill.accountSplit
+  // can make a single leg emit several "done" events (one per account),
+  // each a finished/queued execution in its own right; "continue" only
+  // ever happens for a single-execution Claude-direct run, never a split.
+  async function streamLeg(url: string): Promise<{ executions: ExecutionItem[]; done: boolean }> {
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -202,7 +206,7 @@ export default function RunSkillPanel({
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-    let execution: ExecutionItem | null = null;
+    const executions: ExecutionItem[] = [];
     let legDone = true;
 
     while (true) {
@@ -223,10 +227,10 @@ export default function RunSkillPanel({
         if (eventMatch[1] === "delta") {
           setThinkingText((prev) => prev + data.text);
         } else if (eventMatch[1] === "done") {
-          execution = data as ExecutionItem;
+          executions.push(data as ExecutionItem);
           legDone = true;
         } else if (eventMatch[1] === "continue") {
-          execution = data as ExecutionItem;
+          executions.push(data as ExecutionItem);
           legDone = false;
         } else if (eventMatch[1] === "error") {
           throw new Error(data.message ?? "Falha ao rodar a skill");
@@ -234,7 +238,7 @@ export default function RunSkillPanel({
       }
     }
 
-    if (!execution) {
+    if (executions.length === 0) {
       // The stream ended without ever sending a proper "done"/"continue"/
       // "error" event — normally impossible (the route's own try/catch
       // always sends one before closing), so this means something killed
@@ -247,7 +251,7 @@ export default function RunSkillPanel({
         `Falha ao rodar (HTTP ${res.status})` + (leftover ? `: ${leftover.slice(0, 500)}` : "")
       );
     }
-    return { execution, done: legDone };
+    return { executions, done: legDone };
   }
 
   async function confirmAndRun() {
@@ -256,27 +260,36 @@ export default function RunSkillPanel({
     setThinkingText("");
     setChunkNumber(1);
     try {
-      let { execution, done } = await streamLeg(`/api/skills/${skill.id}/run/stream`);
+      let { executions: newExecutions, done } = await streamLeg(`/api/skills/${skill.id}/run/stream`);
       // A heavy skill that hits its per-chunk time budget comes back
       // "running" with more work queued up — keep calling continue until
       // it actually finishes, appending to the same live "Pensando..." text.
+      // (Only ever one execution at this point — an account-split batch
+      // always comes back done, Cowork dispatch never needs a continue.)
       while (!done) {
         setChunkNumber((n) => n + 1);
-        ({ execution, done } = await streamLeg(`/api/executions/${execution.id}/continue`));
+        ({ executions: newExecutions, done } = await streamLeg(
+          `/api/executions/${newExecutions[newExecutions.length - 1].id}/continue`
+        ));
       }
 
-      setExecutions((prev) => [execution, ...prev]);
+      setExecutions((prev) => [...newExecutions, ...prev]);
       setShowConfirm(false);
+      const lastExecution = newExecutions[newExecutions.length - 1];
       // A Cowork run comes back "running" here, not finished — the request
       // only queued it (setting up the job for the Mac mini agent to pick
       // up), it never waits for a real Cowork result. Say so instead of
       // letting the closed modal imply the run already finished.
       setRetryNote(
-        skill.usesCowork && execution.status === "running"
-          ? "Despachado pro agente do Mac mini — acompanhe o andamento no histórico abaixo (pode levar alguns minutos, dependendo da tarefa)."
-          : null
+        newExecutions.length > 1
+          ? `${newExecutions.length} execuções despachadas pro agente do Mac mini, uma por conta ` +
+              `(${newExecutions.map((e) => e.coworkAccountLabel ?? "?").join(", ")}) — acompanhe o ` +
+              `andamento no histórico abaixo (pode levar alguns minutos por conta).`
+          : skill.usesCowork && lastExecution.status === "running"
+            ? "Despachado pro agente do Mac mini — acompanhe o andamento no histórico abaixo (pode levar alguns minutos, dependendo da tarefa)."
+            : null
       );
-      setHighlightId(execution.id);
+      setHighlightId(lastExecution.id);
       setTimeout(() => setHighlightId(null), 1800);
       router.refresh();
     } catch (err) {

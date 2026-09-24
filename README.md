@@ -732,6 +732,77 @@ Needs one more column, also in a fresh `supabase/schema.sql`:
 alter table skills add column if not exists system_secrets text[];
 ```
 
+## Multi-account Cowork skills
+
+A real run surfaced a limit worth designing around rather than fighting: Cowork's own login-form
+automation (typing username/password into a real login page) doesn't reliably work, but a task
+completes fine once a human has *manually* logged into the right account in the browser Cowork
+uses — confirmed against a real TIM chip-registration task. That's fine for a skill tied to one
+account, but breaks a batch that needs two (e.g. TIM's MUNDO and MUNDO 2 accounts): the skill's own
+prompt already groups rows by account and processes each group together, but the "log out of A, log
+into B" switch between groups is exactly the automation that doesn't work.
+
+The fix is deliberately *not* a prompt change (rewording the login steps was already tried and
+didn't help, and there's no reason to expect a further reword would). `Skill.accountSplit`
+(`lib/types.ts`) instead splits a multi-account run at the input-value level, before anything is
+sent to Cowork at all:
+
+```ts
+interface SkillAccountSplit {
+  field: string; // an InputField.key — which multi-line field to split
+  groups: { label: string; pattern: string; chromeProfileDirectory: string }[];
+}
+```
+
+`lib/accountSplit.ts`'s `splitLinesByAccountGroups()` tests each line of that field's value against
+every group's `pattern` (a case-insensitive regex source; a plain substring like `"MUNDO"` is valid
+regex too), first match wins, groups tried in array order (so list `"MUNDO 2"` before the broader
+`"MUNDO"` it would otherwise also match). It only actually splits when the match is *clean* — every
+line matches exactly one group, and at least two groups matched something; any ambiguity (a line
+matching zero groups, or only one group present) falls back to running as a single, unsplit
+execution, exactly like before this feature existed — leaning on the skill's own prompt, which
+already has a "linha não bate com nenhuma conta, pare e explique" instruction, to handle that case
+rather than this code guessing or silently dropping a row.
+
+When it does split, `lib/runSkill.ts`'s `runSkillMaybeSplit()` (now what
+`POST /api/skills/[id]/run`, `/run/stream`, and the scheduled-cron route all call, instead of
+`runSkill` directly) runs one full execution per matched group — each with *only* that group's
+lines as the field's value, the skill's prompt template completely untouched. Each execution is
+tagged (`Execution.coworkAccountLabel`/`coworkChromeProfile`) with the matched group's label and
+Chrome profile, shown as a small pill on that execution's row/detail header
+(`components/ExecutionList.tsx`). The manual run panel's SSE stream (`/run/stream`) sends one
+`"done"` event per resulting execution on the same connection rather than opening several — Cowork
+dispatch never streams live text either way, so there's nothing to interleave.
+
+**Getting the right account already logged in before each execution is the other half**, and that
+part genuinely needs a real Mac to verify (same caveat as `drive-cowork.applescript` itself, never
+run outside this sandbox). The approach: set up one separate Chrome profile per account (Chrome
+Settings → "You and Google" → add profile), log into each account there once, and keep both
+sessions alive. `Skill.accountSplit`'s `chromeProfileDirectory` names that profile's actual folder
+under `~/Library/Application Support/Google/Chrome/` (visible on that profile's own settings page).
+`mac-agent/agent.js`'s new `activateChromeProfile()` runs
+`open -na "Google Chrome" --args --profile-directory=X` right before driving Cowork for a tagged
+job — a real Chrome flag, not AppleScript guesswork, so that half is standard behavior. What's
+*not* verified is whether Cowork's own browser tool actually follows whichever Chrome window is
+frontmost, versus controlling some separate browser context this has no influence over at all — if
+a multi-account run still uses the wrong account after this, that assumption is the first thing to
+check, before assuming the two profiles themselves are set up wrong.
+
+Configure it from a skill's edit page — `components/SkillFieldsEditor.tsx`'s "Dividir por conta
+(avançado)" (only shown when "Roda via Claude Cowork" is checked): pick which input field holds the
+rows, then add one entry per account (label, pattern, Chrome profile folder). Deliberately not
+carried over by "Duplicar" (same reasoning as `systemSecrets` — a Chrome profile name is tied to
+this specific machine, not something a duplicate should inherit blind), and not restored by
+skill import (same as `schedule`/`scheduleApiSources`/`systemSecrets`).
+
+Needs two new columns, also in a fresh `supabase/schema.sql`:
+
+```sql
+alter table skills add column if not exists account_split jsonb;
+alter table executions add column if not exists cowork_account_label text;
+alter table executions add column if not exists cowork_chrome_profile text;
+```
+
 ## Login — real Supabase Auth
 
 `middleware.ts` gates every page behind `/login`, backed by real Supabase Auth (email +

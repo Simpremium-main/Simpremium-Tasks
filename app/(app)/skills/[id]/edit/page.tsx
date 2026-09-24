@@ -25,6 +25,7 @@ export default async function EditSkillPage({ params }: { params: { id: string }
           group: skill.group,
           tags: skill.tags,
           systemSecrets: skill.systemSecrets,
+          accountSplit: skill.accountSplit,
         }}
       />
     </div>

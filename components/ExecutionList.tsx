@@ -25,6 +25,7 @@ import {
   Star,
   Timer,
   User,
+  Users,
   X,
   XCircle,
 } from "lucide-react";
@@ -75,6 +76,10 @@ export interface ExecutionItem {
    *  actually starts driving Cowork for it (see mac-agent/agent.js's
    *  markStarted). Only meaningful when source is "cowork". */
   coworkStartedAt: string | null;
+  /** See Skill.accountSplit — set only when this execution was created by
+   *  splitting a multi-account batch, null for every other execution. */
+  coworkAccountLabel: string | null;
+  coworkChromeProfile: string | null;
   /** One entry per Skill.outputCallbacks configured at run time, same order
    *  — set only when the run reached the point of trying to send them
    *  (lib/runSkill.ts's finishExecution). null when the skill has none
@@ -355,6 +360,15 @@ function ExecutionRow({
               {SOURCE_ICONS[execution.source]}
               {SOURCE_LABELS[execution.source] ?? execution.source}
             </span>
+            {execution.coworkAccountLabel && (
+              <span
+                className="inline-flex items-center gap-1 text-xs text-ink/70 bg-canvas rounded-full px-2 py-0.5 shrink-0"
+                title="Skill.accountSplit dividiu um lote multi-conta — essa execução é só as linhas dessa conta."
+              >
+                <Users size={11} />
+                {execution.coworkAccountLabel}
+              </span>
+            )}
             {coworkPhase && (
               <span
                 className="hidden sm:inline-flex items-center gap-1 text-xs text-cowork bg-cowork-soft rounded-full px-2 py-0.5 shrink-0 max-w-[220px] truncate"
@@ -726,6 +740,15 @@ function ExecutionDetailsModal({
               {SOURCE_ICONS[execution.source]}
               {SOURCE_LABELS[execution.source] ?? execution.source}
             </span>
+            {execution.coworkAccountLabel && (
+              <span
+                className="inline-flex items-center gap-1 text-xs text-ink/70 bg-canvas rounded-full px-2 py-0.5"
+                title="Skill.accountSplit dividiu um lote multi-conta — essa execução é só as linhas dessa conta."
+              >
+                <Users size={11} />
+                {execution.coworkAccountLabel}
+              </span>
+            )}
             {coworkPhase && (
               <span className="inline-flex items-center gap-1 text-xs text-cowork bg-cowork-soft rounded-full px-2 py-0.5">
                 <Bot size={11} />

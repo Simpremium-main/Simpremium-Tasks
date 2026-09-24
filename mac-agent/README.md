@@ -195,6 +195,32 @@ at.
    `Cowork não chamou report_cowork_result dentro do tempo esperado` means it didn't reach the tool
    (or didn't call it) — recheck the setup and the phase-1 test above.
 
+## Multi-account skills (Skill.accountSplit)
+
+See the main README's "Multi-account Cowork skills" section for the full design — this is just the
+Mac-side setup. If a skill has `accountSplit` configured (its edit page's "Dividir por conta
+(avançado)"), a job this agent picks up may carry an `accountLabel`/`chromeProfile` — logged as
+`— conta "X"` when it picks the job up. Before driving Cowork on that job, it runs
+`activateChromeProfile()`, which shells out to:
+
+```
+open -na "Google Chrome" --args --profile-directory=<chromeProfileDirectory>
+```
+
+**Set up once per account, before relying on this:**
+
+1. Open Chrome, add one profile per account (avatar menu → Add) — log into that account's portal
+   in that profile and leave it logged in.
+2. Find each profile's real folder name: open `chrome://version` *inside that profile* — "Profile
+   Path" ends in the folder name (`Default`, `Profile 1`, `Profile 2`, ...). This exact string goes
+   in that account's `chromeProfileDirectory` on the skill's edit page — not the display name you
+   gave the profile.
+3. **Unverified, needs a real multi-account run to confirm**: whether Cowork's own browser tool
+   actually follows whichever Chrome window this brings to the front, or controls some separate
+   browser context of its own that this has no influence over. If a split run still acts on the
+   wrong account (or a screenshot in the result shows the wrong window), that's the assumption to
+   re-check first — not a sign the profiles themselves are set up wrong.
+
 ## Troubleshooting
 
 - **A dashboard run just sits at "running" forever.** Check this agent's own terminal/log output —

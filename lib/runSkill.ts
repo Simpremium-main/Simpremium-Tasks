@@ -1,4 +1,5 @@
 import { createExecution, setCoworkPayload, updateExecution, updateSkill } from "./data";
+import { splitLinesByAccountGroups } from "./accountSplit";
 import { buildPromptSnapshot, buildRawPrompt, maskInputValues } from "./mask";
 import { isCoworkAgentConfigured } from "./cowork";
 import { dispatchClaudeChunk, dispatchToClaude } from "./claude";
@@ -155,9 +156,10 @@ export async function runSkill(
   inputValues: Record<string, string>,
   ranBy: string | null,
   sourceOverride?: Execution["source"],
-  dryRun?: boolean
+  dryRun?: boolean,
+  accountTag?: { label: string; chromeProfile: string }
 ): Promise<Execution> {
-  const execution = await startExecution(skill, inputValues, ranBy, sourceOverride, dryRun);
+  const execution = await startExecution(skill, inputValues, ranBy, sourceOverride, dryRun, accountTag);
 
   const resolved = await resolveInputValues(skill, inputValues);
   if ("error" in resolved) {
@@ -173,6 +175,47 @@ export async function runSkill(
 
   const dispatch = await dispatchToClaude(rawPrompt);
   return finishExecution(skill, execution.id, dispatch);
+}
+
+/**
+ * The entry point POST /api/skills/[id]/run actually calls — wraps runSkill
+ * with Skill.accountSplit: when set (Cowork-only), and the designated
+ * field's rows cleanly belong to more than one account, this runs one
+ * separate execution PER account instead of one execution for everything,
+ * so the Mac mini agent never has to switch which TIM (or whatever
+ * portal's) account is logged in mid-task — see lib/accountSplit.ts and
+ * README's "Multi-account Cowork skills" section for the full story.
+ * Every other skill (accountSplit null, the default) behaves exactly as
+ * runSkill always has — this always returns a 1-element array for those.
+ */
+export async function runSkillMaybeSplit(
+  skill: Skill,
+  inputValues: Record<string, string>,
+  ranBy: string | null,
+  sourceOverride?: Execution["source"],
+  dryRun?: boolean
+): Promise<Execution[]> {
+  if (!skill.usesCowork || !skill.accountSplit) {
+    return [await runSkill(skill, inputValues, ranBy, sourceOverride, dryRun)];
+  }
+
+  const fieldValue = inputValues[skill.accountSplit.field];
+  const groups = typeof fieldValue === "string" ? splitLinesByAccountGroups(fieldValue, skill.accountSplit) : null;
+  if (!groups) {
+    return [await runSkill(skill, inputValues, ranBy, sourceOverride, dryRun)];
+  }
+
+  const executions: Execution[] = [];
+  for (const group of groups) {
+    const groupInputValues = { ...inputValues, [skill.accountSplit.field]: group.lines.join("\n") };
+    executions.push(
+      await runSkill(skill, groupInputValues, ranBy, sourceOverride, dryRun, {
+        label: group.label,
+        chromeProfile: group.chromeProfileDirectory,
+      })
+    );
+  }
+  return executions;
 }
 
 /**
@@ -329,7 +372,8 @@ async function startExecution(
   inputValues: Record<string, string>,
   ranBy: string | null,
   sourceOverride?: Execution["source"],
-  dryRun?: boolean
+  dryRun?: boolean,
+  accountTag?: { label: string; chromeProfile: string }
 ) {
   const { promptSnapshot, maskedInputs } = buildPrompts(skill, inputValues);
   return createExecution({
@@ -343,6 +387,8 @@ async function startExecution(
     files: null,
     ranBy,
     dryRun,
+    coworkAccountLabel: accountTag?.label ?? null,
+    coworkChromeProfile: accountTag?.chromeProfile ?? null,
   });
 }
 

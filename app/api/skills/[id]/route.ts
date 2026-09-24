@@ -140,6 +140,60 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
   }
 
+  if ("accountSplit" in body) {
+    if (body.accountSplit === null) {
+      patch.accountSplit = null;
+    } else if (
+      body.accountSplit &&
+      typeof body.accountSplit === "object" &&
+      typeof body.accountSplit.field === "string" &&
+      body.accountSplit.field.trim() &&
+      Array.isArray(body.accountSplit.groups)
+    ) {
+      const groups = body.accountSplit.groups;
+      const valid = groups.every(
+        (g: unknown) =>
+          g &&
+          typeof g === "object" &&
+          typeof (g as { label?: unknown }).label === "string" &&
+          (g as { label: string }).label.trim() &&
+          typeof (g as { pattern?: unknown }).pattern === "string" &&
+          (g as { pattern: string }).pattern.trim() &&
+          typeof (g as { chromeProfileDirectory?: unknown }).chromeProfileDirectory === "string" &&
+          (g as { chromeProfileDirectory: string }).chromeProfileDirectory.trim()
+      );
+      if (!valid) {
+        return NextResponse.json(
+          { error: "accountSplit.groups must each have a non-empty label, pattern and chromeProfileDirectory" },
+          { status: 400 }
+        );
+      }
+      // Every pattern is used as a RegExp source at split time (see
+      // lib/accountSplit.ts) — reject here rather than let a typo blow up
+      // silently on the next run.
+      const badPattern = groups.find((g: { pattern: string }) => {
+        try {
+          new RegExp(g.pattern, "i");
+          return false;
+        } catch {
+          return true;
+        }
+      });
+      if (badPattern) {
+        return NextResponse.json(
+          { error: `Padrão inválido em accountSplit: "${badPattern.pattern}" não é uma expressão regular válida` },
+          { status: 400 }
+        );
+      }
+      patch.accountSplit = groups.length ? { field: body.accountSplit.field, groups } : null;
+    } else {
+      return NextResponse.json(
+        { error: "accountSplit must be null or {field, groups: [{label, pattern, chromeProfileDirectory}]}" },
+        { status: 400 }
+      );
+    }
+  }
+
   try {
     const user = await getCurrentUser();
     const skill = await updateSkill(params.id, patch, user?.displayName ?? null);

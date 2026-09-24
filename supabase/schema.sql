@@ -35,6 +35,7 @@ create table if not exists skills (
   share_token     text unique, -- null means not shared; set means /share/<token> shows a read-only public view of this skill
   position        double precision not null default 0, -- drag-and-drop order on the dashboard, ascending — see lib/data.ts's createSkill/updateSkill. Personal ordering, like pinned: not part of the skill's definition, not carried by export/import
   system_secrets  text[], -- names of server env vars (SKILL_SECRET_ prefix only, enforced in code) this skill's prompt can reference by {{placeholder}} — resolved fresh at dispatch time, never persisted as a real value; see lib/systemSecrets.ts
+  account_split   jsonb, -- SkillAccountSplit | null — Cowork-only, opt-in: splits a multi-account manual/scheduled run into one execution per account instead of asking Cowork to switch accounts mid-task, see lib/accountSplit.ts
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );
@@ -60,6 +61,8 @@ create table if not exists executions (
   cowork_started_at timestamptz, -- stamped by POST /api/cowork-agent/mark-started the moment the Mac mini agent actually starts driving Cowork for this job (not when it was queued) — lets the UI say "Cowork's been working on this for Xm" instead of a generic "running" for a job that might still just be waiting in the queue.
   output_callback_results jsonb, -- OutputCallbackResult[] | null — one entry per Skill.outputCallbacks, same order — set only when the skill has at least one configured and this run succeeded. Superseded the old output_callback_status/error/last_body columns.
   dry_run                boolean not null default false, -- set at run start (see lib/runSkill.ts's startExecution) — the skill itself runs for real either way; this only controls whether finishExecution actually calls the configured output callbacks or just records what it would have sent
+  cowork_account_label   text, -- set only when Skill.accountSplit split a multi-account batch — the matched group's human label, see lib/accountSplit.ts
+  cowork_chrome_profile  text, -- same split, the matched group's Chrome profile directory — see mac-agent/agent.js's activateChromeProfile
   started_at      timestamptz not null default now(),
   finished_at     timestamptz
 );

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createExecution, listScheduledSkills, updateSkill } from "@/lib/data";
-import { runSkill } from "@/lib/runSkill";
+import { runSkillMaybeSplit } from "@/lib/runSkill";
 import { isDue, hasUnschedulableSecret, resolveScheduledInputValues } from "@/lib/schedule";
 import { notifyScheduleFailure } from "@/lib/notify";
 
@@ -80,10 +80,16 @@ export async function GET(req: NextRequest) {
           continue;
         }
 
-        const execution = await runSkill(skill, resolved.values, "Agendamento", "scheduled");
-        results.push({ skillId: skill.id, name: skill.name, ran: true, status: execution.status });
-        if (execution.status === "error" || execution.status === "needs_setup") {
-          await notifyScheduleFailure(skill, execution);
+        // Usually one execution — more than one only when Skill.accountSplit
+        // split this run's rows across several accounts (see
+        // lib/runSkill.ts's runSkillMaybeSplit); each is notified/reported
+        // independently, same as if they'd been separate scheduled skills.
+        const executions = await runSkillMaybeSplit(skill, resolved.values, "Agendamento", "scheduled");
+        for (const execution of executions) {
+          results.push({ skillId: skill.id, name: skill.name, ran: true, status: execution.status });
+          if (execution.status === "error" || execution.status === "needs_setup") {
+            await notifyScheduleFailure(skill, execution);
+          }
         }
       } catch (err) {
         results.push({

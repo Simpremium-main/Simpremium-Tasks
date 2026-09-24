@@ -39,6 +39,9 @@ export interface EditableSkillFields {
    *  afterward, for the rare skill that needs a fixed, non-retyped
    *  credential). */
   systemSecrets: string[] | null;
+  /** See Skill.accountSplit — same "optional, never inferred from a pasted
+   *  post" rule as systemSecrets: only ever set by hand afterward. */
+  accountSplit: SkillAccountSplit | null;
 }
 
 export interface SkillDraftProposal extends EditableSkillFields {
@@ -206,6 +209,50 @@ export interface ConversationState {
   usage: TokenUsage;
 }
 
+/**
+ * One named account a multi-account Cowork skill's rows can belong to — see
+ * Skill.accountSplit. `pattern` is a case-insensitive regex source tested
+ * against each line of the split field's value (a plain substring like
+ * "MUNDO" is valid regex too, so this covers the common case without a
+ * separate "multiple keywords" UI); groups are tried in array order, first
+ * match wins, so a more specific pattern (e.g. "MUNDO 2") should come before
+ * a broader one it would otherwise also match (e.g. "MUNDO").
+ * `chromeProfileDirectory` is a real macOS Chrome profile directory name
+ * (e.g. "Profile 1", under ~/Library/Application Support/Google/Chrome/) —
+ * see mac-agent/agent.js's activateChromeProfile() for how the Mac mini
+ * agent uses it, and its own file header for why that part is unverified.
+ */
+export interface SkillAccountGroup {
+  label: string;
+  pattern: string;
+  chromeProfileDirectory: string;
+}
+
+/**
+ * Opt-in, Cowork-only: splits one manual run into several separate
+ * executions when the named input field's rows belong to more than one
+ * account, instead of asking Cowork to log out of one account and into
+ * another mid-task — something a real run showed doesn't work reliably
+ * (see README's "Multi-account Cowork skills" section for the full story).
+ * Each resulting execution gets only its own group's matching lines, tagged
+ * with that group's label/chromeProfileDirectory (Execution.coworkAccountLabel/
+ * coworkChromeProfile) so the Mac mini agent can switch to the right
+ * already-logged-in browser profile before driving Cowork on it — the
+ * skill's own prompt template is never touched by this at all, only which
+ * lines go into which execution's input value.
+ *
+ * Only actually splits (see lib/accountSplit.ts) when every line in the
+ * field cleanly matches exactly one group; any ambiguity (a line matching
+ * zero or several groups) falls back to today's single-execution behavior
+ * unchanged, leaning on the prompt's own "linha não bate com nenhuma conta,
+ * pare e explique" instruction exactly as before this feature existed.
+ */
+export interface SkillAccountSplit {
+  /** Must match an InputField.key from the skill's own inputSchema. */
+  field: string;
+  groups: SkillAccountGroup[];
+}
+
 export interface Skill {
   id: string;
   name: string;
@@ -270,6 +317,9 @@ export interface Skill {
    *  other env var (ANTHROPIC_API_KEY, SUPABASE_SERVICE_ROLE_KEY, ...) into
    *  a prompt Cowork/Claude then acts on. */
   systemSecrets: string[] | null;
+  /** See SkillAccountSplit — null (the default) means no splitting, every
+   *  skill behaves exactly as before this feature existed. */
+  accountSplit: SkillAccountSplit | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -313,6 +363,13 @@ export interface Execution {
    *  builds and records the body it *would* have sent. Never affects
    *  dispatch itself (Cowork/Claude), only this one side effect. */
   dryRun: boolean;
+  /** Set only when this execution was created by Skill.accountSplit
+   *  splitting a multi-account batch — the matched group's label/Chrome
+   *  profile, so the Mac mini agent knows which already-logged-in browser
+   *  profile to switch to before driving Cowork on it. Null for every
+   *  other execution (the vast majority). */
+  coworkAccountLabel: string | null;
+  coworkChromeProfile: string | null;
   startedAt: Date;
   finishedAt: Date | null;
 }

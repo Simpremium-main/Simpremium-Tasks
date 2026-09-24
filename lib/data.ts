@@ -15,6 +15,7 @@ import type {
   OutputCallbackResult,
   PromptVersion,
   Skill,
+  SkillAccountSplit,
   SkillSchedule,
   TokenUsage,
 } from "./types";
@@ -87,6 +88,7 @@ function mapSkillRow(row: Record<string, unknown>): Skill {
     pinned: Boolean(row.pinned),
     shareToken: (row.share_token as string | null) ?? null,
     systemSecrets: (row.system_secrets as string[] | null) ?? null,
+    accountSplit: (row.account_split as SkillAccountSplit | null) ?? null,
     position: Number(row.position ?? 0),
     createdAt: new Date(row.created_at as string),
     updatedAt: new Date(row.updated_at as string),
@@ -112,6 +114,8 @@ function mapExecutionRow(row: Record<string, unknown>): Execution {
     coworkStartedAt: row.cowork_started_at ? new Date(row.cowork_started_at as string) : null,
     outputCallbackResults: (row.output_callback_results as OutputCallbackResult[] | null) ?? null,
     dryRun: Boolean(row.dry_run),
+    coworkAccountLabel: (row.cowork_account_label as string | null) ?? null,
+    coworkChromeProfile: (row.cowork_chrome_profile as string | null) ?? null,
     startedAt: new Date(row.started_at as string),
     finishedAt: row.finished_at ? new Date(row.finished_at as string) : null,
   };
@@ -366,6 +370,7 @@ export interface UpdateSkillInput {
   pinned?: boolean;
   position?: number;
   systemSecrets?: string[] | null;
+  accountSplit?: SkillAccountSplit | null;
 }
 
 /**
@@ -418,6 +423,7 @@ export async function updateSkill(
   if (patch.pinned !== undefined) row.pinned = patch.pinned;
   if (patch.position !== undefined) row.position = patch.position;
   if (patch.systemSecrets !== undefined) row.system_secrets = patch.systemSecrets;
+  if (patch.accountSplit !== undefined) row.account_split = patch.accountSplit;
 
   const { data, error, status, statusText } = await supabase
     .from("skills")
@@ -630,6 +636,9 @@ export interface CreateExecutionInput {
   files: ExecutionFile[] | null;
   ranBy: string | null;
   dryRun?: boolean;
+  /** See Skill.accountSplit / Execution.coworkAccountLabel. */
+  coworkAccountLabel?: string | null;
+  coworkChromeProfile?: string | null;
 }
 
 export async function createExecution(input: CreateExecutionInput): Promise<Execution> {
@@ -649,6 +658,8 @@ export async function createExecution(input: CreateExecutionInput): Promise<Exec
       files: input.files,
       ran_by: input.ranBy,
       dry_run: input.dryRun ?? false,
+      cowork_account_label: input.coworkAccountLabel ?? null,
+      cowork_chrome_profile: input.coworkChromeProfile ?? null,
       started_at: now,
       finished_at: isTerminal ? now : null,
     })
@@ -739,6 +750,10 @@ export interface CoworkJob {
   executionId: string;
   skillName: string;
   prompt: string;
+  /** See Execution.coworkAccountLabel/coworkChromeProfile — set only when
+   *  this job came from a Skill.accountSplit split. */
+  accountLabel: string | null;
+  chromeProfile: string | null;
 }
 
 /**
@@ -850,7 +865,7 @@ export async function claimNextCoworkJob(): Promise<CoworkJob | null> {
     statusText,
   } = await supabase
     .from("executions")
-    .select("id, skill_id, cowork_payload")
+    .select("id, skill_id, cowork_payload, cowork_account_label, cowork_chrome_profile")
     .eq("status", "running")
     .not("cowork_payload", "is", null)
     .order("started_at", { ascending: true })
@@ -889,7 +904,13 @@ export async function claimNextCoworkJob(): Promise<CoworkJob | null> {
   }
   console.log(`[cowork-agent-server] payload da execução ${executionId} limpo após entrega ao agente`);
 
-  return { executionId, skillName, prompt };
+  return {
+    executionId,
+    skillName,
+    prompt,
+    accountLabel: (data.cowork_account_label as string | null) ?? null,
+    chromeProfile: (data.cowork_chrome_profile as string | null) ?? null,
+  };
 }
 
 /** Stamped by POST /api/cowork-agent/mark-started the moment the Mac mini

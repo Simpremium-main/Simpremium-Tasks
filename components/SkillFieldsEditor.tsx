@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Bot, Folder, KeyRound, PenLine, Plus, Tag, Trash2, X } from "lucide-react";
-import type { EditableSkillFields, InputField, InputFieldType } from "@/lib/types";
+import { Bot, Folder, KeyRound, PenLine, Plus, Tag, Trash2, Users, X } from "lucide-react";
+import type { EditableSkillFields, InputField, InputFieldType, SkillAccountGroup } from "@/lib/types";
 
 const FIELD_TYPES: InputFieldType[] = ["text", "textarea", "secret", "url", "number", "file", "video"];
 
@@ -53,6 +53,27 @@ export default function SkillFieldsEditor({
 
   function removeTag(tag: string) {
     onChange({ tags: value.tags.filter((t) => t !== tag) });
+  }
+
+  const accountGroups = value.accountSplit?.groups ?? [];
+
+  function setAccountSplitField(field: string) {
+    onChange({ accountSplit: field ? { field, groups: accountGroups } : null });
+  }
+
+  function updateAccountGroup(index: number, patch: Partial<SkillAccountGroup>) {
+    const groups = accountGroups.map((g, i) => (i === index ? { ...g, ...patch } : g));
+    onChange({ accountSplit: { field: value.accountSplit?.field ?? "", groups } });
+  }
+
+  function addAccountGroup() {
+    const groups = [...accountGroups, { label: "", pattern: "", chromeProfileDirectory: "" }];
+    onChange({ accountSplit: { field: value.accountSplit?.field ?? "", groups } });
+  }
+
+  function removeAccountGroup(index: number) {
+    const groups = accountGroups.filter((_, i) => i !== index);
+    onChange({ accountSplit: groups.length ? { field: value.accountSplit?.field ?? "", groups } : null });
   }
 
   return (
@@ -265,6 +286,89 @@ export default function SkillFieldsEditor({
           </p>
         )}
       </details>
+
+      {value.usesCowork && (
+        <details className="rounded-md border border-line p-3">
+          <summary className="cursor-pointer text-sm font-medium text-ink flex items-center gap-1.5">
+            <Users size={14} className="text-muted" />
+            Dividir por conta (avançado)
+          </summary>
+          <p className="mt-2 text-xs text-muted">
+            Pra um lote com linhas de mais de uma conta, quando o Cowork não consegue trocar de conta sozinho
+            no meio da tarefa (login/logout pelo navegador) — em vez de mudar o prompt, isso divide um único
+            "Rodar" em uma execução separada por conta (só as linhas daquela conta em cada uma), e o agente do
+            Mac mini troca pro perfil do Chrome certo antes de cada uma. O prompt da skill continua o mesmo,
+            sem precisar de instrução de troca de conta nele — cada execução já chega com login certo, se
+            aquele perfil do Chrome já estiver logado.
+          </p>
+          <div className="mt-2">
+            <label className="block text-xs font-medium text-ink mb-1">Campo com as linhas a dividir</label>
+            <select
+              value={value.accountSplit?.field ?? ""}
+              onChange={(e) => setAccountSplitField(e.target.value)}
+              className="w-full rounded border border-line bg-surface px-2 py-1.5 text-xs"
+            >
+              <option value="">— nenhum (não divide) —</option>
+              {value.inputSchema.map((f) => (
+                <option key={f.key} value={f.key}>
+                  {f.key}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {value.accountSplit?.field && (
+            <div className="mt-3 space-y-2">
+              {accountGroups.map((group, i) => (
+                <div key={i} className="rounded-md border border-line p-2 bg-canvas/40 space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={group.label}
+                      onChange={(e) => updateAccountGroup(i, { label: e.target.value })}
+                      placeholder="Nome da conta — ex: MUNDO 2"
+                      className="flex-1 min-w-[100px] rounded border border-line bg-surface px-2 py-1 text-xs"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeAccountGroup(i)}
+                      className="text-red-500 hover:text-red-700 shrink-0 transition-colors"
+                      title="Remover conta"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                  <input
+                    value={group.pattern}
+                    onChange={(e) => updateAccountGroup(i, { pattern: e.target.value })}
+                    placeholder='Padrão (regex) — ex: MUNDO 2|MUNDO2'
+                    className="w-full rounded border border-line bg-surface px-2 py-1 text-xs font-mono"
+                  />
+                  <input
+                    value={group.chromeProfileDirectory}
+                    onChange={(e) => updateAccountGroup(i, { chromeProfileDirectory: e.target.value })}
+                    placeholder='Pasta do perfil do Chrome — ex: Profile 1'
+                    className="w-full rounded border border-line bg-surface px-2 py-1 text-xs font-mono"
+                  />
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={addAccountGroup}
+                className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary-hover font-medium transition-colors"
+              >
+                <Plus size={13} />
+                adicionar conta
+              </button>
+              <p className="text-xs text-muted">
+                Contas são testadas nessa ordem — a primeira cujo padrão bater com a linha ganha, então liste a
+                mais específica antes (ex: "MUNDO 2" antes de "MUNDO"). Toda linha do lote precisa bater com
+                exatamente uma conta pra dividir automaticamente — se alguma não bater com nenhuma, ou o campo
+                tiver só uma conta configurada, roda como uma execução só, sem dividir.
+              </p>
+            </div>
+          )}
+        </details>
+      )}
     </div>
   );
 }

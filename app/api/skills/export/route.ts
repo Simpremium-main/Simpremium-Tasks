@@ -60,6 +60,7 @@ export async function GET(req: NextRequest) {
       schedule: skill.schedule,
       scheduleInputValues: skill.scheduleInputValues,
       scheduleApiSources: maskApiSources(skill.scheduleApiSources),
+      accountSplit: skill.accountSplit,
       createdAt: skill.createdAt.toISOString(),
       updatedAt: skill.updatedAt.toISOString(),
     }));
