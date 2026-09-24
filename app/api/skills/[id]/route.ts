@@ -158,11 +158,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           typeof (g as { label?: unknown }).label === "string" &&
           (g as { label: string }).label.trim() &&
           typeof (g as { pattern?: unknown }).pattern === "string" &&
-          (g as { pattern: string }).pattern.trim()
+          (g as { pattern: string }).pattern.trim() &&
+          typeof (g as { claudeInstanceId?: unknown }).claudeInstanceId === "string" &&
+          (g as { claudeInstanceId: string }).claudeInstanceId.trim()
       );
       if (!valid) {
         return NextResponse.json(
-          { error: "accountSplit.groups must each have a non-empty label and pattern" },
+          { error: "accountSplit.groups must each have a non-empty label, pattern and claudeInstanceId" },
           { status: 400 }
         );
       }
@@ -183,14 +185,30 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           { status: 400 }
         );
       }
-      const cleanGroups = groups.map((g: { label: string; pattern: string }) => ({
+      // claudeInstanceId becomes part of a filesystem path and a process
+      // lookup on the Mac mini agent (mac-agent/agent.js's
+      // findRunningInstancePid) — restricted to a safe slug so a typo or a
+      // pasted value can't produce a surprising path/process match.
+      const badInstanceId = groups.find(
+        (g: { claudeInstanceId: string }) => !/^[a-zA-Z0-9_-]+$/.test(g.claudeInstanceId)
+      );
+      if (badInstanceId) {
+        return NextResponse.json(
+          {
+            error: `claudeInstanceId inválido: "${badInstanceId.claudeInstanceId}" — só letras, números, "-" e "_"`,
+          },
+          { status: 400 }
+        );
+      }
+      const cleanGroups = groups.map((g: { label: string; pattern: string; claudeInstanceId: string }) => ({
         label: g.label,
         pattern: g.pattern,
+        claudeInstanceId: g.claudeInstanceId,
       }));
       patch.accountSplit = cleanGroups.length ? { field: body.accountSplit.field, groups: cleanGroups } : null;
     } else {
       return NextResponse.json(
-        { error: "accountSplit must be null or {field, groups: [{label, pattern}]}" },
+        { error: "accountSplit must be null or {field, groups: [{label, pattern, claudeInstanceId}]}" },
         { status: 400 }
       );
     }

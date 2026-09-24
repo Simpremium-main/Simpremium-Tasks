@@ -2,6 +2,7 @@ import type { SkillAccountSplit } from "./types";
 
 export interface AccountSplitGroup {
   label: string;
+  claudeInstanceId: string;
   lines: string[];
 }
 
@@ -46,6 +47,7 @@ export function splitLinesByAccountGroups(
     .sort(([a], [b]) => a - b)
     .map(([index, groupLines]) => ({
       label: compiled[index].group.label,
+      claudeInstanceId: compiled[index].group.claudeInstanceId,
       lines: groupLines,
     }));
 }

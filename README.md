@@ -750,7 +750,7 @@ sent to Cowork at all:
 ```ts
 interface SkillAccountSplit {
   field: string; // an InputField.key — which multi-line field to split
-  groups: { label: string; pattern: string }[];
+  groups: { label: string; pattern: string; claudeInstanceId: string }[];
 }
 ```
 
@@ -768,45 +768,72 @@ When it does split, `lib/runSkill.ts`'s `runSkillMaybeSplit()` (now what
 `POST /api/skills/[id]/run`, `/run/stream`, and the scheduled-cron route all call, instead of
 `runSkill` directly) runs one full execution per matched group — each with *only* that group's
 lines as the field's value, the skill's prompt template completely untouched. Each execution is
-tagged (`Execution.coworkAccountLabel`) with the matched group's label, shown as a small pill on
-that execution's row/detail header (`components/ExecutionList.tsx`). The manual run panel's SSE
-stream (`/run/stream`) sends one `"done"` event per resulting execution on the same connection
-rather than opening several — Cowork dispatch never streams live text either way, so there's
-nothing to interleave.
+tagged (`Execution.coworkAccountLabel`/`coworkClaudeInstance`) with the matched group's label and
+Claude Desktop instance id, the label shown as a small pill on that execution's row/detail header
+(`components/ExecutionList.tsx`). The manual run panel's SSE stream (`/run/stream`) sends one
+`"done"` event per resulting execution on the same connection rather than opening several — Cowork
+dispatch never streams live text either way, so there's nothing to interleave.
 
-**Getting the right account already logged in before each execution is the other half — and an
-earlier version of this got it wrong.** The first attempt tried switching a *system* Chrome
-profile (`open --profile-directory=`) before driving Cowork, on the assumption that Cowork's
-browser tool follows whichever Chrome window is frontmost. Checked directly against Anthropic's
-own docs (support.claude.com's "Use the built-in browser in Claude Cowork") rather than left as an
-assumption: Cowork's browser is **built into Claude Desktop itself**, isolated from the system
-browser — *"The built-in browser is separate from your own browser. Claude doesn't see your saved
-logins unless you choose to import them"* — and holds **one persistent login per site**, with no
-documented way to select which account a task uses. The Chrome-profile switch did nothing; there
-is no automated way to control this today.
+**Getting the right account already logged in before each execution is the other half, and it took
+two wrong attempts to land on the real mechanism.** First tried switching a *system* Chrome profile
+before driving Cowork, assuming Cowork's browser tool follows whichever Chrome window is frontmost —
+checked directly against Anthropic's own docs (support.claude.com's "Use the built-in browser in
+Claude Cowork") rather than left as an assumption, and that assumption was wrong: Cowork's browser
+is **built into Claude Desktop itself**, isolated from the system browser entirely — *"The built-in
+browser is separate from your own browser. Claude doesn't see your saved logins unless you choose to
+import them"* — and holds **one persistent login per site**, with no documented way to select which
+account a task uses *within one instance*. The Chrome-profile switch did nothing. Second attempt
+replaced it with a working but fully manual gate — the Mac mini agent pausing and asking a human to
+switch accounts inside Cowork's own browser panel between jobs.
 
-So the real mechanism is a manual gate, not automation: `mac-agent/agent.js` tracks the account
-label of the last job it drove (`lastAccountLabel`) and, when a new job's `accountLabel` differs,
-pauses and blocks on stdin — `waitForAccountSwitch()` prints
-`Troque pra ela dentro do navegador do Cowork... e pressione Enter pra continuar` and waits — before
-driving Cowork on it. You do the actual account switch inside Cowork's own browser panel in Claude
-Desktop, the same way a single-account skill already works today; this only makes sure the agent
-never starts a job for the wrong account without asking first.
+The actual fix needed a different unit than "one account per browser tab": **one whole separate
+Claude Desktop instance per account.** Claude Desktop is an Electron app, and Electron apps support
+`--user-data-dir` to run a fully isolated instance — own login, own local storage, own Cowork
+browser session — alongside the default one:
+
+```
+open -n -a "Claude.app" --args --user-data-dir="$HOME/.claude-instances/mundo"
+open -n -a "Claude.app" --args --user-data-dir="$HOME/.claude-instances/mundo2"
+```
+
+Log into Cowork once in each and leave both running — each stays permanently logged into its own
+account, so there's nothing to switch at run time anymore. `mac-agent/agent.js`'s
+`findRunningInstancePid()` finds the real process id of the instance a job needs by reading `ps`
+output and matching its `--user-data-dir` flag (preferring the main process over a renderer/helper
+subprocess that carries the same flag) — deliberately not by asking AppleScript to enumerate "the
+Nth process named Claude" (multiple instances share that name, and process order isn't stable
+across relaunches), and deliberately not auto-launching a missing instance (a freshly launched one
+isn't logged in yet, so silently launching one would just fail the task more confusingly) — a job
+whose instance isn't found running fails with a clear error naming the exact command to run, instead
+of guessing. `drive-cowork.applescript` then targets that exact pid via System Events
+(`first process whose unix id is ...`), not by name, so multiple same-named "Claude" processes never
+get confused for each other. The original single-instance path (`tell application "Claude" to
+activate`, confirmed working on a real Mac mini) is untouched — this new pid-targeted path only
+runs when a job actually carries one.
+
+**Unverified**, same caveat as the rest of this project's Mac-side automation, never run against a
+real Mac from this sandbox — but grounded in a documented, standard Electron mechanism and a
+documented AppleScript technique (targeting a process by pid), not another guess about Cowork's own
+internals specifically. Worth testing with two real instances and a small batch before trusting it
+on a real multi-account run — see `mac-agent/README.md`'s "Multi-account skills" section.
 
 Configure it from a skill's edit page — `components/SkillFieldsEditor.tsx`'s "Dividir por conta
 (avançado)" (only shown when "Roda via Claude Cowork" is checked): pick which input field holds the
-rows, then add one entry per account (label, pattern). Deliberately not carried over by "Duplicar"
-(same reasoning as `systemSecrets` — not something a duplicate should inherit blind), and not
-restored by skill import (same as `schedule`/`scheduleApiSources`/`systemSecrets`).
+rows, then add one entry per account (label, pattern, instance id — the same id used in the
+`--user-data-dir` folder name above). Deliberately not carried over by "Duplicar" (same reasoning as
+`systemSecrets` — not something a duplicate should inherit blind), and not restored by skill import
+(same as `schedule`/`scheduleApiSources`/`systemSecrets`).
 
-Needs one new column on each table, also in a fresh `supabase/schema.sql`:
+Needs two new columns, also in a fresh `supabase/schema.sql`:
 
 ```sql
 alter table skills add column if not exists account_split jsonb;
 alter table executions add column if not exists cowork_account_label text;
+alter table executions add column if not exists cowork_claude_instance text;
 ```
 
-If you already ran the earlier (wrong) migration for this feature, drop the now-unused column:
+If you already ran an earlier migration for this feature, drop the columns it added that are no
+longer used:
 
 ```sql
 alter table executions drop column if exists cowork_chrome_profile;

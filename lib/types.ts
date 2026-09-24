@@ -217,10 +217,17 @@ export interface ConversationState {
  * separate "multiple keywords" UI); groups are tried in array order, first
  * match wins, so a more specific pattern (e.g. "MUNDO 2") should come before
  * a broader one it would otherwise also match (e.g. "MUNDO").
+ *
+ * `claudeInstanceId` identifies a separate, fully isolated Claude Desktop
+ * instance (own login, own Cowork browser/session) launched with
+ * `--user-data-dir=~/.claude-instances/<claudeInstanceId>` — see
+ * mac-agent/agent.js's findRunningInstancePid(). A short slug
+ * (letters/numbers/-/_ only, enforced on save), not a display name.
  */
 export interface SkillAccountGroup {
   label: string;
   pattern: string;
+  claudeInstanceId: string;
 }
 
 /**
@@ -230,16 +237,19 @@ export interface SkillAccountGroup {
  * another mid-task — something a real run showed doesn't work reliably
  * (see README's "Multi-account Cowork skills" section for the full story).
  * Each resulting execution gets only its own group's matching lines, tagged
- * with that group's label (Execution.coworkAccountLabel) so the Mac mini
- * agent knows to pause and ask a human to switch accounts inside Cowork's
- * own built-in browser before driving it — Cowork's browser is isolated
- * from the system browser and holds one persistent login per site with no
- * exposed way to select which account a task uses, so there's no automated
- * profile-switching mechanism to hook into (confirmed against Anthropic's
- * own docs — see the README section above for the full story, including an
- * earlier, wrong attempt at automating this via system Chrome profiles).
- * The skill's own prompt template is never touched by any of this — only
- * which lines go into which execution's input value.
+ * with that group's label and Claude Desktop instance
+ * (Execution.coworkAccountLabel/coworkClaudeInstance) — the Mac mini agent
+ * drives that specific already-logged-in instance for it, found by its
+ * process id (never guessed by name/order, and never auto-launched: an
+ * instance that isn't already running and logged in fails the run with a
+ * clear error instead of silently doing something wrong). Cowork's browser
+ * itself is isolated from the system browser and holds one persistent
+ * login per site with no way to select an account within a single
+ * instance (confirmed against Anthropic's own docs) — this works around
+ * that by using one whole separate Claude Desktop instance per account
+ * instead, each permanently logged into its own. The skill's own prompt
+ * template is never touched by any of this — only which lines go into
+ * which execution's input value, and which instance drives it.
  *
  * Only actually splits (see lib/accountSplit.ts) when every line in the
  * field cleanly matches exactly one group; any ambiguity (a line matching
@@ -364,11 +374,12 @@ export interface Execution {
    *  dispatch itself (Cowork/Claude), only this one side effect. */
   dryRun: boolean;
   /** Set only when this execution was created by Skill.accountSplit
-   *  splitting a multi-account batch — the matched group's label, so the
-   *  Mac mini agent knows to pause and ask for an account switch inside
-   *  Cowork's own browser before driving it on this job (see
-   *  SkillAccountSplit). Null for every other execution. */
+   *  splitting a multi-account batch — the matched group's label and
+   *  Claude Desktop instance id (see SkillAccountGroup), so the Mac mini
+   *  agent knows which already-logged-in instance to drive it on. Null for
+   *  every other execution. */
   coworkAccountLabel: string | null;
+  coworkClaudeInstance: string | null;
   startedAt: Date;
   finishedAt: Date | null;
 }

@@ -115,6 +115,7 @@ function mapExecutionRow(row: Record<string, unknown>): Execution {
     outputCallbackResults: (row.output_callback_results as OutputCallbackResult[] | null) ?? null,
     dryRun: Boolean(row.dry_run),
     coworkAccountLabel: (row.cowork_account_label as string | null) ?? null,
+    coworkClaudeInstance: (row.cowork_claude_instance as string | null) ?? null,
     startedAt: new Date(row.started_at as string),
     finishedAt: row.finished_at ? new Date(row.finished_at as string) : null,
   };
@@ -637,6 +638,7 @@ export interface CreateExecutionInput {
   dryRun?: boolean;
   /** See Skill.accountSplit / Execution.coworkAccountLabel. */
   coworkAccountLabel?: string | null;
+  coworkClaudeInstance?: string | null;
 }
 
 export async function createExecution(input: CreateExecutionInput): Promise<Execution> {
@@ -657,6 +659,7 @@ export async function createExecution(input: CreateExecutionInput): Promise<Exec
       ran_by: input.ranBy,
       dry_run: input.dryRun ?? false,
       cowork_account_label: input.coworkAccountLabel ?? null,
+      cowork_claude_instance: input.coworkClaudeInstance ?? null,
       started_at: now,
       finished_at: isTerminal ? now : null,
     })
@@ -747,11 +750,13 @@ export interface CoworkJob {
   executionId: string;
   skillName: string;
   prompt: string;
-  /** See Execution.coworkAccountLabel — set only when this job came from a
-   *  Skill.accountSplit split. mac-agent/agent.js pauses and asks for a
-   *  manual account switch inside Cowork's own browser when this differs
-   *  from the last job it drove. */
+  /** See Execution.coworkAccountLabel/coworkClaudeInstance — set only when
+   *  this job came from a Skill.accountSplit split. mac-agent/agent.js
+   *  finds the already-running, already-logged-in Claude Desktop instance
+   *  matching claudeInstance (by process id, via findRunningInstancePid)
+   *  and drives that one specifically, instead of the default instance. */
   accountLabel: string | null;
+  claudeInstance: string | null;
 }
 
 /**
@@ -863,7 +868,7 @@ export async function claimNextCoworkJob(): Promise<CoworkJob | null> {
     statusText,
   } = await supabase
     .from("executions")
-    .select("id, skill_id, cowork_payload, cowork_account_label")
+    .select("id, skill_id, cowork_payload, cowork_account_label, cowork_claude_instance")
     .eq("status", "running")
     .not("cowork_payload", "is", null)
     .order("started_at", { ascending: true })
@@ -907,6 +912,7 @@ export async function claimNextCoworkJob(): Promise<CoworkJob | null> {
     skillName,
     prompt,
     accountLabel: (data.cowork_account_label as string | null) ?? null,
+    claudeInstance: (data.cowork_claude_instance as string | null) ?? null,
   };
 }
 

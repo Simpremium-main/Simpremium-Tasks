@@ -61,7 +61,8 @@ create table if not exists executions (
   cowork_started_at timestamptz, -- stamped by POST /api/cowork-agent/mark-started the moment the Mac mini agent actually starts driving Cowork for this job (not when it was queued) — lets the UI say "Cowork's been working on this for Xm" instead of a generic "running" for a job that might still just be waiting in the queue.
   output_callback_results jsonb, -- OutputCallbackResult[] | null — one entry per Skill.outputCallbacks, same order — set only when the skill has at least one configured and this run succeeded. Superseded the old output_callback_status/error/last_body columns.
   dry_run                boolean not null default false, -- set at run start (see lib/runSkill.ts's startExecution) — the skill itself runs for real either way; this only controls whether finishExecution actually calls the configured output callbacks or just records what it would have sent
-  cowork_account_label   text, -- set only when Skill.accountSplit split a multi-account batch — the matched group's human label; mac-agent/agent.js pauses and asks for a manual account switch inside Cowork's own browser when this differs from the last job it drove, see lib/accountSplit.ts
+  cowork_account_label   text, -- set only when Skill.accountSplit split a multi-account batch — the matched group's human label, see lib/accountSplit.ts
+  cowork_claude_instance text, -- same split, the matched group's Claude Desktop instance id (a separate --user-data-dir instance, permanently logged into that account) — mac-agent/agent.js finds it by process id and drives that specific instance, see its findRunningInstancePid
   started_at      timestamptz not null default now(),
   finished_at     timestamptz
 );

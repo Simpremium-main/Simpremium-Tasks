@@ -17,7 +17,6 @@ const { execFile } = require("child_process");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const readline = require("readline/promises");
 
 const CONFIG = loadConfig();
 
@@ -176,8 +175,12 @@ function runAppleScript(scriptPath, args) {
  * "Step-by-step and browser screenshots" section). This is a best-effort
  * mitigation, not a guarantee — whether Cowork actually complies is still
  * entirely up to the model, same caveat as before.
+ *
+ * `pid`, when given, drives that exact Claude Desktop process instead of
+ * the default one found by name — see Skill.accountSplit / this file's
+ * findRunningInstancePid(). UNVERIFIED, unlike the rest of this function.
  */
-async function driveCowork(executionId, prompt) {
+async function driveCowork(executionId, prompt, pid) {
   const reportingRules =
     `Ao final desta tarefa você DEVE chamar a ferramenta MCP "report_cowork_result" com ` +
     `executionId "${executionId}" — nunca termine sem chamar essa ferramenta, mesmo se a tarefa ` +
@@ -208,7 +211,8 @@ async function driveCowork(executionId, prompt) {
   fs.writeFileSync(promptFile, fullPrompt, "utf8");
 
   try {
-    await runAppleScript(path.join(__dirname, "drive-cowork.applescript"), [promptFile]);
+    const args = pid ? [promptFile, String(pid)] : [promptFile];
+    await runAppleScript(path.join(__dirname, "drive-cowork.applescript"), args);
   } finally {
     fs.rmSync(promptFile, { force: true });
   }
@@ -219,33 +223,75 @@ async function driveCowork(executionId, prompt) {
  * system browser (confirmed against Anthropic's own docs — "The built-in
  * browser is separate from your own browser. Claude doesn't see your saved
  * logins unless you choose to import them"), and holds one persistent login
- * per site with no exposed way to select which account a task uses. An
- * earlier version of this function tried switching a *system* Chrome
- * profile before driving Cowork — that did nothing, since Cowork's browser
- * has no relationship to system Chrome at all. There's no automated fix
- * available today: the only way to actually change which account is logged
- * in is for a human to do it inside Cowork's own browser panel, the same
- * way you already do for a single-account run.
+ * per site with no exposed way to select which account a task uses within a
+ * single instance. An earlier version of this file tried switching a
+ * *system* Chrome profile before driving Cowork — that did nothing, since
+ * Cowork's browser has no relationship to system Chrome at all. Then it
+ * tried pausing and asking a human to switch accounts inside Cowork's
+ * browser panel between jobs — correct, but fully manual, every time the
+ * account changed.
  *
- * So this just pauses and asks, blocking on stdin — tracks the label of the
- * last account this agent drove a job for (`lastAccountLabel`, reset each
- * time this process restarts) and only prompts when a new job's
- * `accountLabel` actually differs, so back-to-back jobs for the same
- * account never interrupt the poll loop.
+ * UNVERIFIED (never run against a real Mac), but grounded in a documented
+ * Electron mechanism rather than another assumption: Claude Desktop is an
+ * Electron app, and Electron apps support `--user-data-dir` to run a fully
+ * isolated instance (own login, own local storage, own Cowork browser
+ * session) alongside the default one. Run one instance per account —
+ *
+ *   open -n -a "Claude.app" --args --user-data-dir="$HOME/.claude-instances/<id>"
+ *
+ * — log into Cowork there once, and leave it running; do the same for each
+ * other account with a different <id>. Each stays permanently logged into
+ * its own account, so there's nothing to switch at run time anymore.
+ *
+ * findRunningInstancePid() finds the real process id of an already-running
+ * instance by reading `ps` output and matching its `--user-data-dir` flag —
+ * deliberately NOT by asking AppleScript to enumerate "the Nth process
+ * named Claude" (process order isn't guaranteed stable across relaunches),
+ * and deliberately NOT auto-launching a missing instance (a freshly
+ * launched one isn't logged in yet, so silently launching one would just
+ * fail the task in a more confusing way) — returns null when the account's
+ * instance isn't found running, and processJob below turns that into a
+ * clear, actionable error instead of guessing.
  */
-let lastAccountLabel = null;
+const CLAUDE_INSTANCES_DIR = path.join(os.homedir(), ".claude-instances");
 
-async function waitForAccountSwitch(accountLabel) {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    await rl.question(
-      `\n[cowork-agent] Essa tarefa é da conta "${accountLabel}" — troque pra ela dentro do ` +
-        `navegador do Cowork (no Claude Desktop, não no Chrome do sistema) e pressione Enter pra ` +
-        `continuar...\n`
-    );
-  } finally {
-    rl.close();
+function userDataDirFor(instanceId) {
+  return path.join(CLAUDE_INSTANCES_DIR, instanceId);
+}
+
+async function findRunningInstancePid(instanceId) {
+  const userDataDir = userDataDirFor(instanceId);
+  const stdout = await new Promise((resolve, reject) => {
+    execFile("ps", ["-eo", "pid=,command="], { maxBuffer: 10 * 1024 * 1024 }, (err, out, stderr) => {
+      if (err) {
+        reject(new Error(stderr?.trim() || err.message));
+        return;
+      }
+      resolve(out);
+    });
+  });
+
+  // Electron passes --user-data-dir to every child process of an instance
+  // (renderer, gpu-process, utility, ...), not just the main one — matching
+  // whichever line happens to come first in `ps` output risks targeting a
+  // background helper process instead of the actual app, which System
+  // Events can't meaningfully bring to the front the same way. The main
+  // process is the one launched without a `--type=...` flag, so it's
+  // preferred whenever present; only falls back to any match (better than
+  // nothing) if that line somehow isn't found.
+  let fallbackPid = null;
+  for (const line of stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (!trimmed.includes(`--user-data-dir=${userDataDir}`) && !trimmed.includes(`--user-data-dir="${userDataDir}"`)) {
+      continue;
+    }
+    const pid = trimmed.split(/\s+/)[0];
+    if (!pid) continue;
+    if (!trimmed.includes("--type=")) return pid;
+    if (!fallbackPid) fallbackPid = pid;
   }
+  return fallbackPid;
 }
 
 // The only way this agent learns a job is done: poll the execution's
@@ -268,11 +314,19 @@ async function processJob(job) {
   );
   await markStarted(job.executionId);
   try {
-    if (job.accountLabel && job.accountLabel !== lastAccountLabel) {
-      await waitForAccountSwitch(job.accountLabel);
-      lastAccountLabel = job.accountLabel;
+    let targetPid;
+    if (job.claudeInstance) {
+      targetPid = await findRunningInstancePid(job.claudeInstance);
+      if (!targetPid) {
+        throw new Error(
+          `A instância do Claude Desktop da conta "${job.accountLabel}" não está rodando/logada. ` +
+            `Abra com: open -n -a "Claude.app" --args --user-data-dir="${userDataDirFor(job.claudeInstance)}" ` +
+            `— faça login no Cowork nela e rode essa skill de novo.`
+        );
+      }
+      console.log(`[cowork-agent] Instância da conta "${job.accountLabel}" encontrada — pid ${targetPid}`);
     }
-    await driveCowork(job.executionId, job.prompt);
+    await driveCowork(job.executionId, job.prompt, targetPid);
     console.log(`[cowork-agent] Cowork disparado, aguardando o report via MCP (report_cowork_result)...`);
     const done = await waitForCompletion(job.executionId);
     if (done) {

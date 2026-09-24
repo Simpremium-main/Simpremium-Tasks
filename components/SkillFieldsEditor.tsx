@@ -67,7 +67,7 @@ export default function SkillFieldsEditor({
   }
 
   function addAccountGroup() {
-    const groups = [...accountGroups, { label: "", pattern: "" }];
+    const groups = [...accountGroups, { label: "", pattern: "", claudeInstanceId: "" }];
     onChange({ accountSplit: { field: value.accountSplit?.field ?? "", groups } });
   }
 
@@ -294,13 +294,21 @@ export default function SkillFieldsEditor({
             Dividir por conta (avançado)
           </summary>
           <p className="mt-2 text-xs text-muted">
-            Pra um lote com linhas de mais de uma conta, quando o Cowork não consegue trocar de conta sozinho
-            no meio da tarefa (login/logout pelo navegador dele) — em vez de mudar o prompt, isso divide um
-            único "Rodar" em uma execução separada por conta (só as linhas daquela conta em cada uma). O agente
-            do Mac mini para antes de cada execução de uma conta diferente da anterior e pede pra você trocar
-            de conta no próprio navegador do Cowork (dentro do Claude Desktop) antes de continuar — o Cowork
-            não tem um jeito de logar em duas contas ao mesmo tempo, então a troca é manual mesmo. O prompt da
-            skill continua o mesmo, sem precisar de instrução de troca de conta nele.
+            Pra um lote com linhas de mais de uma conta, quando o Cowork não consegue trocar de conta sozinho no
+            meio da tarefa (login/logout pelo navegador dele) — em vez de mudar o prompt, isso divide um único
+            "Rodar" em uma execução separada por conta (só as linhas daquela conta em cada uma). Como o Cowork só
+            mantém um login por vez dentro de uma mesma instância do Claude Desktop, cada conta aqui precisa da
+            sua própria instância, aberta e já logada, rodando ao mesmo tempo:
+          </p>
+          <pre className="mt-1.5 rounded bg-canvas p-2 text-xs font-mono overflow-x-auto">
+            {'open -n -a "Claude.app" --args --user-data-dir="$HOME/.claude-instances/<id>"'}
+          </pre>
+          <p className="mt-1.5 text-xs text-muted">
+            Rode esse comando uma vez por conta (trocando <code className="font-mono">{"<id>"}</code> pelo mesmo
+            valor do campo "ID da instância" abaixo), faça login no Cowork daquela instância, e deixe aberta — o
+            agente do Mac mini encontra e usa a instância certa sozinho a cada execução, sem precisar trocar de
+            conta na hora. Se a instância de uma conta não estiver rodando/logada quando a vez dela chegar, a
+            execução falha com um erro explicando qual comando rodar, em vez de tentar adivinhar.
           </p>
           <div className="mt-2">
             <label className="block text-xs font-medium text-ink mb-1">Campo com as linhas a dividir</label>
@@ -344,6 +352,12 @@ export default function SkillFieldsEditor({
                     placeholder='Padrão (regex) — ex: MUNDO 2|MUNDO2'
                     className="w-full rounded border border-line bg-surface px-2 py-1 text-xs font-mono"
                   />
+                  <input
+                    value={group.claudeInstanceId}
+                    onChange={(e) => updateAccountGroup(i, { claudeInstanceId: e.target.value })}
+                    placeholder="ID da instância — ex: mundo2 (letras/números/- /_)"
+                    className="w-full rounded border border-line bg-surface px-2 py-1 text-xs font-mono"
+                  />
                 </div>
               ))}
               <button
@@ -360,6 +374,12 @@ export default function SkillFieldsEditor({
                 exatamente uma conta pra dividir automaticamente — se alguma não bater com nenhuma, ou o campo
                 tiver só uma conta configurada, roda como uma execução só, sem dividir.
               </p>
+              {accountGroups.some((g) => g.claudeInstanceId && !/^[a-zA-Z0-9_-]+$/.test(g.claudeInstanceId)) && (
+                <p className="text-xs text-red-600">
+                  ID da instância só pode ter letras, números, "-" e "_" — é usado no nome da pasta e pra
+                  encontrar o processo certo no Mac mini.
+                </p>
+              )}
             </div>
           )}
         </details>

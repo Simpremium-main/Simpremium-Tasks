@@ -197,29 +197,50 @@ at.
 
 ## Multi-account skills (Skill.accountSplit)
 
-See the main README's "Multi-account Cowork skills" section for the full design — this is just the
-Mac-side setup. If a skill has `accountSplit` configured (its edit page's "Dividir por conta
-(avançado)"), a job this agent picks up may carry an `accountLabel` — logged as `— conta "X"` when
-it picks the job up.
+See the main README's "Multi-account Cowork skills" section for the full design and the story of
+the two earlier, wrong attempts (a system Chrome-profile switch that did nothing, then a working
+but fully manual pause-and-switch gate) — this is just the Mac-side setup for the current one. If a
+skill has `accountSplit` configured (its edit page's "Dividir por conta (avançado)"), a job this
+agent picks up may carry an `accountLabel`/`claudeInstance` — logged as `— conta "X"` when it picks
+the job up.
 
-**This used to try switching a system Chrome profile before driving Cowork — that was wrong and
-has been removed.** Checked against Anthropic's own docs: Cowork's browser is built into Claude
-Desktop itself, isolated from the system browser, and holds one persistent login per site with no
-way to select which account a task uses. There's no automated fix — only a human switching
-accounts inside Cowork's own browser panel actually changes which one is logged in.
+**UNVERIFIED — never run against a real Mac.** Grounded in a documented Electron mechanism
+(`--user-data-dir` for a fully isolated app instance) and a documented AppleScript technique
+(targeting a process by pid), not another guess about Cowork's internals specifically, but still
+worth testing carefully before trusting it on a real batch.
 
-So instead, when a job's `accountLabel` differs from the last one this agent drove, it pauses and
-prints to this terminal:
+**Set up once per account, before relying on this — each account gets its own permanently-running,
+permanently-logged-in Claude Desktop instance:**
 
-```
-[cowork-agent] Essa tarefa é da conta "X" — troque pra ela dentro do navegador do Cowork (no
-Claude Desktop, não no Chrome do sistema) e pressione Enter pra continuar...
-```
+1. For each account, open a separate instance:
+   ```
+   open -n -a "Claude.app" --args --user-data-dir="$HOME/.claude-instances/<id>"
+   ```
+   `<id>` must match that account's `claudeInstanceId` on the skill's edit page exactly (letters,
+   numbers, `-`, `_` only — enforced on save).
+2. Inside that instance, log into Cowork's built-in browser panel with that account, same as you
+   already do for a single-account skill. Leave it running.
+3. Repeat for every other account, each with a different `<id>`. All instances can be logged in and
+   running at the same time — that's the whole point, nothing to switch at run time anymore.
 
-Switch accounts inside Cowork's own browser panel (open Claude Desktop, use Cowork's built-in
-browser the same way you already log in for a single-account skill), then press Enter in this
-terminal to let the agent continue. Back-to-back jobs for the same account never pause — only an
-actual account change does.
+**How this agent uses it, per job:** `findRunningInstancePid()` runs `ps` and looks for a process
+whose command line contains `--user-data-dir=$HOME/.claude-instances/<id>` (preferring the main
+process over a renderer/helper subprocess that carries the same flag) — never by asking AppleScript
+to enumerate "the Nth process named Claude" (multiple instances share that name; process order
+isn't stable across relaunches). If found, `drive-cowork.applescript` is called with that exact pid
+as a second argument and targets it directly via System Events
+(`first process whose unix id is ...`), leaving the original name-based path (confirmed working)
+completely untouched for every skill that isn't using `accountSplit`. **If the instance isn't found
+running**, the job fails with a clear error naming the exact `open -n -a ...` command to run — never
+launched automatically (a freshly launched instance wouldn't be logged in yet, so silently starting
+one would just fail the task more confusingly later).
+
+**What to check first if a run still acts on the wrong account**, in order: (1) is the right
+instance actually running and logged in — `ps aux | grep user-data-dir` in Terminal should show one
+line per instance; (2) did `drive-cowork.applescript`'s pid-targeted branch actually run (check this
+agent's log for `Instância da conta "X" encontrada — pid ...`); (3) does `first process whose unix
+id is ...` actually resolve to the right window on your machine — test the script by hand (see
+"Testar o AppleScript" above) with a real pid from `ps` before trusting a full batch to it.
 
 ## Troubleshooting
 

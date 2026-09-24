@@ -79,6 +79,7 @@ export interface ExecutionItem {
   /** See Skill.accountSplit — set only when this execution was created by
    *  splitting a multi-account batch, null for every other execution. */
   coworkAccountLabel: string | null;
+  coworkClaudeInstance: string | null;
   /** One entry per Skill.outputCallbacks configured at run time, same order
    *  — set only when the run reached the point of trying to send them
    *  (lib/runSkill.ts's finishExecution). null when the skill has none

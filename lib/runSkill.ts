@@ -157,7 +157,7 @@ export async function runSkill(
   ranBy: string | null,
   sourceOverride?: Execution["source"],
   dryRun?: boolean,
-  accountTag?: { label: string }
+  accountTag?: { label: string; claudeInstance: string }
 ): Promise<Execution> {
   const execution = await startExecution(skill, inputValues, ranBy, sourceOverride, dryRun, accountTag);
 
@@ -209,7 +209,10 @@ export async function runSkillMaybeSplit(
   for (const group of groups) {
     const groupInputValues = { ...inputValues, [skill.accountSplit.field]: group.lines.join("\n") };
     executions.push(
-      await runSkill(skill, groupInputValues, ranBy, sourceOverride, dryRun, { label: group.label })
+      await runSkill(skill, groupInputValues, ranBy, sourceOverride, dryRun, {
+        label: group.label,
+        claudeInstance: group.claudeInstanceId,
+      })
     );
   }
   return executions;
@@ -370,7 +373,7 @@ async function startExecution(
   ranBy: string | null,
   sourceOverride?: Execution["source"],
   dryRun?: boolean,
-  accountTag?: { label: string }
+  accountTag?: { label: string; claudeInstance: string }
 ) {
   const { promptSnapshot, maskedInputs } = buildPrompts(skill, inputValues);
   return createExecution({
@@ -385,6 +388,7 @@ async function startExecution(
     ranBy,
     dryRun,
     coworkAccountLabel: accountTag?.label ?? null,
+    coworkClaudeInstance: accountTag?.claudeInstance ?? null,
   });
 }
 
