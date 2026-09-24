@@ -43,6 +43,22 @@ function describeError(
  * functions read and write.
  */
 
+// A skill saved before scheduleApiSources became "one-or-more sources per
+// field" still has the old shape in the DB — a single ApiFieldSource object
+// per field key, not an array. Reading it as an array (every consumer now
+// assumes) would crash the first .map()/for-of over it. Self-heals on read
+// so no manual data migration is needed; the next real save (ScheduleModal)
+// writes it back out in the new array shape anyway.
+function normalizeApiSources(raw: unknown): Record<string, ApiFieldSource[]> | null {
+  if (!raw || typeof raw !== "object") return null;
+  return Object.fromEntries(
+    Object.entries(raw as Record<string, unknown>).map(([key, value]) => [
+      key,
+      Array.isArray(value) ? (value as ApiFieldSource[]) : value ? [value as ApiFieldSource] : [],
+    ])
+  );
+}
+
 function mapSkillRow(row: Record<string, unknown>): Skill {
   return {
     id: row.id as string,
@@ -59,9 +75,15 @@ function mapSkillRow(row: Record<string, unknown>): Skill {
     tags: (row.tags as string[] | null) ?? [],
     schedule: (row.schedule as SkillSchedule | null) ?? null,
     scheduleInputValues: (row.schedule_input_values as Record<string, string> | null) ?? null,
-    scheduleApiSources: (row.schedule_api_sources as Record<string, ApiFieldSource[]> | null) ?? null,
+    scheduleApiSources: normalizeApiSources(row.schedule_api_sources),
     scheduleLastRunAt: row.schedule_last_run_at ? new Date(row.schedule_last_run_at as string) : null,
-    outputCallbacks: (row.output_callbacks as OutputCallback[] | null) ?? null,
+    // Same self-heal for the old single-object output_callback column — a
+    // skill saved before the fan-out change still only has that one, not
+    // the new output_callbacks array (which the SQL migration in the
+    // README backfills, but this makes it work immediately either way).
+    outputCallbacks:
+      (row.output_callbacks as OutputCallback[] | null) ??
+      (row.output_callback ? [row.output_callback as OutputCallback] : null),
     pinned: Boolean(row.pinned),
     shareToken: (row.share_token as string | null) ?? null,
     systemSecrets: (row.system_secrets as string[] | null) ?? null,
