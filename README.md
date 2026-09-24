@@ -750,7 +750,7 @@ sent to Cowork at all:
 ```ts
 interface SkillAccountSplit {
   field: string; // an InputField.key — which multi-line field to split
-  groups: { label: string; pattern: string; chromeProfileDirectory: string }[];
+  groups: { label: string; pattern: string }[];
 }
 ```
 
@@ -768,39 +768,48 @@ When it does split, `lib/runSkill.ts`'s `runSkillMaybeSplit()` (now what
 `POST /api/skills/[id]/run`, `/run/stream`, and the scheduled-cron route all call, instead of
 `runSkill` directly) runs one full execution per matched group — each with *only* that group's
 lines as the field's value, the skill's prompt template completely untouched. Each execution is
-tagged (`Execution.coworkAccountLabel`/`coworkChromeProfile`) with the matched group's label and
-Chrome profile, shown as a small pill on that execution's row/detail header
-(`components/ExecutionList.tsx`). The manual run panel's SSE stream (`/run/stream`) sends one
-`"done"` event per resulting execution on the same connection rather than opening several — Cowork
-dispatch never streams live text either way, so there's nothing to interleave.
+tagged (`Execution.coworkAccountLabel`) with the matched group's label, shown as a small pill on
+that execution's row/detail header (`components/ExecutionList.tsx`). The manual run panel's SSE
+stream (`/run/stream`) sends one `"done"` event per resulting execution on the same connection
+rather than opening several — Cowork dispatch never streams live text either way, so there's
+nothing to interleave.
 
-**Getting the right account already logged in before each execution is the other half**, and that
-part genuinely needs a real Mac to verify (same caveat as `drive-cowork.applescript` itself, never
-run outside this sandbox). The approach: set up one separate Chrome profile per account (Chrome
-Settings → "You and Google" → add profile), log into each account there once, and keep both
-sessions alive. `Skill.accountSplit`'s `chromeProfileDirectory` names that profile's actual folder
-under `~/Library/Application Support/Google/Chrome/` (visible on that profile's own settings page).
-`mac-agent/agent.js`'s new `activateChromeProfile()` runs
-`open -na "Google Chrome" --args --profile-directory=X` right before driving Cowork for a tagged
-job — a real Chrome flag, not AppleScript guesswork, so that half is standard behavior. What's
-*not* verified is whether Cowork's own browser tool actually follows whichever Chrome window is
-frontmost, versus controlling some separate browser context this has no influence over at all — if
-a multi-account run still uses the wrong account after this, that assumption is the first thing to
-check, before assuming the two profiles themselves are set up wrong.
+**Getting the right account already logged in before each execution is the other half — and an
+earlier version of this got it wrong.** The first attempt tried switching a *system* Chrome
+profile (`open --profile-directory=`) before driving Cowork, on the assumption that Cowork's
+browser tool follows whichever Chrome window is frontmost. Checked directly against Anthropic's
+own docs (support.claude.com's "Use the built-in browser in Claude Cowork") rather than left as an
+assumption: Cowork's browser is **built into Claude Desktop itself**, isolated from the system
+browser — *"The built-in browser is separate from your own browser. Claude doesn't see your saved
+logins unless you choose to import them"* — and holds **one persistent login per site**, with no
+documented way to select which account a task uses. The Chrome-profile switch did nothing; there
+is no automated way to control this today.
+
+So the real mechanism is a manual gate, not automation: `mac-agent/agent.js` tracks the account
+label of the last job it drove (`lastAccountLabel`) and, when a new job's `accountLabel` differs,
+pauses and blocks on stdin — `waitForAccountSwitch()` prints
+`Troque pra ela dentro do navegador do Cowork... e pressione Enter pra continuar` and waits — before
+driving Cowork on it. You do the actual account switch inside Cowork's own browser panel in Claude
+Desktop, the same way a single-account skill already works today; this only makes sure the agent
+never starts a job for the wrong account without asking first.
 
 Configure it from a skill's edit page — `components/SkillFieldsEditor.tsx`'s "Dividir por conta
 (avançado)" (only shown when "Roda via Claude Cowork" is checked): pick which input field holds the
-rows, then add one entry per account (label, pattern, Chrome profile folder). Deliberately not
-carried over by "Duplicar" (same reasoning as `systemSecrets` — a Chrome profile name is tied to
-this specific machine, not something a duplicate should inherit blind), and not restored by
-skill import (same as `schedule`/`scheduleApiSources`/`systemSecrets`).
+rows, then add one entry per account (label, pattern). Deliberately not carried over by "Duplicar"
+(same reasoning as `systemSecrets` — not something a duplicate should inherit blind), and not
+restored by skill import (same as `schedule`/`scheduleApiSources`/`systemSecrets`).
 
-Needs two new columns, also in a fresh `supabase/schema.sql`:
+Needs one new column on each table, also in a fresh `supabase/schema.sql`:
 
 ```sql
 alter table skills add column if not exists account_split jsonb;
 alter table executions add column if not exists cowork_account_label text;
-alter table executions add column if not exists cowork_chrome_profile text;
+```
+
+If you already ran the earlier (wrong) migration for this feature, drop the now-unused column:
+
+```sql
+alter table executions drop column if exists cowork_chrome_profile;
 ```
 
 ## Login — real Supabase Auth

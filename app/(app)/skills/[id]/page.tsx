@@ -53,8 +53,8 @@ export default async function SkillDetailPage({ params }: { params: { id: string
                 // system secret is an opt-in per skill, not something a
                 // duplicate should inherit automatically.
                 systemSecrets: null,
-                // Same reasoning — chromeProfileDirectory values are tied to
-                // this specific setup, not something to inherit blind.
+                // Same reasoning — an account-split config is tied to this
+                // specific setup, not something to inherit blind.
                 accountSplit: null,
               }}
               sourcePost={skill.sourcePost}

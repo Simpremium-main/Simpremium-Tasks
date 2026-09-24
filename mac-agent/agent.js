@@ -17,6 +17,7 @@ const { execFile } = require("child_process");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const readline = require("readline/promises");
 
 const CONFIG = loadConfig();
 
@@ -214,45 +215,37 @@ async function driveCowork(executionId, prompt) {
 }
 
 /**
- * UNVERIFIED, same caveat as drive-cowork.applescript's own header — this
- * has never been run against a real Mac. Best guess at how to make Cowork's
- * browser tool end up looking at a specific, already-logged-in Chrome
- * profile before a multi-account job starts (see Skill.accountSplit /
- * README's "Multi-account Cowork skills" section for why this exists):
- * `open -na "Google Chrome" --args --profile-directory=X` opens (or
- * refocuses) a window for that exact profile — a real Chrome flag, not
- * AppleScript guesswork, so this part at least is standard macOS/Chrome
- * behavior. What's NOT verified is whether Cowork's own browser tool
- * actually follows whichever Chrome window is frontmost/most-recently-
- * activated system-wide, versus controlling its own separate browser
- * context that this has no influence over at all — if multi-account jobs
- * come back still using the wrong account (or a screenshot shows the wrong
- * window), that's the thing to check first, before assuming the profiles
- * themselves are set up wrong. `profileDirectory` must be a real profile's
- * folder name under ~/Library/Application Support/Google/Chrome/ (Chrome
- * Settings → "You and Google" → the profile → its own settings page shows
- * this), and that profile needs to already be logged into the right
- * account BEFORE this job starts — this only switches which window is in
- * front, it never drives any login itself.
+ * Cowork's browser is built into Claude Desktop itself, isolated from the
+ * system browser (confirmed against Anthropic's own docs — "The built-in
+ * browser is separate from your own browser. Claude doesn't see your saved
+ * logins unless you choose to import them"), and holds one persistent login
+ * per site with no exposed way to select which account a task uses. An
+ * earlier version of this function tried switching a *system* Chrome
+ * profile before driving Cowork — that did nothing, since Cowork's browser
+ * has no relationship to system Chrome at all. There's no automated fix
+ * available today: the only way to actually change which account is logged
+ * in is for a human to do it inside Cowork's own browser panel, the same
+ * way you already do for a single-account run.
+ *
+ * So this just pauses and asks, blocking on stdin — tracks the label of the
+ * last account this agent drove a job for (`lastAccountLabel`, reset each
+ * time this process restarts) and only prompts when a new job's
+ * `accountLabel` actually differs, so back-to-back jobs for the same
+ * account never interrupt the poll loop.
  */
-async function activateChromeProfile(profileDirectory) {
-  console.log(`[cowork-agent] Ativando o perfil do Chrome "${profileDirectory}"...`);
-  await new Promise((resolve, reject) => {
-    execFile(
-      "open",
-      ["-na", "Google Chrome", "--args", `--profile-directory=${profileDirectory}`],
-      (err, _stdout, stderr) => {
-        if (err) {
-          reject(new Error(stderr?.trim() || err.message));
-          return;
-        }
-        resolve();
-      }
+let lastAccountLabel = null;
+
+async function waitForAccountSwitch(accountLabel) {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    await rl.question(
+      `\n[cowork-agent] Essa tarefa é da conta "${accountLabel}" — troque pra ela dentro do ` +
+        `navegador do Cowork (no Claude Desktop, não no Chrome do sistema) e pressione Enter pra ` +
+        `continuar...\n`
     );
-  });
-  // Give Chrome a moment to actually bring the window forward before the
-  // AppleScript below switches focus again to activate Claude Desktop.
-  await sleep(2000);
+  } finally {
+    rl.close();
+  }
 }
 
 // The only way this agent learns a job is done: poll the execution's
@@ -275,8 +268,9 @@ async function processJob(job) {
   );
   await markStarted(job.executionId);
   try {
-    if (job.chromeProfile) {
-      await activateChromeProfile(job.chromeProfile);
+    if (job.accountLabel && job.accountLabel !== lastAccountLabel) {
+      await waitForAccountSwitch(job.accountLabel);
+      lastAccountLabel = job.accountLabel;
     }
     await driveCowork(job.executionId, job.prompt);
     console.log(`[cowork-agent] Cowork disparado, aguardando o report via MCP (report_cowork_result)...`);

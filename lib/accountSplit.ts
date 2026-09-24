@@ -2,7 +2,6 @@ import type { SkillAccountSplit } from "./types";
 
 export interface AccountSplitGroup {
   label: string;
-  chromeProfileDirectory: string;
   lines: string[];
 }
 
@@ -47,7 +46,6 @@ export function splitLinesByAccountGroups(
     .sort(([a], [b]) => a - b)
     .map(([index, groupLines]) => ({
       label: compiled[index].group.label,
-      chromeProfileDirectory: compiled[index].group.chromeProfileDirectory,
       lines: groupLines,
     }));
 }

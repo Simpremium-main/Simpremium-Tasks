@@ -67,7 +67,7 @@ export default function SkillFieldsEditor({
   }
 
   function addAccountGroup() {
-    const groups = [...accountGroups, { label: "", pattern: "", chromeProfileDirectory: "" }];
+    const groups = [...accountGroups, { label: "", pattern: "" }];
     onChange({ accountSplit: { field: value.accountSplit?.field ?? "", groups } });
   }
 
@@ -295,11 +295,12 @@ export default function SkillFieldsEditor({
           </summary>
           <p className="mt-2 text-xs text-muted">
             Pra um lote com linhas de mais de uma conta, quando o Cowork não consegue trocar de conta sozinho
-            no meio da tarefa (login/logout pelo navegador) — em vez de mudar o prompt, isso divide um único
-            "Rodar" em uma execução separada por conta (só as linhas daquela conta em cada uma), e o agente do
-            Mac mini troca pro perfil do Chrome certo antes de cada uma. O prompt da skill continua o mesmo,
-            sem precisar de instrução de troca de conta nele — cada execução já chega com login certo, se
-            aquele perfil do Chrome já estiver logado.
+            no meio da tarefa (login/logout pelo navegador dele) — em vez de mudar o prompt, isso divide um
+            único "Rodar" em uma execução separada por conta (só as linhas daquela conta em cada uma). O agente
+            do Mac mini para antes de cada execução de uma conta diferente da anterior e pede pra você trocar
+            de conta no próprio navegador do Cowork (dentro do Claude Desktop) antes de continuar — o Cowork
+            não tem um jeito de logar em duas contas ao mesmo tempo, então a troca é manual mesmo. O prompt da
+            skill continua o mesmo, sem precisar de instrução de troca de conta nele.
           </p>
           <div className="mt-2">
             <label className="block text-xs font-medium text-ink mb-1">Campo com as linhas a dividir</label>
@@ -341,12 +342,6 @@ export default function SkillFieldsEditor({
                     value={group.pattern}
                     onChange={(e) => updateAccountGroup(i, { pattern: e.target.value })}
                     placeholder='Padrão (regex) — ex: MUNDO 2|MUNDO2'
-                    className="w-full rounded border border-line bg-surface px-2 py-1 text-xs font-mono"
-                  />
-                  <input
-                    value={group.chromeProfileDirectory}
-                    onChange={(e) => updateAccountGroup(i, { chromeProfileDirectory: e.target.value })}
-                    placeholder='Pasta do perfil do Chrome — ex: Profile 1'
                     className="w-full rounded border border-line bg-surface px-2 py-1 text-xs font-mono"
                   />
                 </div>

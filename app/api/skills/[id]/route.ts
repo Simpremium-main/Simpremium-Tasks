@@ -158,13 +158,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           typeof (g as { label?: unknown }).label === "string" &&
           (g as { label: string }).label.trim() &&
           typeof (g as { pattern?: unknown }).pattern === "string" &&
-          (g as { pattern: string }).pattern.trim() &&
-          typeof (g as { chromeProfileDirectory?: unknown }).chromeProfileDirectory === "string" &&
-          (g as { chromeProfileDirectory: string }).chromeProfileDirectory.trim()
+          (g as { pattern: string }).pattern.trim()
       );
       if (!valid) {
         return NextResponse.json(
-          { error: "accountSplit.groups must each have a non-empty label, pattern and chromeProfileDirectory" },
+          { error: "accountSplit.groups must each have a non-empty label and pattern" },
           { status: 400 }
         );
       }
@@ -185,10 +183,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           { status: 400 }
         );
       }
-      patch.accountSplit = groups.length ? { field: body.accountSplit.field, groups } : null;
+      const cleanGroups = groups.map((g: { label: string; pattern: string }) => ({
+        label: g.label,
+        pattern: g.pattern,
+      }));
+      patch.accountSplit = cleanGroups.length ? { field: body.accountSplit.field, groups: cleanGroups } : null;
     } else {
       return NextResponse.json(
-        { error: "accountSplit must be null or {field, groups: [{label, pattern, chromeProfileDirectory}]}" },
+        { error: "accountSplit must be null or {field, groups: [{label, pattern}]}" },
         { status: 400 }
       );
     }

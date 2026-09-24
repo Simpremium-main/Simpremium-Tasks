@@ -115,7 +115,6 @@ function mapExecutionRow(row: Record<string, unknown>): Execution {
     outputCallbackResults: (row.output_callback_results as OutputCallbackResult[] | null) ?? null,
     dryRun: Boolean(row.dry_run),
     coworkAccountLabel: (row.cowork_account_label as string | null) ?? null,
-    coworkChromeProfile: (row.cowork_chrome_profile as string | null) ?? null,
     startedAt: new Date(row.started_at as string),
     finishedAt: row.finished_at ? new Date(row.finished_at as string) : null,
   };
@@ -638,7 +637,6 @@ export interface CreateExecutionInput {
   dryRun?: boolean;
   /** See Skill.accountSplit / Execution.coworkAccountLabel. */
   coworkAccountLabel?: string | null;
-  coworkChromeProfile?: string | null;
 }
 
 export async function createExecution(input: CreateExecutionInput): Promise<Execution> {
@@ -659,7 +657,6 @@ export async function createExecution(input: CreateExecutionInput): Promise<Exec
       ran_by: input.ranBy,
       dry_run: input.dryRun ?? false,
       cowork_account_label: input.coworkAccountLabel ?? null,
-      cowork_chrome_profile: input.coworkChromeProfile ?? null,
       started_at: now,
       finished_at: isTerminal ? now : null,
     })
@@ -750,10 +747,11 @@ export interface CoworkJob {
   executionId: string;
   skillName: string;
   prompt: string;
-  /** See Execution.coworkAccountLabel/coworkChromeProfile — set only when
-   *  this job came from a Skill.accountSplit split. */
+  /** See Execution.coworkAccountLabel — set only when this job came from a
+   *  Skill.accountSplit split. mac-agent/agent.js pauses and asks for a
+   *  manual account switch inside Cowork's own browser when this differs
+   *  from the last job it drove. */
   accountLabel: string | null;
-  chromeProfile: string | null;
 }
 
 /**
@@ -865,7 +863,7 @@ export async function claimNextCoworkJob(): Promise<CoworkJob | null> {
     statusText,
   } = await supabase
     .from("executions")
-    .select("id, skill_id, cowork_payload, cowork_account_label, cowork_chrome_profile")
+    .select("id, skill_id, cowork_payload, cowork_account_label")
     .eq("status", "running")
     .not("cowork_payload", "is", null)
     .order("started_at", { ascending: true })
@@ -909,7 +907,6 @@ export async function claimNextCoworkJob(): Promise<CoworkJob | null> {
     skillName,
     prompt,
     accountLabel: (data.cowork_account_label as string | null) ?? null,
-    chromeProfile: (data.cowork_chrome_profile as string | null) ?? null,
   };
 }
 
