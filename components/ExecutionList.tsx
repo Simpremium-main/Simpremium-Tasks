@@ -30,7 +30,8 @@ import {
 } from "lucide-react";
 import StatusBadge from "./StatusBadge";
 import ChainResultButton from "./ChainResultButton";
-import { downloadPdf, downloadText } from "@/lib/exportResult";
+import { downloadCsv, downloadPdf, downloadText } from "@/lib/exportResult";
+import { parseMarkdownTable } from "@/lib/resultTable";
 import { estimateCostUsd, formatCostUsd, formatTokens, totalTokens } from "@/lib/cost";
 import { executionDurationMs, formatDuration } from "@/lib/duration";
 import { formatDateTime } from "@/lib/formatDate";
@@ -677,6 +678,7 @@ function ExecutionDetailsModal({
 }) {
   const [activeTab, setActiveTab] = useState<"resultado" | "passos">("resultado");
   const fileBase = `execucao-${execution.id.slice(0, 8)}`;
+  const csvRows = execution.result ? parseMarkdownTable(execution.result) : null;
   const durationMs = executionDurationMs(execution.startedAt, execution.finishedAt);
 
   // Screenshots ride the same `files` array as any other generated file
@@ -854,6 +856,7 @@ function ExecutionDetailsModal({
                 // would look like a second, fake copy of the same thing.
                 downloadBase={execution.files?.length ? undefined : fileBase}
                 downloadTitle={execution.skill?.name ?? "Resultado da execução"}
+                csvRows={csvRows}
               />
             )}
 
@@ -1005,12 +1008,14 @@ function DetailBlock({
   tone,
   downloadBase,
   downloadTitle,
+  csvRows,
 }: {
   label: string;
   text: string;
   tone: "canvas" | "emerald" | "red";
   downloadBase?: string;
   downloadTitle?: string;
+  csvRows?: Record<string, string>[] | null;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -1061,6 +1066,17 @@ function DetailBlock({
                 PDF
               </button>
             </>
+          )}
+          {csvRows && csvRows.length > 0 && (
+            <button
+              type="button"
+              onClick={() => downloadCsv(`${downloadBase ?? "resultado"}.csv`, csvRows)}
+              className="inline-flex items-center gap-1 text-xs text-muted hover:text-primary transition-colors"
+              title="Baixar a tabela do resultado como .csv (planilha)"
+            >
+              <Download size={12} />
+              CSV
+            </button>
           )}
         </div>
       </div>

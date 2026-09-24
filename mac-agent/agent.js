@@ -160,37 +160,48 @@ function runAppleScript(scriptPath, args) {
  * mini) — see README.md's "Testar o AppleScript" section if it ever stops
  * matching Cowork's UI after a Claude Desktop update.
  *
- * Appends an instruction telling Cowork to report its answer by calling
- * the report_cowork_result MCP tool (mac-agent/mcp-report-result/)
- * directly with this exact executionId — see README.md's "Reportando
- * resultado via MCP" section for how that's set up in Claude Desktop.
- * Deliberately MCP-only, no local-file fallback: this agent no longer
- * reads or watches any results file at all.
+ * Wraps the skill's own prompt with a reporting instruction telling Cowork
+ * to call report_cowork_result (mac-agent/mcp-report-result/) with this
+ * exact executionId — see README.md's "Reportando resultado via MCP"
+ * section for how that's set up in Claude Desktop. Deliberately MCP-only,
+ * no local-file fallback: this agent no longer reads or watches any
+ * results file at all.
+ *
+ * The instruction is stated BOTH before and after the skill's own prompt,
+ * not just appended at the end — a real skill prompt (e.g. a multi-step
+ * browser-automation task) can run to several thousand words, and a report
+ * from production showed the file/steps/screenshot requirements getting
+ * dropped when they only appeared once, after all of that (see README's
+ * "Step-by-step and browser screenshots" section). This is a best-effort
+ * mitigation, not a guarantee — whether Cowork actually complies is still
+ * entirely up to the model, same caveat as before.
  */
 async function driveCowork(executionId, prompt) {
+  const reportingRules =
+    `Ao final desta tarefa você DEVE chamar a ferramenta MCP "report_cowork_result" com ` +
+    `executionId "${executionId}" — nunca termine sem chamar essa ferramenta, mesmo se a tarefa ` +
+    `falhar. Três coisas que essa chamada precisa carregar sempre que se aplicarem, não são ` +
+    `opcionais: (1) se o resultado final é uma tabela ou lista de dados estruturados (várias ` +
+    `linhas com as mesmas colunas), inclua também um arquivo real com esses dados (.xlsx de ` +
+    `preferência, .csv se não conseguir gerar .xlsx) no campo "files" — uma tabela markdown sozinha ` +
+    `no texto do result NÃO é suficiente, isso vale sempre que o resultado for tabular, não só ` +
+    `quando o prompt pedir uma "planilha" com essas palavras; (2) se você tirou prints de tela do ` +
+    `navegador durante a tarefa e realmente tem acesso a eles como arquivo, inclua cada um também ` +
+    `em "files" (mimeType "image/png" ou "image/jpeg", name descritivo tipo ` +
+    `"passo-2-resultados-busca.png") — nunca invente ou simule um print que você não tem de verdade; ` +
+    `(3) preencha "steps" com o passo a passo real do que você foi fazendo, em ordem, um item curto ` +
+    `e concreto por passo (ex: "Abri a página X", "Cliquei em Y", "Extraí os dados Z").`;
+
   const fullPrompt =
-    `${prompt}\n\n---\nQuando terminar essa tarefa, chame a ferramenta MCP ` +
-    `"report_cowork_result" com executionId "${executionId}", status "success" e result ` +
-    `igual à sua resposta final completa (sem comentário adicional). Se a tarefa gerou algum ` +
-    `arquivo real (planilha, PDF, etc.), NÃO chame de "enviado" sem mais — inclua o conteúdo do ` +
-    `arquivo em base64 no campo "files" dessa mesma chamada (name, mimeType e contentBase64); sem ` +
-    `isso o arquivo fica só nessa conversa e não chega no dashboard. Se o resultado final for uma ` +
-    `tabela ou lista de dados estruturados (várias linhas com as mesmas colunas — números de linha, ` +
-    `estatísticas, resultados de busca, etc.), NÃO entregue só como tabela markdown no texto do ` +
-    `result — gere também um arquivo real com esses mesmos dados (.xlsx de preferência, .csv se não ` +
-    `conseguir gerar .xlsx) e anexe em "files" do mesmo jeito; o texto do result pode manter um ` +
-    `resumo ou a mesma tabela em markdown pra conferência rápida, mas o arquivo é obrigatório sempre ` +
-    `que o resultado for tabular, não é opcional nem depende do prompt específico ter pedido uma ` +
-    `"planilha" com essas palavras. Se durante a tarefa você usou ` +
-    `o navegador e tirou prints de tela, inclua cada print também no campo "files" (mesma lógica: ` +
-    `name descritivo tipo "passo-2-resultados-busca.png", mimeType "image/png" ou "image/jpeg" e o ` +
-    `conteúdo em base64) — só valem os prints que você realmente tem como arquivo pra anexar, não ` +
-    `invente nem simule um se não tiver acesso a eles. Preencha também o campo "steps" com o passo ` +
-    `a passo do que você foi fazendo, em ordem (ex: "Abri a página X", "Cliquei em Y", "Extraí os ` +
-    `dados Z") — curto, um item por passo. Se a tarefa falhar ou faltar alguma configuração pra ` +
-    `completá-la, chame a mesma ferramenta com status "error" (ou "needs_setup", se for falta de ` +
-    `configuração) e error explicando o que aconteceu — nunca deixe de chamar essa ferramenta ao ` +
-    `final, mesmo em caso de falha.`;
+    `${reportingRules}\n\n---\n\n${prompt}\n\n---\n\nLembrete: quando terminar essa tarefa, chame ` +
+    `"report_cowork_result" com executionId "${executionId}", status "success" e result igual à ` +
+    `sua resposta final completa (sem comentário adicional) — e não esqueça de incluir "files" ` +
+    `(arquivo real + prints de tela, se aplicável) e "steps", exatamente como descrito no início ` +
+    `desta mensagem. Se a tarefa gerou algum arquivo real, NÃO chame de "enviado" sem mais — inclua ` +
+    `o conteúdo em base64 no campo "files" dessa mesma chamada (name, mimeType e contentBase64); sem ` +
+    `isso o arquivo fica só nessa conversa e não chega no dashboard. Se a tarefa falhar ou faltar ` +
+    `alguma configuração pra completá-la, chame a mesma ferramenta com status "error" (ou ` +
+    `"needs_setup", se for falta de configuração) e error explicando o que aconteceu.`;
 
   const promptFile = path.join(os.tmpdir(), `cowork-prompt-${executionId}.txt`);
   fs.writeFileSync(promptFile, fullPrompt, "utf8");

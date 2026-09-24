@@ -941,7 +941,30 @@ project's "never fake a result" rule. Whether Cowork's browser tool actually exp
 screenshots to the model as attachable files (versus just showing them inline in its own
 conversation) isn't something confirmed from here — worth checking after a real run whether
 screenshots come through at all, and adjusting the prompt if Cowork needs to be told to explicitly
-save one instead. its `status`
+save one instead.
+
+**Confirmed against a real run:** a real Cowork task (TIM chip swap, a multi-thousand-word
+browser-automation prompt) came back with only a markdown table and a short, terse `steps` list —
+no attached `.xlsx`/`.csv`, no screenshots — even though the trailing instruction asked for both.
+Most likely cause: on a prompt that long, an instruction stated only once, at the very end, gets
+diluted. `driveCowork()` now states the file/steps/screenshot requirements twice — a short,
+imperative version *before* the skill's own prompt, and the fuller version again after it — instead
+of once at the tail. This is still best-effort, not a guarantee: it can't force Cowork's browser
+tool to expose screenshots as attachable files if it structurally doesn't, or force code execution
+to be available in a task that's otherwise pure browser automation — worth watching the next few
+real runs to see if repeating the instruction actually changes compliance.
+
+**A CSV that doesn't depend on Cowork at all:** since `lib/resultTable.ts`'s `parseMarkdownTable()`
+already exists (built for output-callback item extraction) and every tabular result keeps its
+markdown table in the text regardless of whether a real file also got attached, the execution
+details modal (`components/ExecutionList.tsx`) now offers a "CSV" download next to the existing
+.txt/PDF export whenever the result's text contains a parseable table — generated client-side
+(`lib/exportResult.ts`'s `downloadCsv()`, UTF-8 BOM so Excel opens pt-BR accents correctly) from
+that same table. Unlike the `.xlsx`/screenshots above, this doesn't depend on Cowork (or any
+dispatch path) doing anything extra — it's derived from text every tabular result already has, so
+it's there every time, not best-effort.
+
+Same for archiving a skill (see "Data model" above) on an existing project — its `status`
 check constraint only allows `draft`/`active` — a fresh `supabase/schema.sql` already includes
 `archived`, but an existing project needs its constraint widened (Postgres can't alter a check
 constraint in place, so this drops and recreates it):

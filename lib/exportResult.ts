@@ -44,6 +44,30 @@ export async function downloadPdf(filename: string, title: string, content: stri
   triggerDownload(doc.output("blob"), filename);
 }
 
+/**
+ * Turns a result's already-parsed markdown table (lib/resultTable.ts) into
+ * a real downloadable .csv — unlike .txt/.pdf above, this is structured
+ * data a spreadsheet can actually open as columns, not a text dump. Exists
+ * because Cowork attaching its own real .xlsx/.csv is best-effort (depends
+ * on the model actually doing it, see mac-agent/agent.js's driveCowork()
+ * instruction) — this gives a guaranteed CSV from the same markdown table
+ * every tabular result already includes in its text, regardless of whether
+ * Cowork also attached a file.
+ */
+export function downloadCsv(filename: string, rows: Record<string, string>[]) {
+  if (rows.length === 0) return;
+  const headers = Object.keys(rows[0]);
+  const escape = (value: string) => `"${value.replace(/"/g, '""')}"`;
+  const lines = [
+    headers.map(escape).join(","),
+    ...rows.map((row) => headers.map((h) => escape(row[h] ?? "")).join(",")),
+  ];
+  // ﻿: UTF-8 BOM so Excel (still the default on Windows) doesn't mangle
+  // accented pt-BR characters when double-clicking the file open.
+  const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+  triggerDownload(blob, filename);
+}
+
 function triggerDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
