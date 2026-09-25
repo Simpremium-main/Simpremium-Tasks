@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listSkills } from "@/lib/data";
-import { maskValue } from "@/lib/mask";
+import { maskUrl, maskValue } from "@/lib/mask";
 import type { ApiFieldSource } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +21,7 @@ function maskApiSources(
       key,
       fieldSources.map((source) => ({
         ...source,
+        url: maskUrl(source.url),
         headers: source.headers
           ? Object.fromEntries(Object.entries(source.headers).map(([h, v]) => [h, maskValue(v)]))
           : source.headers,

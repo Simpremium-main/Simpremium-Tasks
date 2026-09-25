@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getExecution, getSkill, uploadExecutionFile } from "@/lib/data";
 import { finishExecution } from "@/lib/runSkill";
 import type { DispatchStatus, ExecutionFile } from "@/lib/types";
+import { timingSafeEqualString } from "@/lib/tokenAuth";
 
 export const dynamic = "force-dynamic";
 
@@ -168,7 +169,7 @@ async function verifyToken(_req: Request, bearerToken?: string) {
   }
   const normalizedReceived = normalizeToken(bearerToken);
   const normalizedExpected = normalizeToken(expected);
-  if (normalizedReceived !== normalizedExpected) {
+  if (!timingSafeEqualString(normalizedReceived, normalizedExpected)) {
     console.log(
       `[cowork-agent-server] mcp auth: token não bateu — recebido ${maskForLog(normalizedReceived)}, esperado ${maskForLog(normalizedExpected)}`
     );

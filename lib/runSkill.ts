@@ -1,6 +1,6 @@
 import { createExecution, setCoworkPayload, updateExecution, updateSkill } from "./data";
 import { splitLinesByAccountGroups } from "./accountSplit";
-import { buildPromptSnapshot, buildRawPrompt, maskInputValues } from "./mask";
+import { buildPromptSnapshot, buildRawPrompt, maskInputValues, maskUrl } from "./mask";
 import { isCoworkAgentConfigured } from "./cowork";
 import { dispatchClaudeChunk, dispatchToClaude } from "./claude";
 import type { ClaudeChunkResult } from "./claude";
@@ -497,17 +497,22 @@ export async function finishExecution(skill: Skill, executionId: string, dispatc
             dryRunError = err instanceof Error ? err.message : "Erro desconhecido ao montar o corpo";
           }
         }
-        results.push({ url: callback.url, status: dryRunError ? "failed" : "skipped", error: dryRunError, lastBody: bodyText });
+        results.push({
+          url: maskUrl(callback.url),
+          status: dryRunError ? "failed" : "skipped",
+          error: dryRunError,
+          lastBody: bodyText,
+        });
         continue;
       }
 
       try {
         await sendOutputCallback(callback, resultText, skill.id);
-        results.push({ url: callback.url, status: "sent", error: null, lastBody: bodyText });
+        results.push({ url: maskUrl(callback.url), status: "sent", error: null, lastBody: bodyText });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Erro desconhecido ao enviar o retorno";
         console.error(`finishExecution: output callback failed for execution ${executionId} (${callback.url}):`, err);
-        results.push({ url: callback.url, status: "failed", error: message, lastBody: bodyText });
+        results.push({ url: maskUrl(callback.url), status: "failed", error: message, lastBody: bodyText });
       }
     }
 

@@ -779,80 +779,14 @@ export async function claimNextCoworkJob(): Promise<CoworkJob | null> {
     return null;
   }
 
-  // Diagnostic: "no job found" looks identical from the agent's side
-  // whether there's genuinely nothing queued, or there's a running Cowork
-  // execution whose cowork_payload somehow never got set (or got cleared
-  // early) — this is what actually tells those two apart, by reading the
-  // Vercel function logs for this route.
-  const { data: runningRows, error: runningError } = await supabase
-    .from("executions")
-    .select("id, source, cowork_payload, started_at")
-    .eq("status", "running");
-  if (runningError) {
-    console.log("[cowork-agent-server] busca de execuções 'running' falhou:", runningError.message);
-  } else if (!runningRows || runningRows.length === 0) {
-    console.log("[cowork-agent-server] busca feita, mas 0 execuções com status \"running\" encontradas");
-  } else {
-    const withPayload = runningRows.filter((r) => r.cowork_payload !== null && r.cowork_payload !== undefined);
-    console.log(
-      `[cowork-agent-server] busca feita: ${runningRows.length} execução(ões) "running", ${withPayload.length} com cowork_payload preenchido`
-    );
-    console.log(
-      "[cowork-agent-server] detalhe das execuções 'running':",
-      JSON.stringify(
-        runningRows.map((r) => ({
-          id: r.id,
-          source: r.source,
-          startedAt: r.started_at,
-          hasPayload: r.cowork_payload !== null && r.cowork_payload !== undefined,
-          payloadLen: r.cowork_payload?.length ?? 0,
-        }))
-      )
-    );
-  }
-
-  // Second, INDEPENDENT diagnostic query: instead of filtering by status
-  // first, filter by "has a payload" first, with NO status filter at all.
-  // If a row shows up here that did NOT show up in the "running" list
-  // above, that proves the row's actual status isn't "running" (contrary
-  // to what queueForCowork/setCoworkPayload assumed when it queued it) —
-  // pinpointing the mismatch instead of guessing at it.
-  const { data: payloadRows, error: payloadError } = await supabase
-    .from("executions")
-    .select("id, status, source, started_at, cowork_payload")
-    .not("cowork_payload", "is", null);
-  if (payloadError) {
-    console.log("[cowork-agent-server] busca por cowork_payload (qualquer status) falhou:", payloadError.message);
-  } else {
-    console.log(
-      `[cowork-agent-server] execuções com cowork_payload preenchido, QUALQUER status (${payloadRows?.length ?? 0}):`,
-      JSON.stringify(
-        (payloadRows ?? []).map((r) => ({
-          id: r.id,
-          status: r.status,
-          source: r.source,
-          startedAt: r.started_at,
-          payloadLen: r.cowork_payload?.length ?? 0,
-        }))
-      )
-    );
-    // Diagnostic: query 1 above (eq("status","running")) is filtering out
-    // rows that this query's own "status" field reads as "running" — the
-    // only way that's possible is if the stored value isn't byte-for-byte
-    // the string "running" (a stray space or other invisible character),
-    // which JSON.stringify alone won't make obvious in a casual log read.
-    // Dumping the length and a char-code array exposes exactly that.
-    console.log(
-      "[cowork-agent-server] status bruto (comprimento + códigos de caractere) de cada execução com payload:",
-      JSON.stringify(
-        (payloadRows ?? []).map((r) => ({
-          id: r.id,
-          statusLen: r.status?.length ?? null,
-          statusCodes: r.status ? Array.from(r.status as string).map((c) => c.charCodeAt(0)) : null,
-        }))
-      )
-    );
-  }
+  // A one-off diagnostic pass (2 extra queries + a full char-code dump of
+  // every "running"/payload-carrying row) used to run here unconditionally
+  // on every single poll — meant to chase a specific historical status-
+  // string mismatch bug, never actually read by the real query below, and
+  // never removed once that bug was found. Left running indefinitely, it
+  // cost 2 extra DB round-trips and heavy log output on every ~15s poll
+  // forever. Removed; re-add a scoped version of it if a similar mismatch
+  // ever needs diagnosing again.
 
   // Deliberately NOT embedding skills(name) here via a join (e.g.
   // .select("id, skill_id, cowork_payload, skills(name)")) — confirmed by

@@ -1,5 +1,5 @@
 import { getSupabase } from "./supabaseClient";
-import { maskValue } from "./mask";
+import { maskUrl, maskValue } from "./mask";
 import type { ApiCallDirection, ApiCallKind } from "./types";
 
 // Keeps a single pathological response from filling the table — this is a
@@ -40,7 +40,7 @@ export async function logApiCall(entry: {
       field_key: entry.fieldKey ?? null,
       direction: entry.direction,
       kind: entry.kind,
-      url: entry.url,
+      url: maskUrl(entry.url),
       method: entry.method,
       request_headers: maskHeaders(entry.requestHeaders),
       request_body: entry.requestBody ? entry.requestBody.slice(0, MAX_LOGGED_BODY_CHARS) : null,

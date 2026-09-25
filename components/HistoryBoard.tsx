@@ -12,9 +12,17 @@ type Filter = "all" | "success" | "error" | "needs_setup" | "files" | "favorites
 // "•" characters). Retrying with a masked value would silently resubmit
 // garbage instead of the real secret, so bulk retry skips any execution
 // whose inputValues contain one rather than attempting it.
+// lib/mask.ts's maskValue() always produces a run of at least 4 consecutive
+// "•" for any secret 4+ chars long (Math.max(value.length - 4, 4)), which
+// covers every realistic login/token/senha. Matching that shape — not just
+// "contains a bullet anywhere" — avoids treating legitimately bullet-listed
+// text a user pasted into a field (a real, unmasked value) as if it were a
+// masked secret and silently skipping it from bulk retry.
+const MASKED_VALUE_PATTERN = /•{4,}/;
+
 function hasMaskedSecret(inputValues: Record<string, string> | null): boolean {
   if (!inputValues) return false;
-  return Object.values(inputValues).some((v) => typeof v === "string" && v.includes("•"));
+  return Object.values(inputValues).some((v) => typeof v === "string" && MASKED_VALUE_PATTERN.test(v));
 }
 
 export default function HistoryBoard({ executions: initialExecutions }: { executions: ExecutionItem[] }) {

@@ -2,13 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { getExecution, getSkill, uploadExecutionFile } from "@/lib/data";
 import { finishExecution } from "@/lib/runSkill";
 import type { DispatchStatus, ExecutionFile } from "@/lib/types";
+import { timingSafeEqualString } from "@/lib/tokenAuth";
 
 export const dynamic = "force-dynamic";
 
 function isAuthorized(req: NextRequest): boolean {
   const token = process.env.COWORK_AGENT_TOKEN;
   if (!token) return false;
-  return req.headers.get("authorization") === `Bearer ${token}`;
+  const auth = req.headers.get("authorization");
+  return auth !== null && timingSafeEqualString(auth, `Bearer ${token}`);
 }
 
 const ALLOWED_STATUSES: DispatchStatus[] = ["success", "error", "needs_setup"];

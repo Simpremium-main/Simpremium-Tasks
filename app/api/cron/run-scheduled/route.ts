@@ -3,6 +3,7 @@ import { createExecution, listScheduledSkills, updateSkill } from "@/lib/data";
 import { runSkillMaybeSplit } from "@/lib/runSkill";
 import { isDue, hasUnschedulableSecret, resolveScheduledInputValues } from "@/lib/schedule";
 import { notifyScheduleFailure } from "@/lib/notify";
+import { timingSafeEqualString } from "@/lib/tokenAuth";
 
 export const dynamic = "force-dynamic";
 // Same reasoning as the other run routes — see app/api/skills/[id]/run/route.ts.
@@ -21,7 +22,7 @@ export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
   if (secret) {
     const auth = req.headers.get("authorization");
-    if (auth !== `Bearer ${secret}`) {
+    if (auth === null || !timingSafeEqualString(auth, `Bearer ${secret}`)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }

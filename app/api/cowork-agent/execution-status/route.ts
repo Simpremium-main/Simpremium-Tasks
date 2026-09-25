@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getExecution } from "@/lib/data";
+import { timingSafeEqualString } from "@/lib/tokenAuth";
 
 export const dynamic = "force-dynamic";
 
 function isAuthorized(req: NextRequest): boolean {
   const token = process.env.COWORK_AGENT_TOKEN;
   if (!token) return false;
-  return req.headers.get("authorization") === `Bearer ${token}`;
+  const auth = req.headers.get("authorization");
+  return auth !== null && timingSafeEqualString(auth, `Bearer ${token}`);
 }
 
 /**

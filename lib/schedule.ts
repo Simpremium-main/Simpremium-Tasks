@@ -57,21 +57,37 @@ export async function resolveScheduledInputValues(
   skill: Skill
 ): Promise<{ values: Record<string, string> } | { error: string }> {
   const values: Record<string, string> = { ...(skill.scheduleInputValues ?? {}) };
-  for (const [key, sources] of Object.entries(skill.scheduleApiSources ?? {})) {
-    const parts: string[] = [];
-    for (const source of sources) {
-      try {
-        parts.push(await fetchApiFieldValue(source, { skillId: skill.id, fieldKey: key }));
-      } catch (err) {
-        return {
-          error: `Falha ao buscar "${key}" da API (${source.url}): ${
-            err instanceof Error ? err.message : "erro desconhecido"
-          }`,
-        };
-      }
-    }
-    values[key] = parts.filter(Boolean).join("\n");
+
+  // Every field, and every source within a field, is independent of every
+  // other — fetched concurrently rather than one at a time, so a field with
+  // several upstream sources (the whole point of allowing more than one)
+  // doesn't multiply the wall-clock time of a scheduled run or a manual
+  // "Testar agora" click. Promise.all keeps each source's result in its
+  // original array position regardless of which resolves first, so the
+  // joined "\n" order is unaffected.
+  try {
+    await Promise.all(
+      Object.entries(skill.scheduleApiSources ?? {}).map(async ([key, sources]) => {
+        const parts = await Promise.all(
+          sources.map(async (source) => {
+            try {
+              return await fetchApiFieldValue(source, { skillId: skill.id, fieldKey: key });
+            } catch (err) {
+              throw new Error(
+                `Falha ao buscar "${key}" da API (${source.url}): ${
+                  err instanceof Error ? err.message : "erro desconhecido"
+                }`
+              );
+            }
+          })
+        );
+        values[key] = parts.filter(Boolean).join("\n");
+      })
+    );
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Erro desconhecido ao buscar valores via API" };
   }
+
   return { values };
 }
 
