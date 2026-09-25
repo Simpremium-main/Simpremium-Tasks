@@ -217,18 +217,18 @@ export default function FilePreview({
   }
 
   return (
-    <div className="w-full mt-1.5">
+    <div className="border-t border-line/70">
       <button
         type="button"
         onClick={toggle}
-        className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary-hover transition-colors"
+        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs text-primary hover:bg-primary-soft/60 transition-colors"
       >
         {open ? <EyeOff size={12} /> : <Eye size={12} />}
-        {open ? "Ocultar prévia" : "Visualizar"}
+        {open ? "Ocultar prévia" : "Visualizar prévia"}
       </button>
 
       {open && (
-        <div className="mt-2 rounded-md border border-line bg-surface p-2">
+        <div className="border-t border-line/70 bg-surface p-2">
           {loading && (
             <div className="flex items-center gap-1.5 text-xs text-muted py-3 justify-center">
               <Loader2 size={13} className="animate-spin" />
