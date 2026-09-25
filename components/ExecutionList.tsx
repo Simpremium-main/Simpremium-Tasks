@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import StatusBadge from "./StatusBadge";
 import ChainResultButton from "./ChainResultButton";
+import FilePreview from "./FilePreview";
 import { downloadCsv, downloadPdf, downloadText } from "@/lib/exportResult";
 import { parseMarkdownTable } from "@/lib/resultTable";
 import { estimateCostUsd, formatCostUsd, formatTokens, totalTokens } from "@/lib/cost";
@@ -946,16 +947,26 @@ function ExecutionDetailsModal({
                 </div>
                 <div className="space-y-1.5">
                   {otherFiles.map(({ file, i }) => (
-                    <a
+                    <div
                       key={i}
-                      href={`/api/executions/${execution.id}/files/${i}`}
-                      className="flex items-center gap-2 rounded-md border border-line bg-primary-soft/40 px-3 py-2 text-sm hover:border-primary/40 hover:bg-primary-soft transition-colors"
+                      className="rounded-md border border-line bg-primary-soft/40 px-3 py-2 hover:border-primary/40 transition-colors"
                     >
-                      <Paperclip size={14} className="text-primary shrink-0" />
-                      <span className="flex-1 truncate">{file.name}</span>
-                      <span className="text-xs text-muted shrink-0">{formatBytes(file.sizeBytes)}</span>
-                      <Download size={13} className="text-primary shrink-0" />
-                    </a>
+                      <a
+                        href={`/api/executions/${execution.id}/files/${i}`}
+                        className="flex items-center gap-2 text-sm hover:bg-primary-soft transition-colors -mx-3 -my-2 px-3 py-2 rounded-md"
+                      >
+                        <Paperclip size={14} className="text-primary shrink-0" />
+                        <span className="flex-1 truncate">{file.name}</span>
+                        <span className="text-xs text-muted shrink-0">{formatBytes(file.sizeBytes)}</span>
+                        <Download size={13} className="text-primary shrink-0" />
+                      </a>
+                      <FilePreview
+                        executionId={execution.id}
+                        fileIndex={i}
+                        fileName={file.name}
+                        mimeType={file.mimeType}
+                      />
+                    </div>
                   ))}
                 </div>
               </div>
