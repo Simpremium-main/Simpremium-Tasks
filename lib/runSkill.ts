@@ -193,27 +193,63 @@ export async function runSkillMaybeSplit(
   inputValues: Record<string, string>,
   ranBy: string | null,
   sourceOverride?: Execution["source"],
-  dryRun?: boolean
+  dryRun?: boolean,
+  // Lets a caller that already computed this (e.g. /run/stream's route,
+  // deciding up front whether to take this path at all) pass it straight
+  // through instead of re-running splitLinesByAccountGroups on the same
+  // inputValues a second time.
+  precomputedGroups?: ReturnType<typeof splitLinesByAccountGroups>
 ): Promise<Execution[]> {
   if (!skill.usesCowork || !skill.accountSplit) {
     return [await runSkill(skill, inputValues, ranBy, sourceOverride, dryRun)];
   }
 
   const fieldValue = inputValues[skill.accountSplit.field];
-  const groups = typeof fieldValue === "string" ? splitLinesByAccountGroups(fieldValue, skill.accountSplit) : null;
+  const groups =
+    precomputedGroups !== undefined
+      ? precomputedGroups
+      : typeof fieldValue === "string"
+        ? splitLinesByAccountGroups(fieldValue, skill.accountSplit)
+        : null;
   if (!groups) {
     return [await runSkill(skill, inputValues, ranBy, sourceOverride, dryRun)];
   }
 
+  // Each group's runSkill() call is contained on its own — an unexpected
+  // throw from one account's run (a transient DB error, say) must not skip
+  // the remaining accounts' batches entirely. Before this, one group
+  // throwing meant every later group in the same split never even got
+  // attempted, with no execution row and no trace at all — exactly the
+  // silent failure this project's security baseline rules out.
   const executions: Execution[] = [];
   for (const group of groups) {
     const groupInputValues = { ...inputValues, [skill.accountSplit.field]: group.lines.join("\n") };
-    executions.push(
-      await runSkill(skill, groupInputValues, ranBy, sourceOverride, dryRun, {
-        label: group.label,
-        claudeInstance: group.claudeInstanceId,
-      })
-    );
+    try {
+      executions.push(
+        await runSkill(skill, groupInputValues, ranBy, sourceOverride, dryRun, {
+          label: group.label,
+          claudeInstance: group.claudeInstanceId,
+        })
+      );
+    } catch (err) {
+      console.error(`runSkillMaybeSplit: group "${group.label}" failed to run:`, err);
+      executions.push(
+        await createExecution({
+          skillId: skill.id,
+          status: "error",
+          source: sourceOverride ?? (skill.usesCowork ? "cowork" : "claude"),
+          inputValues: null,
+          promptSnapshot: "(execução não chegou a montar o prompt — falhou antes de rodar)",
+          result: null,
+          error: err instanceof Error ? err.message : "Falha desconhecida ao rodar esse grupo da conta",
+          files: null,
+          ranBy,
+          dryRun,
+          coworkAccountLabel: group.label,
+          coworkClaudeInstance: group.claudeInstanceId,
+        })
+      );
+    }
   }
   return executions;
 }

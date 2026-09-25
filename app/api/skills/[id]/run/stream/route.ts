@@ -51,15 +51,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const user = await getCurrentUser();
 
-  // Checked up front, outside the try/catch below, purely to decide which
-  // path to take — the real split (with its own error handling) happens
-  // inside runSkillMaybeSplit either way.
+  // Computed once, up front, outside the try/catch below — both to decide
+  // which path to take, and (when it does split) passed straight into
+  // runSkillMaybeSplit below so it isn't recomputed a second time on the
+  // same inputValues.
   const splitField = skill.usesCowork && skill.accountSplit ? inputValues[skill.accountSplit.field] : undefined;
-  const willSplit =
-    skill.usesCowork &&
-    skill.accountSplit &&
-    typeof splitField === "string" &&
-    splitLinesByAccountGroups(splitField, skill.accountSplit) !== null;
+  const precomputedGroups =
+    skill.usesCowork && skill.accountSplit && typeof splitField === "string"
+      ? splitLinesByAccountGroups(splitField, skill.accountSplit)
+      : null;
+  const willSplit = precomputedGroups !== null;
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -69,7 +70,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           // immediately) — so a split run is just N executions, each sent
           // as its own "done" event on this same connection instead of
           // opening N separate streams.
-          const executions = await runSkillMaybeSplit(skill, inputValues, user?.displayName ?? null, undefined, dryRun);
+          const executions = await runSkillMaybeSplit(
+            skill,
+            inputValues,
+            user?.displayName ?? null,
+            undefined,
+            dryRun,
+            precomputedGroups
+          );
           for (const execution of executions) {
             controller.enqueue(sseFormat("done", execution));
           }

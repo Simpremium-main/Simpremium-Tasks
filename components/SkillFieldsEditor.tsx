@@ -26,6 +26,13 @@ export default function SkillFieldsEditor({
   // newline or a blank line mid-edit. Only ever re-initialized on mount
   // (editing a different skill remounts this component via its key).
   const [secretsDraft, setSecretsDraft] = useState(() => (value.systemSecrets ?? []).join("\n"));
+  // Same "local draft, not synced straight from value" reasoning as
+  // secretsDraft above — value.accountSplit?.groups would otherwise get
+  // wiped the instant the field selector is cleared (accountSplit becomes
+  // null), losing every label/pattern/instance already typed in. Keeping
+  // the groups here means clearing and re-picking a field just toggles
+  // whether accountSplit is saved as null, without discarding this draft.
+  const [groupsDraft, setGroupsDraft] = useState<SkillAccountGroup[]>(() => value.accountSplit?.groups ?? []);
 
   function updateInputField(index: number, patch: Partial<InputField>) {
     onChange({ inputSchema: value.inputSchema.map((f, i) => (i === index ? { ...f, ...patch } : f)) });
@@ -55,25 +62,28 @@ export default function SkillFieldsEditor({
     onChange({ tags: value.tags.filter((t) => t !== tag) });
   }
 
-  const accountGroups = value.accountSplit?.groups ?? [];
-
   function setAccountSplitField(field: string) {
-    onChange({ accountSplit: field ? { field, groups: accountGroups } : null });
+    onChange({ accountSplit: field ? { field, groups: groupsDraft } : null });
   }
 
   function updateAccountGroup(index: number, patch: Partial<SkillAccountGroup>) {
-    const groups = accountGroups.map((g, i) => (i === index ? { ...g, ...patch } : g));
-    onChange({ accountSplit: { field: value.accountSplit?.field ?? "", groups } });
+    const groups = groupsDraft.map((g, i) => (i === index ? { ...g, ...patch } : g));
+    setGroupsDraft(groups);
+    if (value.accountSplit?.field) onChange({ accountSplit: { field: value.accountSplit.field, groups } });
   }
 
   function addAccountGroup() {
-    const groups = [...accountGroups, { label: "", pattern: "", claudeInstanceId: "" }];
-    onChange({ accountSplit: { field: value.accountSplit?.field ?? "", groups } });
+    const groups = [...groupsDraft, { label: "", pattern: "", claudeInstanceId: "" }];
+    setGroupsDraft(groups);
+    if (value.accountSplit?.field) onChange({ accountSplit: { field: value.accountSplit.field, groups } });
   }
 
   function removeAccountGroup(index: number) {
-    const groups = accountGroups.filter((_, i) => i !== index);
-    onChange({ accountSplit: groups.length ? { field: value.accountSplit?.field ?? "", groups } : null });
+    const groups = groupsDraft.filter((_, i) => i !== index);
+    setGroupsDraft(groups);
+    if (value.accountSplit?.field) {
+      onChange({ accountSplit: groups.length ? { field: value.accountSplit.field, groups } : null });
+    }
   }
 
   return (
@@ -328,7 +338,7 @@ export default function SkillFieldsEditor({
 
           {value.accountSplit?.field && (
             <div className="mt-3 space-y-2">
-              {accountGroups.map((group, i) => (
+              {groupsDraft.map((group, i) => (
                 <div key={i} className="rounded-md border border-line p-2 bg-canvas/40 space-y-1.5">
                   <div className="flex items-center gap-2">
                     <input
@@ -374,7 +384,7 @@ export default function SkillFieldsEditor({
                 exatamente uma conta pra dividir automaticamente — se alguma não bater com nenhuma, ou o campo
                 tiver só uma conta configurada, roda como uma execução só, sem dividir.
               </p>
-              {accountGroups.some((g) => g.claudeInstanceId && !/^[a-zA-Z0-9_-]+$/.test(g.claudeInstanceId)) && (
+              {groupsDraft.some((g) => g.claudeInstanceId && !/^[a-zA-Z0-9_-]+$/.test(g.claudeInstanceId)) && (
                 <p className="text-xs text-red-600">
                   ID da instância só pode ter letras, números, "-" e "_" — é usado no nome da pasta e pra
                   encontrar o processo certo no Mac mini.

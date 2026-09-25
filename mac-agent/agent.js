@@ -259,6 +259,10 @@ function userDataDirFor(instanceId) {
   return path.join(CLAUDE_INSTANCES_DIR, instanceId);
 }
 
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 async function findRunningInstancePid(instanceId) {
   const userDataDir = userDataDirFor(instanceId);
   const stdout = await new Promise((resolve, reject) => {
@@ -270,6 +274,16 @@ async function findRunningInstancePid(instanceId) {
       resolve(out);
     });
   });
+
+  // A plain substring check on --user-data-dir=<path> is wrong when one
+  // instance id is a prefix of another (the exact example in this file's
+  // own README/UI placeholder: "mundo" and "mundo2") — ".../mundo" is a
+  // literal substring of ".../mundo2", so a naive `includes()` check would
+  // match the WRONG account's process and silently drive Cowork on it,
+  // defeating the entire point of this feature. Requiring a boundary
+  // (quote, whitespace, or end of line) right after the path rules that
+  // out — "mundo2"'s line has "2" there instead, so it never matches.
+  const boundary = new RegExp(`--user-data-dir=["']?${escapeRegExp(userDataDir)}(?:["']|\\s|$)`);
 
   // Electron passes --user-data-dir to every child process of an instance
   // (renderer, gpu-process, utility, ...), not just the main one — matching
@@ -283,9 +297,7 @@ async function findRunningInstancePid(instanceId) {
   for (const line of stdout.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    if (!trimmed.includes(`--user-data-dir=${userDataDir}`) && !trimmed.includes(`--user-data-dir="${userDataDir}"`)) {
-      continue;
-    }
+    if (!boundary.test(trimmed)) continue;
     const pid = trimmed.split(/\s+/)[0];
     if (!pid) continue;
     if (!trimmed.includes("--type=")) return pid;
