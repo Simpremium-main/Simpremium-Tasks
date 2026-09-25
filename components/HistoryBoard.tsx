@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckSquare, Download, Loader2, RotateCcw, Search } from "lucide-react";
+import { AlertTriangle, Archive, CheckSquare, Download, Loader2, RotateCcw, Search } from "lucide-react";
 import ExecutionList, { type ExecutionItem } from "./ExecutionList";
 
-type Filter = "all" | "success" | "error" | "needs_setup" | "files" | "favorites";
+type Filter = "all" | "success" | "error" | "needs_setup" | "files" | "favorites" | "archived";
 
 // A stored input value only ever looks like this when it was masked before
 // being written to execution history (lib/mask.ts's maskValue — a run of
@@ -51,11 +51,23 @@ export default function HistoryBoard({ executions: initialExecutions }: { execut
     return () => clearInterval(interval);
   }, [executions, router]);
 
-  const hasFiles = useMemo(() => executions.some((e) => e.files && e.files.length > 0), [executions]);
-  const hasFavorites = useMemo(() => executions.some((e) => e.favorite), [executions]);
+  // Gate whether each tab even shows up — checked against non-archived
+  // executions only, since that's what the tab itself would actually show
+  // (an "Arquivos" tab that only led to an empty list because every
+  // file-having execution happened to be archived would be confusing).
+  const hasFiles = useMemo(
+    () => executions.some((e) => !e.archived && e.files && e.files.length > 0),
+    [executions]
+  );
+  const hasFavorites = useMemo(() => executions.some((e) => !e.archived && e.favorite), [executions]);
+  const hasArchived = useMemo(() => executions.some((e) => e.archived), [executions]);
 
   function handleFavoriteChange(id: string, favorite: boolean) {
     setExecutions((prev) => prev.map((e) => (e.id === id ? { ...e, favorite } : e)));
+  }
+
+  function handleArchiveChange(id: string, archived: boolean) {
+    setExecutions((prev) => prev.map((e) => (e.id === id ? { ...e, archived } : e)));
   }
 
   function handleCancel(cancelled: ExecutionItem) {
@@ -81,6 +93,44 @@ export default function HistoryBoard({ executions: initialExecutions }: { execut
   function bulkExportCsv() {
     const ids = Array.from(selectedIds).join(",");
     window.location.href = `/api/executions/export?ids=${encodeURIComponent(ids)}`;
+  }
+
+  // Same target for every selected row regardless of its current state —
+  // "Arquivar" always archives, "Desarquivar" (shown only in the
+  // "Arquivadas" tab, where every selected row already is archived) always
+  // restores. Updates local state directly per row rather than a full
+  // router.refresh(), so selected rows visibly leave the list the instant
+  // they're archived instead of waiting on a server round-trip + reload.
+  async function bulkArchive(archived: boolean) {
+    setBulkWorking(true);
+    setBulkError(null);
+    setBulkInfo(null);
+    const ids = Array.from(selectedIds);
+    try {
+      const results = await Promise.all(
+        ids.map((id) =>
+          fetch(`/api/executions/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ archived }),
+          })
+        )
+      );
+      const failed = results.filter((r) => !r.ok).length;
+      const succeeded = results.length - failed;
+      ids.forEach((id, i) => {
+        if (results[i].ok) handleArchiveChange(id, archived);
+      });
+      setBulkInfo(
+        `${succeeded} ${archived ? "arquivada" : "desarquivada"}${succeeded === 1 ? "" : "s"}` +
+          (failed > 0 ? ` · ${failed} falhou${failed === 1 ? "" : "aram"}` : "")
+      );
+      setSelectedIds(new Set());
+    } catch (err) {
+      setBulkError(err instanceof Error ? err.message : "Falha ao arquivar em lote");
+    } finally {
+      setBulkWorking(false);
+    }
   }
 
   async function bulkRetry() {
@@ -120,9 +170,19 @@ export default function HistoryBoard({ executions: initialExecutions }: { execut
 
   const filtered = useMemo(() => {
     let list = executions;
-    if (filter === "files") list = list.filter((e) => e.files && e.files.length > 0);
-    else if (filter === "favorites") list = list.filter((e) => e.favorite);
-    else if (filter !== "all") list = list.filter((e) => e.status === filter);
+    // Archived executions are hidden from every filter except the
+    // dedicated "Arquivadas" one — the whole point of archiving something
+    // is decluttering the default view, so it shouldn't still show up
+    // under "Todas"/"Sucesso"/etc. just because it also matches that
+    // filter's other criteria.
+    if (filter === "archived") {
+      list = list.filter((e) => e.archived);
+    } else {
+      list = list.filter((e) => !e.archived);
+      if (filter === "files") list = list.filter((e) => e.files && e.files.length > 0);
+      else if (filter === "favorites") list = list.filter((e) => e.favorite);
+      else if (filter !== "all") list = list.filter((e) => e.status === filter);
+    }
     if (query.trim()) {
       const q = query.trim().toLowerCase();
       list = list.filter(
@@ -165,6 +225,7 @@ export default function HistoryBoard({ executions: initialExecutions }: { execut
               ["needs_setup", "Setup"],
               ...(hasFiles ? [["files", "Arquivos"] as [Filter, string]] : []),
               ...(hasFavorites ? [["favorites", "Favoritas"] as [Filter, string]] : []),
+              ...(hasArchived ? [["archived", "Arquivadas"] as [Filter, string]] : []),
             ] as [Filter, string][]
           ).map(([value, label]) => (
             <button
@@ -219,6 +280,15 @@ export default function HistoryBoard({ executions: initialExecutions }: { execut
               <Download size={13} />
               Exportar CSV
             </button>
+            <button
+              type="button"
+              onClick={() => bulkArchive(filter !== "archived")}
+              disabled={selectedIds.size === 0 || bulkWorking}
+              className="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface px-3 py-1.5 text-xs font-medium text-ink/80 hover:border-primary/30 hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Archive size={13} />
+              {filter === "archived" ? "Desarquivar" : "Arquivar"}
+            </button>
           </div>
           {bulkError && (
             <span className="w-full inline-flex items-center gap-1 text-xs text-red-600">
@@ -239,6 +309,7 @@ export default function HistoryBoard({ executions: initialExecutions }: { execut
           executions={filtered}
           showSkillName
           onFavoriteChange={handleFavoriteChange}
+          onArchiveChange={handleArchiveChange}
           onCancel={handleCancel}
           selectMode={selectMode}
           selectedIds={selectedIds}

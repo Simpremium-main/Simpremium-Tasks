@@ -57,6 +57,7 @@ create table if not exists executions (
   usage           jsonb, -- TokenUsage | null — {inputTokens, outputTokens}, null for Cowork/heuristic dispatch (no Claude API call to report on)
   ran_by          text, -- display name of the logged-in user who triggered this run
   favorite        boolean not null default false, -- starred by hand, "this was the good run" among several attempts
+  archived        boolean not null default false, -- archived by hand, hides it from /history's default view without deleting the record
   cowork_payload  text, -- the real, unmasked prompt for a queued Cowork job, set only between dispatch and pickup — see lib/cowork.ts. Never read through mapExecutionRow/the Execution type, so it never reaches the UI.
   cowork_started_at timestamptz, -- stamped by POST /api/cowork-agent/mark-started the moment the Mac mini agent actually starts driving Cowork for this job (not when it was queued) — lets the UI say "Cowork's been working on this for Xm" instead of a generic "running" for a job that might still just be waiting in the queue.
   output_callback_results jsonb, -- OutputCallbackResult[] | null — one entry per Skill.outputCallbacks, same order — set only when the skill has at least one configured and this run succeeded. Superseded the old output_callback_status/error/last_body columns.

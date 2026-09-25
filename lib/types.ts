@@ -352,6 +352,11 @@ export interface Execution {
   /** Starred by hand — "this was the good run" among several attempts. Pure
    *  UI convenience, no effect on scheduling/retry/anything else. */
   favorite: boolean;
+  /** Archived by hand — hides it from /history's default view (and every
+   *  filter tab except "Arquivadas") to declutter a long list, without
+   *  deleting the record. Pure UI convenience, same as favorite: doesn't
+   *  affect scheduling, retry, or anything else. */
+  archived: boolean;
   /** Set only for a Cowork execution, the moment the Mac mini agent actually
    *  starts driving Cowork for it (POST /api/cowork-agent/mark-started) —
    *  null while it's still sitting in the queue waiting for the agent to

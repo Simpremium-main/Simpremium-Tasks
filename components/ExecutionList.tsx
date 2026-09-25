@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
+  Archive,
+  ArchiveRestore,
   Bot,
   CalendarClock,
   Check,
@@ -72,6 +74,7 @@ export interface ExecutionItem {
   usage: ExecutionUsageItem | null;
   ranBy: string | null;
   favorite: boolean;
+  archived: boolean;
   /** Null while a Cowork job still sits in the queue; set once the agent
    *  actually starts driving Cowork for it (see mac-agent/agent.js's
    *  markStarted). Only meaningful when source is "cowork". */
@@ -176,6 +179,7 @@ export default function ExecutionList({
   onRetry,
   favoritable = true,
   onFavoriteChange,
+  onArchiveChange,
   onCancel,
   selectMode = false,
   selectedIds,
@@ -188,12 +192,17 @@ export default function ExecutionList({
    *  to prefill) — the global history list has no form to retry into. */
   onRetry?: (execution: ExecutionItem) => void;
   /** False on the public /share/[token] page — that view is read-only, no
-   *  login required, so it can't let an anonymous visitor mutate anything. */
+   *  login required, so it can't let an anonymous visitor mutate anything.
+   *  Also gates the archive toggle — same "can this viewer mutate personal
+   *  metadata" condition applies to both. */
   favoritable?: boolean;
   /** Lets a parent holding its own copy of the list (HistoryBoard, for its
    *  "Favoritas" filter) stay in sync after a toggle — this component
    *  itself only owns the optimistic per-row display, not the source list. */
   onFavoriteChange?: (id: string, favorite: boolean) => void;
+  /** Same idea as onFavoriteChange, for HistoryBoard's default "hide
+   *  archived" view and its "Arquivadas" filter tab. */
+  onArchiveChange?: (id: string, archived: boolean) => void;
   /** Present wherever a run can actually be cancelled (not on the read-only
    *  /share/[token] page) — lets the parent PATCH the cancel and update its
    *  own copy of the list, same pattern as onFavoriteChange. */
@@ -240,6 +249,7 @@ export default function ExecutionList({
             onRetry={onRetry ? () => retry(execution) : undefined}
             favoritable={favoritable}
             onFavoriteChange={onFavoriteChange}
+            onArchiveChange={onArchiveChange}
             onCancel={onCancel}
             selectMode={selectMode}
             selected={selectedIds?.has(execution.id) ?? false}
@@ -256,6 +266,7 @@ export default function ExecutionList({
           onRetry={onRetry ? () => retry(detailsFor) : undefined}
           favoritable={favoritable}
           onFavoriteChange={onFavoriteChange}
+          onArchiveChange={onArchiveChange}
           onCancel={
             onCancel
               ? (execution) => {
@@ -280,6 +291,7 @@ function ExecutionRow({
   onRetry,
   favoritable,
   onFavoriteChange,
+  onArchiveChange,
   onCancel,
   selectMode,
   selected,
@@ -294,6 +306,7 @@ function ExecutionRow({
   onRetry?: () => void;
   favoritable: boolean;
   onFavoriteChange?: (id: string, favorite: boolean) => void;
+  onArchiveChange?: (id: string, archived: boolean) => void;
   onCancel?: (execution: ExecutionItem) => void;
   selectMode?: boolean;
   selected?: boolean;
@@ -453,6 +466,13 @@ function ExecutionRow({
               onChange={onFavoriteChange}
             />
           )}
+          {favoritable && (
+            <ArchiveToggle
+              executionId={execution.id}
+              archived={execution.archived}
+              onChange={onArchiveChange}
+            />
+          )}
           <CopyPromptButton text={execution.promptSnapshot} />
           {onCancel && (execution.status === "pending" || execution.status === "running") && (
             <CancelExecutionButton execution={execution} stuck={stuck} onCancelled={onCancel} />
@@ -545,6 +565,63 @@ function FavoriteToggle({
       }`}
     >
       <Star size={15} className={current ? "fill-current" : ""} />
+    </button>
+  );
+}
+
+/**
+ * Archived by hand — hides it from /history's default view (HistoryBoard
+ * filters archived out of every tab except its dedicated "Arquivadas" one)
+ * without deleting the record, for cleaning up a long list of old/test
+ * runs. Same optimistic-toggle/PATCH/revert-on-failure shape as
+ * FavoriteToggle right above — onChange exists for the same reason: a
+ * parent holding its own copy of the list needs to stay in sync.
+ */
+function ArchiveToggle({
+  executionId,
+  archived,
+  onChange,
+}: {
+  executionId: string;
+  archived: boolean;
+  onChange?: (id: string, archived: boolean) => void;
+}) {
+  const [current, setCurrent] = useState(archived);
+  const [working, setWorking] = useState(false);
+
+  useEffect(() => setCurrent(archived), [archived]);
+
+  async function toggle(e: React.MouseEvent) {
+    e.stopPropagation();
+    const next = !current;
+    setCurrent(next);
+    setWorking(true);
+    try {
+      const res = await fetch(`/api/executions/${executionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archived: next }),
+      });
+      if (!res.ok) throw new Error();
+      onChange?.(executionId, next);
+    } catch {
+      setCurrent(!next);
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      disabled={working}
+      title={current ? "Desarquivar" : "Arquivar"}
+      className={`shrink-0 transition-colors disabled:opacity-60 ${
+        current ? "text-primary" : "text-muted hover:text-primary"
+      }`}
+    >
+      {current ? <ArchiveRestore size={15} /> : <Archive size={15} />}
     </button>
   );
 }
@@ -682,6 +759,7 @@ function ExecutionDetailsModal({
   onRetry,
   favoritable,
   onFavoriteChange,
+  onArchiveChange,
   onCancel,
 }: {
   execution: ExecutionItem;
@@ -691,6 +769,7 @@ function ExecutionDetailsModal({
   onRetry?: () => void;
   favoritable: boolean;
   onFavoriteChange?: (id: string, favorite: boolean) => void;
+  onArchiveChange?: (id: string, archived: boolean) => void;
   onCancel?: (execution: ExecutionItem) => void;
 }) {
   const [activeTab, setActiveTab] = useState<"resultado" | "passos">("resultado");
@@ -791,6 +870,13 @@ function ExecutionDetailsModal({
                 executionId={execution.id}
                 favorite={execution.favorite}
                 onChange={onFavoriteChange}
+              />
+            )}
+            {favoritable && (
+              <ArchiveToggle
+                executionId={execution.id}
+                archived={execution.archived}
+                onChange={onArchiveChange}
               />
             )}
             <button

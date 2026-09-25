@@ -1124,12 +1124,38 @@ with per-feature actions, same pattern in both places):
   `GET /api/skills/export?ids=a,b,c` narrows to just the selected skills; omitted, it exports
   everything, unchanged from before), excluir.
 - **Executions** (`components/HistoryBoard.tsx` → `ExecutionList`'s new `selectMode`/`selectedIds`/
-  `onToggleSelect` props): reexecutar and exportar CSV (`GET /api/executions/export?ids=...`, same
-  narrowing pattern). Bulk retry re-POSTs to `/api/skills/{id}/run` with each execution's stored
-  `inputValues` — but skips (and reports) any execution whose stored values contain a masked
-  secret (`lib/mask.ts`'s `•` fill character), since resubmitting a masked value would silently
-  fail auth instead of actually retrying; those still need a manual run through the skill's own
-  page, where the real value can be typed in again.
+  `onToggleSelect` props): reexecutar, exportar CSV (`GET /api/executions/export?ids=...`, same
+  narrowing pattern), and arquivar/desarquivar. Bulk retry re-POSTs to `/api/skills/{id}/run` with
+  each execution's stored `inputValues` — but skips (and reports) any execution whose stored
+  values contain a masked secret (`lib/mask.ts`'s `•` fill character), since resubmitting a masked
+  value would silently fail auth instead of actually retrying; those still need a manual run
+  through the skill's own page, where the real value can be typed in again.
+
+### Archiving an execution
+
+`/history` grew a long, mixed list of real runs and one-off tests with no way to tidy it up — a
+plain "delete" would throw away the record, which conflicts with the project's own "every attempt
+gets recorded, success or failure" rule. `Execution.archived` (`lib/types.ts`) is the same idea as
+`Skill.status === "archived"`, one level down: a personal, reversible "hide this, don't delete it"
+flag, no effect on scheduling, retry, or anything else.
+
+`components/ExecutionList.tsx`'s `ArchiveToggle` sits right next to the existing star/favorite
+toggle (same optimistic-PATCH-and-revert-on-failure shape, `PATCH /api/executions/[id]` — widened
+to accept `archived` alongside `favorite`, the same "narrow, hand-edited fields only" route as
+before) — on every row, and in the execution detail modal, wherever `ExecutionList` renders with
+`favoritable` (gated on the same flag: read-only views like `/share/[token]` can't mutate either).
+
+Archived executions are hidden from `/history`'s default view and from every filter tab except a
+dedicated "Arquivadas" one (shown only once something's actually archived) — matching how an
+archived skill already drops out of the main skills list. `HistoryBoard`'s bulk-select toolbar
+also gained an Arquivar/Desarquivar action (label and target flip depending on which tab you're
+viewing), for cleaning up a long backlog of old runs at once instead of one row at a time.
+
+Needs one new column, also in a fresh `supabase/schema.sql`:
+
+```sql
+alter table executions add column if not exists archived boolean not null default false;
+```
 
 ## Security baseline
 

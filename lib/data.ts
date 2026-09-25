@@ -111,6 +111,7 @@ function mapExecutionRow(row: Record<string, unknown>): Execution {
     usage: (row.usage as TokenUsage | null) ?? null,
     ranBy: (row.ran_by as string | null) ?? null,
     favorite: Boolean(row.favorite),
+    archived: Boolean(row.archived),
     coworkStartedAt: row.cowork_started_at ? new Date(row.cowork_started_at as string) : null,
     outputCallbackResults: (row.output_callback_results as OutputCallbackResult[] | null) ?? null,
     dryRun: Boolean(row.dry_run),
@@ -944,6 +945,7 @@ export interface UpdateExecutionInput {
   conversationState?: ConversationState | null;
   usage?: TokenUsage | null;
   favorite?: boolean;
+  archived?: boolean;
   outputCallbackResults?: OutputCallbackResult[] | null;
 }
 
@@ -978,6 +980,7 @@ export async function updateExecution(
   if (patch.conversationState !== undefined) row.conversation_state = patch.conversationState;
   if (patch.usage !== undefined) row.usage = patch.usage;
   if (patch.favorite !== undefined) row.favorite = patch.favorite;
+  if (patch.archived !== undefined) row.archived = patch.archived;
   if (patch.outputCallbackResults !== undefined) row.output_callback_results = patch.outputCallbackResults;
 
   const { data, error, status, statusText } = await supabase

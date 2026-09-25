@@ -1,18 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
 import { updateExecution } from "@/lib/data";
+import type { UpdateExecutionInput } from "@/lib/data";
 
 // Deliberately narrow: executions are otherwise append-only/system-managed
 // (createExecution/updateExecution elsewhere drive their own lifecycle) —
-// `favorite` is the one field a person, not a run, is meant to change by
-// hand, so it's the only one this route accepts.
+// favorite/archived are the two fields a person, not a run, is meant to
+// change by hand, so they're the only ones this route accepts.
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const body = await req.json().catch(() => ({}));
-  if (typeof body.favorite !== "boolean") {
-    return NextResponse.json({ error: "favorite must be a boolean" }, { status: 400 });
+  const patch: UpdateExecutionInput = {};
+
+  if ("favorite" in body) {
+    if (typeof body.favorite !== "boolean") {
+      return NextResponse.json({ error: "favorite must be a boolean" }, { status: 400 });
+    }
+    patch.favorite = body.favorite;
+  }
+
+  if ("archived" in body) {
+    if (typeof body.archived !== "boolean") {
+      return NextResponse.json({ error: "archived must be a boolean" }, { status: 400 });
+    }
+    patch.archived = body.archived;
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return NextResponse.json({ error: "favorite and/or archived must be provided" }, { status: 400 });
   }
 
   try {
-    const execution = await updateExecution(params.id, { favorite: body.favorite });
+    const execution = await updateExecution(params.id, patch);
     if (!execution) {
       return NextResponse.json({ error: "Execution not found" }, { status: 404 });
     }
