@@ -122,6 +122,20 @@ CDN staleness. Since the six routes above no longer get cached at all, this butt
 clearing out whatever was already cached before that fix went live, or as a general escape hatch if
 some other route ever regresses the same way.
 
+**Update — a still-recurring "I have to purge to see anything" report, after every dynamic
+route/page/layout was audited and confirmed to already have the `force-dynamic` opt-out** (`app/(app)/
+layout.tsx` included, since it fetches the sidebar's own skill list and a layout's cache setting
+doesn't automatically inherit from the pages under it). With Next's own Data/Full Route Cache
+already fully opted out everywhere real data is read, a report of staleness still recurring past
+that fix points at a layer downstream of this app: the browser's own HTTP cache, or an intermediate
+proxy, honoring whatever `Cache-Control` Next happened to send rather than re-checking with the
+server. `next.config.js`'s `headers()` now sends an explicit `Cache-Control: no-store,
+must-revalidate` on every route except `/_next/static/*` (left alone on purpose — those are
+content-hashed and immutable, caching them forever is correct), belt-and-suspenders on top of
+`force-dynamic`, not a replacement for it. Verified locally: a built-and-started production server
+sends `no-store` on `/login` and the real, unchanged `public, max-age=31536000, immutable` on a
+`/_next/static` chunk.
+
 **Known gap:** this codebase was built in a sandboxed environment whose network policy blocks
 the Supabase host, so the Supabase wiring was verified by unit-testing the client against the
 real project (confirmed the exact failure is the sandbox's own 403, not a code or schema issue)
