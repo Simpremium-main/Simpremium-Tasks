@@ -57,20 +57,37 @@ const MAX_PREVIEW_ROWS = 300;
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
-/** MIME types this component actually knows how to render — a skill's
- *  generated .docx/.pptx etc. has no in-browser preview here (no library
- *  for those in this app, and adding one just for a preview isn't worth
- *  the bundle weight yet), so the button simply doesn't render for those,
- *  same "don't fake it" rule as everywhere else — a download link is
- *  still right there either way. */
-function isPreviewable(mimeType: string): boolean {
-  return (
-    mimeType === "application/pdf" ||
-    mimeType === "text/csv" ||
+type PreviewKind = "pdf" | "csv" | "xlsx" | "text" | null;
+
+/** What kind of preview (if any) a file gets — checked by MIME type first,
+ *  falling back to the file's extension. The fallback matters in practice:
+ *  a Claude-direct skill's mimeType comes from Anthropic's Files API
+ *  metadata, which falls back to a generic "application/octet-stream" when
+ *  it doesn't know better (lib/claude.ts), and a Cowork skill's mimeType is
+ *  whatever the model itself chooses to send in its tool call — the prompt
+ *  gives the canonical string as an example, but nothing enforces it. A
+ *  real .xlsx with an off-spec/generic mimeType silently got no preview
+ *  button before this fallback existed, even though the file itself was
+ *  fine. A skill's own generated .docx/.pptx etc. still has no in-browser
+ *  preview here — no library for those in this app, and adding one just
+ *  for a preview isn't worth the bundle weight yet — so the button simply
+ *  doesn't render for those, same "don't fake it" rule as everywhere else —
+ *  a download link is still right there either way. */
+function resolvePreviewKind(mimeType: string, fileName: string): PreviewKind {
+  const ext = fileName.toLowerCase().split(".").pop() ?? "";
+  if (mimeType === "application/pdf" || ext === "pdf") return "pdf";
+  if (mimeType === XLSX_MIME || ext === "xlsx") return "xlsx";
+  if (mimeType === "text/csv" || ext === "csv") return "csv";
+  if (
     mimeType === "text/plain" ||
     mimeType === "application/json" ||
-    mimeType === XLSX_MIME
-  );
+    ext === "txt" ||
+    ext === "json" ||
+    ext === "md"
+  ) {
+    return "text";
+  }
+  return null;
 }
 
 /** An exceljs cell's raw value can be a rich object, not just a primitive —
@@ -164,7 +181,8 @@ export default function FilePreview({
     };
   }, [pdfUrl]);
 
-  if (!isPreviewable(mimeType)) return null;
+  const kind = resolvePreviewKind(mimeType, fileName);
+  if (!kind) return null;
 
   async function toggle(e: React.MouseEvent) {
     e.stopPropagation();
@@ -182,11 +200,11 @@ export default function FilePreview({
       if (!res.ok) throw new Error(`Falha ao carregar o arquivo (HTTP ${res.status})`);
       const blob = await res.blob();
 
-      if (mimeType === "application/pdf") {
+      if (kind === "pdf") {
         setPdfUrl(URL.createObjectURL(blob));
-      } else if (mimeType === "text/csv") {
+      } else if (kind === "csv") {
         setTableRows(parseCsv(await blob.text()));
-      } else if (mimeType === XLSX_MIME) {
+      } else if (kind === "xlsx") {
         setTableRows(await readXlsxFirstSheet(blob));
       } else {
         setTextContent(await blob.text());
@@ -259,7 +277,7 @@ export default function FilePreview({
                   ver todas.
                 </p>
               )}
-              {mimeType === XLSX_MIME && (
+              {kind === "xlsx" && (
                 <p className="text-xs text-muted mt-1.5">
                   Mostrando só a primeira planilha do arquivo — baixe pra ver as outras, se tiver mais de uma.
                 </p>
