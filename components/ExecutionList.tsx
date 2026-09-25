@@ -363,7 +363,10 @@ function ExecutionRow({
             {execution.coworkAccountLabel && (
               <span
                 className="inline-flex items-center gap-1 text-xs text-ink/70 bg-canvas rounded-full px-2 py-0.5 shrink-0"
-                title="Skill.accountSplit dividiu um lote multi-conta — essa execução é só as linhas dessa conta."
+                title={
+                  "Skill.accountSplit dividiu um lote multi-conta — essa execução é só as linhas dessa conta." +
+                  (execution.coworkClaudeInstance ? ` Instância do Claude: "${execution.coworkClaudeInstance}".` : "")
+                }
               >
                 <Users size={11} />
                 {execution.coworkAccountLabel}
@@ -747,6 +750,9 @@ function ExecutionDetailsModal({
               >
                 <Users size={11} />
                 {execution.coworkAccountLabel}
+                {execution.coworkClaudeInstance && (
+                  <span className="text-muted font-mono">· {execution.coworkClaudeInstance}</span>
+                )}
               </span>
             )}
             {coworkPhase && (
