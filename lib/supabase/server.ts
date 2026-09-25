@@ -21,6 +21,14 @@ export function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      // Same fix as lib/supabaseClient.ts's getSupabase() and for the same
+      // reason — this client's underlying fetch() calls are just as
+      // cacheable by Next's Data Cache as the app-data client's, force-dynamic
+      // notwithstanding. A stale getUser() here would mean a role/session
+      // change not taking effect until the cache happened to clear.
+      global: {
+        fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }),
+      },
       cookies: {
         get(name: string) {
           return cookieStore.get(name)?.value;

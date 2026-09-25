@@ -125,16 +125,45 @@ some other route ever regresses the same way.
 **Update — a still-recurring "I have to purge to see anything" report, after every dynamic
 route/page/layout was audited and confirmed to already have the `force-dynamic` opt-out** (`app/(app)/
 layout.tsx` included, since it fetches the sidebar's own skill list and a layout's cache setting
-doesn't automatically inherit from the pages under it). With Next's own Data/Full Route Cache
-already fully opted out everywhere real data is read, a report of staleness still recurring past
-that fix points at a layer downstream of this app: the browser's own HTTP cache, or an intermediate
-proxy, honoring whatever `Cache-Control` Next happened to send rather than re-checking with the
-server. `next.config.js`'s `headers()` now sends an explicit `Cache-Control: no-store,
-must-revalidate` on every route except `/_next/static/*` (left alone on purpose — those are
-content-hashed and immutable, caching them forever is correct), belt-and-suspenders on top of
-`force-dynamic`, not a replacement for it. Verified locally: a built-and-started production server
-sends `no-store` on `/login` and the real, unchanged `public, max-age=31536000, immutable` on a
-`/_next/static` chunk.
+doesn't automatically inherit from the pages under it). First guess was a layer downstream of this
+app — the browser's own HTTP cache, or an intermediate proxy — so `next.config.js`'s `headers()`
+now sends an explicit `Cache-Control: no-store, must-revalidate` on every route except
+`/_next/static/*` (left alone on purpose — those are content-hashed and immutable, caching them
+forever is correct). Verified locally: a built-and-started production server sends `no-store` on
+`/login` and the real, unchanged `public, max-age=31536000, immutable` on a `/_next/static` chunk.
+Real and worth keeping, but not the actual cause — the user's own Vercel dashboard screenshot
+pointed at it directly: they were purging specifically **"Runtime and Data Cache"**, a layer
+`Cache-Control` response headers have no effect on at all.
+
+**The actual cause, found by researching rather than guessing again after getting it wrong once
+already today** (see "Multi-account Cowork skills" below for that story): `force-dynamic` only
+disables Next's **Full Route Cache** (whether the page itself gets statically rendered) — it does
+**not** disable the separate **Data Cache**, which caches individual `fetch()` calls by default
+regardless of the route's own dynamic setting. This is a confirmed, documented Next.js behavior
+(there's an open upstream PR titled exactly *"'force-dynamic' does not opt out of the data
+cache"*). The Supabase JS client makes its own plain `fetch()` calls under the hood to reach the
+REST API — Next patches the *global* `fetch`, so those calls get caught by the same Data Cache as
+any other, with no way for `force-dynamic` on the *page* to know anything about them. A write
+followed immediately by a read-back on the very next request could legitimately serve the
+pre-write response straight from that cache. This exact interaction is documented on Supabase's
+own side too (their official Next.js troubleshooting guide: *"Next.js 13/14 stale data when
+changing RLS or table data"*), with the same fix this app now uses: pass a custom `fetch` to the
+Supabase client that forces `cache: "no-store"` on every request it makes, bypassing the Data
+Cache entirely rather than relying on the page-level setting to somehow cover it.
+
+Applied to all three places this app creates a Supabase client — `lib/supabaseClient.ts`'s
+`getSupabase()` (the service-role client every skill/execution read and write goes through),
+`lib/supabase/server.ts`'s `createClient()` (the session-bound client Server Components/Route
+Handlers use), and `middleware.ts`'s own inline client (the one whose `getUser()` call runs on
+*every single request* to gate the session) — all three pass
+`global: { fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }) }`.
+
+**Not exercised live from this sandbox** — same network-policy block on the Supabase host as
+everything else Supabase-related here, so a real "write, then immediately read the fresh value
+back" round trip couldn't be run to directly confirm the fix. Grounded in Supabase's own
+documented fix for this exact symptom and a confirmed upstream Next.js issue, not another
+assumption — but worth a real smoke test after deploying: run a skill, and confirm the new
+execution shows up in `/history` without needing a manual "Runtime and Data Cache" purge.
 
 **Known gap:** this codebase was built in a sandboxed environment whose network policy blocks
 the Supabase host, so the Supabase wiring was verified by unit-testing the client against the

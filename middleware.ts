@@ -43,6 +43,13 @@ export async function middleware(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      // Same fix as lib/supabaseClient.ts's getSupabase() (see its comment
+      // for the full reasoning) — applied here too since this client's
+      // getUser() call runs on every single request, the most-called
+      // Supabase call in the app.
+      global: {
+        fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }),
+      },
       cookies: {
         get(name: string) {
           return request.cookies.get(name)?.value;

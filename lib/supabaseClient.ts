@@ -23,7 +23,24 @@ export function getSupabase(): SupabaseClient {
     );
   }
   if (!client) {
-    client = createClient(url, serviceKey, { auth: { persistSession: false } });
+    client = createClient(url, serviceKey, {
+      auth: { persistSession: false },
+      // The actual root cause of "have to purge Vercel's Runtime/Data Cache
+      // to see changes" — export const dynamic = "force-dynamic" (already
+      // set on every route in this app) only disables Next's Full Route
+      // Cache, NOT its Data Cache for individual fetch() calls. The
+      // Supabase client makes its own plain fetch() calls under the hood,
+      // and Next's global fetch patch caches those by default unless each
+      // call explicitly opts out — this is a documented gap (an open
+      // Next.js PR: "'force-dynamic' does not opt out of the data cache"),
+      // and this exact fix (a custom `fetch` forcing cache: "no-store") is
+      // Supabase's own documented workaround for it. Without this, a run
+      // that just wrote to the DB could still read back the pre-write
+      // response from Next's cache on the very next request.
+      global: {
+        fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }),
+      },
+    });
   }
   return client;
 }
