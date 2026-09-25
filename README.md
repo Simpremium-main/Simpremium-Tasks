@@ -1014,17 +1014,29 @@ execution.
 
 Each real generated file also gets a "Visualizar" toggle next to its download link
 (`components/FilePreview.tsx`) — expands an inline preview without leaving the modal, fetched
-through the same authenticated download route the link itself uses. Handles what's actually
-renderable in a browser without pulling in a new dependency: a PDF via the browser's own built-in
-viewer (an `<iframe>` on a client-side Blob URL, not the route's real `Content-Disposition:
-attachment` URL directly, or it would just trigger a download instead of rendering), a CSV parsed
-by a small hand-rolled RFC4180 parser (quoted fields, escaped `""` quotes, CRLF, a leading BOM
-stripped since both this app's own CSV export and real tools like pandas commonly write one) and
-rendered as an actual table (capped at 300 rows, with a note if the file has more — still fully
-downloadable either way), and plain text/JSON as preformatted text. An `.xlsx`/`.docx`/`.pptx` etc.
-has no in-browser preview here — no library in this app can render those, and the button simply
-doesn't appear for a MIME type it doesn't know how to show, same "don't fake it" rule as everywhere
-else — the download link is still right there regardless.
+through the same authenticated download route the link itself uses. Handles: a PDF via the
+browser's own built-in viewer (an `<iframe>` on a client-side Blob URL, not the route's real
+`Content-Disposition: attachment` URL directly, or it would just trigger a download instead of
+rendering), a CSV parsed by a small hand-rolled RFC4180 parser (quoted fields, escaped `""`
+quotes, CRLF, a leading BOM stripped since both this app's own CSV export and real tools like
+pandas commonly write one) and rendered as an actual table, an `.xlsx` read client-side with
+`exceljs` (first worksheet only — a multi-sheet workbook's other sheets aren't previewable here,
+only via the real download) and rendered the same way as CSV, and plain text/JSON as preformatted
+text. Both table previews are capped at 300 rows, with a note if the file has more — still fully
+downloadable either way.
+
+`.xlsx` was initially going to use the more commonly-reached-for `xlsx` (SheetJS) package, same as
+most tutorials show — `npm audit` caught that its npm build has two long-standing, "no fix
+available" vulnerabilities (prototype pollution, ReDoS): SheetJS moved their actively-maintained
+build to their own CDN instead of npm a while back, so the npm version is effectively unmaintained.
+Used `exceljs` instead, which came back clean in `npm audit` (only a moderate issue in a transitive
+`uuid` dependency's buffer-providing calls, a code path this app's read-only usage never hits).
+Lazy-loaded via dynamic `import()` only when an `.xlsx` preview is actually opened, same pattern
+already used for `jspdf`.
+
+A `.docx`/`.pptx` etc. still has no in-browser preview here — no library in this app renders those,
+and the button simply doesn't appear for a MIME type it doesn't know how to show, same "don't fake
+it" rule as everywhere else — the download link is still right there regardless.
 
 The global history page (`/history`, `components/HistoryBoard.tsx`) has an **Arquivos** filter
 tab — shown only when at least one execution actually has files — that narrows the list down to

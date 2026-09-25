@@ -55,19 +55,75 @@ function parseCsv(text: string): string[][] {
 
 const MAX_PREVIEW_ROWS = 300;
 
+const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
 /** MIME types this component actually knows how to render — a skill's
- *  generated .xlsx/.docx/.pptx etc. has no in-browser preview here (no
- *  library for that in this app, and adding one just for a preview isn't
- *  worth the bundle weight yet), so the button simply doesn't render for
- *  those, same "don't fake it" rule as everywhere else — a download link
- *  is still right there either way. */
+ *  generated .docx/.pptx etc. has no in-browser preview here (no library
+ *  for those in this app, and adding one just for a preview isn't worth
+ *  the bundle weight yet), so the button simply doesn't render for those,
+ *  same "don't fake it" rule as everywhere else — a download link is
+ *  still right there either way. */
 function isPreviewable(mimeType: string): boolean {
   return (
     mimeType === "application/pdf" ||
     mimeType === "text/csv" ||
     mimeType === "text/plain" ||
-    mimeType === "application/json"
+    mimeType === "application/json" ||
+    mimeType === XLSX_MIME
   );
+}
+
+/** An exceljs cell's raw value can be a rich object, not just a primitive —
+ *  a formula ({formula, result}), a hyperlink ({text, hyperlink}), rich
+ *  text ({richText: [...]}), or an error ({error}) — coerced to whatever a
+ *  person would actually read as that cell's content, not [object Object]. */
+function cellToString(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (value instanceof Date) return value.toLocaleString("pt-BR");
+  if (typeof value === "object") {
+    const v = value as Record<string, unknown>;
+    if ("error" in v) return String(v.error);
+    if ("richText" in v && Array.isArray(v.richText)) {
+      return (v.richText as { text?: string }[]).map((r) => r.text ?? "").join("");
+    }
+    if ("text" in v && "hyperlink" in v) return String(v.text);
+    if ("result" in v) return cellToString(v.result);
+    if ("formula" in v) return String(v.formula);
+    return "";
+  }
+  return String(value);
+}
+
+/**
+ * Reads an .xlsx workbook client-side and returns its first worksheet as
+ * rows — dynamically imported (exceljs is a real dependency, but only
+ * loaded when an actual .xlsx preview is opened, same lazy pattern
+ * lib/exportResult.ts already uses for jspdf). Chose exceljs over the more
+ * commonly-reached-for `xlsx` (SheetJS) package specifically because the
+ * npm build of `xlsx` has two long-standing, "no fix available"
+ * vulnerabilities (prototype pollution, ReDoS) — the actively-maintained
+ * SheetJS build only lives on their own CDN, not npm. exceljs is actively
+ * maintained and, at the time this was added, its own audit only surfaced
+ * a moderate issue in a transitive `uuid` dependency's buffer-provided
+ * v3/v5/v6 calls — a code path this app never exercises (only reading
+ * workbooks, not using exceljs's id-generation features).
+ *
+ * Only the FIRST sheet is shown — a multi-sheet workbook's other sheets
+ * aren't previewable here, only via the real download. Worth surfacing
+ * later if that turns out to matter in practice, not guessed at now.
+ */
+async function readXlsxFirstSheet(blob: Blob): Promise<string[][]> {
+  const ExcelJS = (await import("exceljs")).default;
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await blob.arrayBuffer());
+  const sheet = workbook.worksheets[0];
+  if (!sheet) return [];
+  const rows: string[][] = [];
+  sheet.eachRow((row) => {
+    const values = row.values as unknown[];
+    rows.push(values.slice(1).map(cellToString)); // index 0 is always empty in exceljs's 1-indexed row.values
+  });
+  return rows;
 }
 
 /**
@@ -76,10 +132,10 @@ function isPreviewable(mimeType: string): boolean {
  * inline — a PDF via the browser's own built-in viewer (an <iframe> on a
  * client-side Blob URL, so it renders instead of triggering a download the
  * way the route's Content-Disposition: attachment would if linked to
- * directly), a CSV as an actual table, plain text/JSON as preformatted
- * text. Fetched once per file and kept in memory for the rest of this
- * modal's lifetime — collapsing and reopening the preview doesn't
- * re-fetch.
+ * directly), a CSV or an .xlsx's first sheet (see readXlsxFirstSheet) as an
+ * actual table, plain text/JSON as preformatted text. Fetched once per file
+ * and kept in memory for the rest of this modal's lifetime — collapsing
+ * and reopening the preview doesn't re-fetch.
  */
 export default function FilePreview({
   executionId,
@@ -96,7 +152,7 @@ export default function FilePreview({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
-  const [csvRows, setCsvRows] = useState<string[][] | null>(null);
+  const [tableRows, setTableRows] = useState<string[][] | null>(null);
   const [textContent, setTextContent] = useState<string | null>(null);
 
   // Blob URLs aren't garbage-collected on their own — revoke it once this
@@ -117,7 +173,7 @@ export default function FilePreview({
       return;
     }
     setOpen(true);
-    if (pdfUrl || csvRows || textContent) return; // already loaded once
+    if (pdfUrl || tableRows || textContent) return; // already loaded once
 
     setLoading(true);
     setError(null);
@@ -129,7 +185,9 @@ export default function FilePreview({
       if (mimeType === "application/pdf") {
         setPdfUrl(URL.createObjectURL(blob));
       } else if (mimeType === "text/csv") {
-        setCsvRows(parseCsv(await blob.text()));
+        setTableRows(parseCsv(await blob.text()));
+      } else if (mimeType === XLSX_MIME) {
+        setTableRows(await readXlsxFirstSheet(blob));
       } else {
         setTextContent(await blob.text());
       }
@@ -168,12 +226,12 @@ export default function FilePreview({
           {pdfUrl && (
             <iframe src={pdfUrl} title={fileName} className="w-full h-[70vh] rounded border border-line" />
           )}
-          {csvRows && csvRows.length > 0 && (
+          {tableRows && tableRows.length > 0 && (
             <div className="overflow-auto max-h-[60vh]">
               <table className="min-w-full text-xs border-collapse">
                 <thead>
                   <tr>
-                    {csvRows[0].map((cell, i) => (
+                    {tableRows[0].map((cell, i) => (
                       <th
                         key={i}
                         className="sticky top-0 bg-canvas border-b border-line px-2 py-1.5 text-left font-medium text-ink/80 whitespace-nowrap"
@@ -184,7 +242,7 @@ export default function FilePreview({
                   </tr>
                 </thead>
                 <tbody>
-                  {csvRows.slice(1, MAX_PREVIEW_ROWS + 1).map((row, i) => (
+                  {tableRows.slice(1, MAX_PREVIEW_ROWS + 1).map((row, i) => (
                     <tr key={i} className="border-b border-line/60 last:border-0">
                       {row.map((cell, j) => (
                         <td key={j} className="px-2 py-1 text-ink/70 whitespace-nowrap">
@@ -195,10 +253,15 @@ export default function FilePreview({
                   ))}
                 </tbody>
               </table>
-              {csvRows.length - 1 > MAX_PREVIEW_ROWS && (
+              {tableRows.length - 1 > MAX_PREVIEW_ROWS && (
                 <p className="text-xs text-muted mt-1.5">
-                  Mostrando as primeiras {MAX_PREVIEW_ROWS} de {csvRows.length - 1} linhas — baixe o arquivo pra
+                  Mostrando as primeiras {MAX_PREVIEW_ROWS} de {tableRows.length - 1} linhas — baixe o arquivo pra
                   ver todas.
+                </p>
+              )}
+              {mimeType === XLSX_MIME && (
+                <p className="text-xs text-muted mt-1.5">
+                  Mostrando só a primeira planilha do arquivo — baixe pra ver as outras, se tiver mais de uma.
                 </p>
               )}
             </div>
